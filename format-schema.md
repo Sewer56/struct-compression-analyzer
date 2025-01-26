@@ -14,7 +14,16 @@ The schema is designed to represent and analyze bit-packed structures with the f
 
 ## Schema Structure
 
-### Version Field
+### Top-Level Fields
+
+```yaml
+version: '1.0'
+metadata: ...
+analysis: ...
+fields: ...
+```
+
+#### Version Field
 
 ```yaml
 version: '1.0'
@@ -72,15 +81,24 @@ second byte, etc.
 
 #### Basic Fields
 
+Fields can be defined in two ways:
+
+1. **Shorthand notation** - Direct bit range specification:
+```yaml
+field_name: [start, end]
+```
+
+2. **Extended notation** - Full field configuration:
 ```yaml
 field_name: 
   type: field
   bits: [start, end] # Inclusive bit range
   description: text  # Optional field description
   bit_order: order   # Optional, either "msb" (default) or "lsb"
-                     # msb means 001 == 1
-                     # lsb means 001 == 8
 ```
+
+- Shorthand syntax is equivalent to a basic field with default values
+- Extended syntax allows for additional metadata
 
 Basic fields represent individual components of the structure. The `bits` property uses an
 inclusive range where both start and end bits are part of the field.
