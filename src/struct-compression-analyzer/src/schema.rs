@@ -217,4 +217,11 @@ impl Schema {
 #[cfg(test)]
 mod tests {
     use super::*;
-}
+    use std::collections::HashMap;
+
+    macro_rules! test_schema {
+        ($yaml:expr, $test_fn:expr) => {
+            let schema = Schema::from_yaml($yaml).unwrap();
+            $test_fn(schema);
+        };
+    }
