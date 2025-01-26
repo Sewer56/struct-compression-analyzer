@@ -213,3 +213,8 @@ impl Schema {
         Self::from_yaml(&content)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+}
