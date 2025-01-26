@@ -22,9 +22,6 @@ You'll need to set up an API key to publish to `crates.io` on tag.
 - Go to `Settings -> Secrets -> Actions` in your repo and add environment secret named `CRATES_IO_TOKEN`.  
 - Paste your API key generated in [crates.io (Account Settings -> API Tokens)][crates-io-key].  
 
-
-
-
 ### Fill in Crate Description
 
 This readme file (under the dashed line) is used for the crate description on GitHub and
@@ -35,8 +32,13 @@ other useful info.
 
 ## About
 
-Analyzes the bit distribution of packed structures.
+Analyzes the bit distribution and compression statistics of arrays of packed structures.
 
+## Features
+
+- Print entropy for every field and group
+- Print bit distribution (1/0) for every bit
+- Print distribution statistics grouped by field value
 
 ## Development
 

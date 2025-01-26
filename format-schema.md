@@ -188,11 +188,6 @@ p_bits:
    - Prefer nested groups over flat structures when logical hierarchy exists
    - Maintain consistent field definition styles within a group
 
-5. Analysis Configuration
-   - Group by fields that have meaningful distributions
-   - Provide clear labels for group values when applicable
-   - Use hierarchical field names (e.g., "colors.r.R0") to access nested fields
-
 ## Complete Example
 
 ```yaml
