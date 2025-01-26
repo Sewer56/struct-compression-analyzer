@@ -73,7 +73,8 @@ second byte, etc.
 #### Basic Fields
 
 ```yaml
-field_name:
+field_name: 
+  type: field
   bits: [start, end] # Inclusive bit range
   description: text  # Optional field description
   bit_order: order   # Optional, either "msb" (default) or "lsb"
@@ -123,6 +124,7 @@ analysis:
 
 ```yaml
 mode:
+  type: field
   bits: [0, 0]
   description: Mode bit
 ```

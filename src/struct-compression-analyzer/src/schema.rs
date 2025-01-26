@@ -101,7 +101,8 @@ pub struct DisplayConfig {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(untagged)]
+#[serde(tag = "type", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum FieldDefinition {
     Basic(BasicField),
     Group(Group),
@@ -109,6 +110,7 @@ pub enum FieldDefinition {
 
 /// Single field definition with direct bit mapping
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub struct BasicField {
     /// Inclusive bit range [start, end] (0-based index)
     ///
@@ -137,10 +139,6 @@ pub struct BasicField {
 /// Group of related fields or components
 #[derive(Debug, Deserialize)]
 pub struct Group {
-    /// **Must be "group"** - type identifier for validation
-    #[serde(rename = "type")]
-    pub group_type: String,
-
     /// Total bit range covered by all group components (inclusive)
     ///
     /// # Notes
@@ -207,7 +205,6 @@ impl Schema {
             return Err(SchemaError::InvalidVersion);
         }
 
-        validate_group_types(&schema.fields)?;
         Ok(schema)
     }
 
@@ -215,19 +212,4 @@ impl Schema {
         let content = std::fs::read_to_string(path)?;
         Self::from_yaml(&content)
     }
-}
-
-fn validate_group_types(fields: &HashMap<String, FieldDefinition>) -> Result<(), SchemaError> {
-    for (name, field) in fields {
-        if let FieldDefinition::Group(group) = field {
-            if group.group_type != "group" {
-                return Err(SchemaError::InvalidGroupType(format!(
-                    "{} (in field '{}')",
-                    group.group_type, name
-                )));
-            }
-            validate_group_types(&group.fields)?;
-        }
-    }
-    Ok(())
 }
