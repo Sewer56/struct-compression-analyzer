@@ -57,8 +57,8 @@ pub struct GroupByConfig {
     /// display:
     ///   format: "Mode %02d"
     ///   labels:
-    ///     "0": "Disabled"
-    ///     "255": "Special"
+    ///     0: "Disabled"
+    ///     255: "Special"
     /// ```
     #[serde(default)]
     pub display: DisplayConfig,
@@ -82,8 +82,8 @@ pub struct DisplayConfig {
     /// display:
     ///   format: "Version %04X"
     ///   labels:
-    ///     "0": "Legacy"
-    ///     "1": "Current"
+    ///     0: "Legacy"
+    ///     1: "Current"
     /// ```
     #[serde(default)]
     pub format: String,
@@ -92,9 +92,9 @@ pub struct DisplayConfig {
     ///
     /// ```yaml
     /// labels:
-    ///   "0": "Disabled"
-    ///   "1": "Enabled"
-    ///   "2": "Partial"
+    ///   0: "Disabled"
+    ///   1: "Enabled"
+    ///   2: "Partial"
     /// ```
     #[serde(default)]
     pub labels: HashMap<String, String>,
@@ -201,7 +201,7 @@ pub enum SchemaError {
 
 impl Schema {
     pub fn from_yaml(content: &str) -> Result<Self, SchemaError> {
-        let mut schema: Schema = serde_yaml::from_str(content)?;
+        let schema: Schema = serde_yaml::from_str(content)?;
 
         if schema.version != "1.0" {
             return Err(SchemaError::InvalidVersion);
