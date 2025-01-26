@@ -6,7 +6,7 @@ This document describes the YAML schema format used for analyzing bit-packed str
 
 The schema is designed to represent and analyze bit-packed structures with the following capabilities:
 
-- Define individual fields with precise bit positions
+- Define individual fields with precise bit lengths
 - Group related fields together
 - Create nested field hierarchies
 - Support for different field types and metadata
@@ -20,7 +20,7 @@ The schema is designed to represent and analyze bit-packed structures with the f
 version: '1.0'
 metadata: ...
 analysis: ...
-fields: ...
+root: ...
 ```
 
 #### Version Field
@@ -71,28 +71,25 @@ The `analysis` section configures how results should be analyzed and presented:
       - `%s` - string
   - `labels` can provide meaningful names for specific values
 
-### Fields Section
+### Root Section
 
-The `fields` section defines all the fields and groups in the structure.  
-Each field can be either a basic field or a group.  
-
-The data is read as big endian, so bits `0-4` always appear in the first byte; `8-12` appear in the
-second byte, etc.
+The `root` section defines the top-level structure containing all fields and groups.
+Fields are written sequentially to the file, with offsets determined by the order and size of preceding fields.
 
 #### Basic Fields
 
 Fields can be defined in two ways:
 
-1. **Shorthand notation** - Direct bit range specification:
+1. **Shorthand notation** - Direct bit count specification:
 ```yaml
-field_name: [start, end]
+field_name: 3  # Field using 3 bits
 ```
 
 2. **Extended notation** - Full field configuration:
 ```yaml
 field_name: 
   type: field
-  bits: [start, end] # Inclusive bit range
+  bits: 3            # Number of bits for the field. Auto calculated from children if not set.
   description: text  # Optional field description
   bit_order: order   # Optional, either "msb" (default) or "lsb"
 ```
@@ -100,27 +97,21 @@ field_name:
 - Shorthand syntax is equivalent to a basic field with default values
 - Extended syntax allows for additional metadata
 
-Basic fields represent individual components of the structure. The `bits` property uses an
-inclusive range where both start and end bits are part of the field.
-
 #### Groups
 
 ```yaml
 group_name:
   type: group
-  bits: [start, end]  # Total range for all contained fields
   description: text   # Optional group description
   fields:             # Contained fields and sub-groups
-    subfield1: ...
-    subfield2: ...
+    subfield1: 3      # 3-bit field
+    subfield2: 4      # 4-bit field
 ```
 
-Groups now exclusively use the `fields` property to define their contents, which can contain:
+Groups contain a collection of fields that are written sequentially:
 - Nested groups
 - Basic fields
 - Mixed hierarchies of fields and groups
-
-**Deprecated**: The `components` property should no longer be used - migrate existing schemas to use `fields` instead.
 
 ## Example Usage
 
@@ -142,16 +133,14 @@ analysis:
 ```yaml
 mode:
   type: field
-  bits: [0, 0]
+  bits: 1
   description: Mode bit
 ```
 
 ### Multi-bit Field
 
 ```yaml
-partition:
-  bits: [1, 4]
-  description: Partition value
+partition: 4  # 4-bit field
 ```
 
 ### Nested Group Structure
@@ -163,10 +152,9 @@ colors:
   fields:
     r:
       type: group
-      bits: [5, 28]
       fields:
-        R0: [5, 8]    # Shorthand notation
-        R1: [9, 12]   # Equivalent to {bits: [9,12]}
+        R0: 4     # 4-bit field
+        R1: 4     # 4-bit field
 ```
 
 ### Flat Group Structure
@@ -174,12 +162,11 @@ colors:
 ```yaml
 p_bits:
   type: group
-  bits: [77, 82]
   description: P-bits flags
   fields:
-    P0: [77, 77]  # Single-bit field
-    P1: [78, 78]
-    P2: [79, 79]
+    P0: 1    # Single-bit field
+    P1: 1
+    P2: 1
 ```
 
 ## Best Practices
@@ -200,7 +187,6 @@ p_bits:
    - Use `fields` for both hierarchical and flat group structures
    - Prefer nested groups over flat structures when logical hierarchy exists
    - Maintain consistent field definition styles within a group
-   - Update legacy schemas to replace `components` with `fields`
 
 5. Analysis Configuration
    - Group by fields that have meaningful distributions
@@ -222,90 +208,74 @@ analysis:
       display:
         format: "Partition %d"
 
-fields:
-  # Basic fields
-  mode:
-    type: field
-    bits: [0, 0]  # Single bit field
-    description: Mode bit
-    bit_order: msb  # Default ordering (could be omitted)
+root:
+  type: group
+  fields:
+    mode: 1       # 1-bit mode field
+    partition: 4  # 4-bit partition field
+    
+    colors:
+      type: group
+      description: All color components
+      fields:
+        r:
+          type: group
+          fields:
+            R0: 4
+            R1: 4
+            R2: 4
+            R3: 4
+            R4: 4
+            R5: 4
+        
+        g:
+          type: group
+          fields:
+            G0: 4
+            G1: 4
+            G2: 4
+            G3: 4
+            G4: 4
+            G5: 4
+        
+        b:
+          type: group
+          fields:
+            B0: 4
+            B1: 4
+            B2: 4
+            B3: 4
+            B4: 4
+            B5: 4
 
-  partition:
-    type: field
-    bits: [1, 4]  # 4-bit field
-    description: Partition value
-    bit_order: lsb  # Interpret bits in reverse order
+    p_bits:
+      type: group
+      description: P-bits flags
+      fields:
+        P0: 1
+        P1: 1
+        P2: 1
+        P3: 1
+        P4: 1
+        P5: 1
 
-  # Color component groups
-  colors:
-    type: group
-    description: All color components
-    fields:
-      r:
-        type: group
-        bits: [5, 28]
-        fields:
-          R0: [5, 8]
-          R1: [9, 12]
-          R2: [13, 16]
-          R3: [17, 20]
-          R4: [21, 24]
-          R5: [25, 28]
-      
-      g:
-        type: group
-        bits: [29, 52]
-        fields:
-          G0: [29, 32]
-          G1: [33, 36]
-          G2: [37, 40]
-          G3: [41, 44]
-          G4: [45, 48]
-          G5: [49, 52]
-      
-      b:
-        type: group
-        bits: [53, 76]
-        fields:
-          B0: [53, 56]
-          B1: [57, 60]
-          B2: [61, 64]
-          B3: [65, 68]
-          B4: [69, 72]
-          B5: [73, 76]
-
-  # P-bits group
-  p_bits:
-    type: group
-    bits: [77, 82]
-    description: P-bits flags
-    fields:
-      P0: [77, 77]
-      P1: [78, 78]
-      P2: [79, 79]
-      P3: [80, 80]
-      P4: [81, 81]
-      P5: [82, 82]
-
-  # Index field (subdivided into groups of 3 bits each)
-  index:
-    type: group
-    bits: [83, 127]
-    description: 45-bit index field
-    components:
-      index0: [83, 85]
-      index1: [86, 88]
-      index2: [89, 91]
-      index3: [92, 94]
-      index4: [95, 97]
-      index5: [98, 100]
-      index6: [101, 103]
-      index7: [104, 106]
-      index8: [107, 109]
-      index9: [110, 112]
-      index10: [113, 115]
-      index11: [116, 118]
-      index12: [119, 121]
-      index13: [122, 124]
-      index14: [125, 127]
+    index:
+      type: group
+      description: 45-bit index field divided into 3-bit segments
+      fields:
+        index0: 3
+        index1: 3
+        index2: 3
+        index3: 3
+        index4: 3
+        index5: 3
+        index6: 3
+        index7: 3
+        index8: 3
+        index9: 3
+        index10: 3
+        index11: 3
+        index12: 3
+        index13: 3
+        index14: 3
 ```

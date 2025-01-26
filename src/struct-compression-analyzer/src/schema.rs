@@ -1,13 +1,8 @@
 //! # Bit-Packed Structure Analysis Schema
 //!
-//! Defines the schema for analyzing bit-packed data structures with nested groupings
-//! and analysis configurations.
-//!
-//! ## Schema Format Documentation
-//!
-//! See `format-schema.md` in the `struct-compression-analyzer` repository root for complete YAML format details,
-//! including examples and usage patterns.
+//! Defines the schema for analyzing bit-packed data structures with nested groupings.
 
+use indexmap::IndexMap;
 use serde::Deserialize;
 use std::{collections::HashMap, path::Path};
 
@@ -18,8 +13,7 @@ pub struct Schema {
     pub metadata: Metadata,
     #[serde(default)]
     pub analysis: AnalysisConfig,
-    #[serde(default)]
-    pub fields: HashMap<String, FieldDefinition>,
+    pub root: Group,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -30,8 +24,21 @@ pub struct Metadata {
     pub description: String,
 }
 
+/// Configuration for analysis operations and output grouping
 #[derive(Debug, Deserialize, Default)]
 pub struct AnalysisConfig {
+    /// List of field groupings to use when organizing analysis results
+    ///
+    /// # Example
+    /// ```yaml
+    /// analysis:
+    ///   group_by:
+    ///     - field: partition
+    ///       description: Results by partition value
+    ///     - field: colors.r.R0
+    ///       display:
+    ///         format: "R Component %02X"
+    /// ```
     #[serde(default)]
     pub group_by: Vec<GroupByConfig>,
 }
@@ -104,82 +111,110 @@ pub struct DisplayConfig {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(untagged)]
 #[non_exhaustive]
 pub enum FieldDefinition {
     Field(Field),
     Group(Group),
 }
 
-/// Single field definition with direct bit mapping
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug)]
 pub struct Field {
-    /// Inclusive bit range [start, end] (0-based index)
-    ///
-    /// # Examples
-    /// - `[0, 0]`: Single bit field
-    /// - `[1, 4]`: 4-bit field (bits 1-4 inclusive)
-    /// - `[8, 15]`: Full byte (bits 8-15)
-    pub bits: (u32, u32),
-
-    /// Documentation for the field's purpose and usage
-    #[serde(default)]
+    pub bits: u32,
     pub description: String,
-
-    /// Bit interpretation order within the field
-    ///
-    /// # Behavior
-    /// - `Msb` (default): Treats first bit as most significant
-    ///   - `[0, 2]` => 0b100 = 4
-    /// - `Lsb`: Treats first bit as least significant
-    ///   - `[0, 2]` => 0b001 = 1
-    #[serde(default)]
-    #[serde(rename = "bit_order")]
     pub bit_order: BitOrder,
 }
 
-/// Group of related fields or components
-#[derive(Debug, Deserialize)]
-pub struct Group {
-    /// Total bit range covered by all group components (inclusive)
-    ///
-    /// # Notes
-    /// - For nested groups: Must encompass all child fields
-    /// - For flat components: Should match total component range
-    /// - Uses big-endian byte order (bits 0-7 in first byte)
-    pub bits: (u32, u32),
+impl<'de> Deserialize<'de> for Field {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum FieldRepr {
+            Shorthand(u32),
+            Extended {
+                bits: u32,
+                #[serde(default)]
+                description: String,
+                #[serde(default)]
+                #[serde(rename = "bit_order")]
+                bit_order: BitOrder,
+            },
+        }
 
-    /// Human-readable group description
-    #[serde(default)]
-    pub description: String,
-
-    /// Nested field definitions for hierarchical structures
-    ///
-    /// # Example
-    /// ```yaml
-    /// fields:
-    ///   colors:
-    ///     type: group
-    ///     fields:
-    ///       red: { bits: [0, 4] }
-    ///       green: { bits: [5, 9] }
-    /// ```
-    #[serde(default)]
-    pub fields: HashMap<String, FieldDefinition>,
-
-    /// Flat component definitions with individual bit ranges
-    ///
-    /// # Example
-    /// ```yaml
-    /// components:
-    ///   flag0: [0, 0]
-    ///   flag1: [1, 1]
-    /// ```
-    #[serde(default)]
-    pub components: HashMap<String, (u32, u32)>,
+        // The magic that allows for either shorthand or extended notation
+        match FieldRepr::deserialize(deserializer)? {
+            FieldRepr::Shorthand(size) => Ok(Field {
+                bits: size,
+                description: String::new(),
+                bit_order: BitOrder::default(),
+            }),
+            FieldRepr::Extended {
+                bits,
+                description,
+                bit_order,
+            } => Ok(Field {
+                bits,
+                description,
+                bit_order,
+            }),
+        }
+    }
 }
 
+/// Group of related fields or components
+///
+/// Represents a logical grouping of fields in the bit-packed structure.
+/// Groups can contain both individual fields and nested sub-groups.
+///
+/// # Fields
+/// - `_type`: Must be "group" (validated during parsing)
+/// - `description`: Optional description of the group's purpose
+/// - `fields`: Map of field names to their definitions (fields or sub-groups)
+///
+/// # Examples
+/// ```yaml
+/// root:
+///   type: group
+///   description: Main structure
+///   fields:
+///     header:
+///       type: group
+///       fields:
+///         mode: 2
+///         partition: 4
+///     colors:
+///       type: group
+///       fields:
+///         r:
+///           type: group
+///           fields:
+///             R0: 5
+///             R1: 5
+/// ```
+#[derive(Debug, Deserialize, Default)]
+pub struct Group {
+    #[serde(rename = "type")]
+    _type: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub fields: IndexMap<String, FieldDefinition>,
+}
+
+/// Bit ordering specification for field values
+///
+/// Determines how bits are interpreted within a field:
+/// - `Msb`: Most significant bit first (default)
+/// - `Lsb`: Least significant bit first
+///
+/// # Examples
+/// ```yaml
+/// bit_order: msb  # Default, bits are read left-to-right
+/// bit_order: lsb  # Bits are read right-to-left
+/// ```
 #[derive(Debug, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum BitOrder {
@@ -221,48 +256,70 @@ impl Schema {
 mod tests {
     use super::*;
 
-    // Helper macro for testing schema parsing
     macro_rules! test_schema {
-        ($yaml:expr, $test_fn:expr) => {
-            let schema = Schema::from_yaml($yaml).unwrap();
-            $test_fn(schema);
-        };
+        ($yaml:expr, $test:expr) => {{
+            let schema = Schema::from_yaml($yaml).expect("Failed to parse schema");
+            $test(schema);
+        }};
     }
 
-    // Version Section Tests
+    // Version Tests
     mod version_tests {
         use super::*;
 
         #[test]
-        fn supports_10() {
-            let yaml = r#"version: '1.0'"#;
-            Schema::from_yaml(yaml).unwrap();
+        fn supports_version_10() {
+            let yaml = r#"
+version: '1.0'
+metadata: { name: Test }
+root: { type: group, fields: {} }
+"#;
+            test_schema!(yaml, |schema: Schema| {
+                assert_eq!(schema.version, "1.0");
+            });
         }
 
         #[test]
-        fn does_not_support_20() {
-            let yaml = r#"version: '2.0'"#;
-            match Schema::from_yaml(yaml) {
-                Err(SchemaError::InvalidVersion) => (),
-                _ => panic!("Should reject invalid version"),
-            }
+        fn rejects_unsupported_version() {
+            let yaml = r#"
+version: '2.0'
+metadata: { name: Test }
+root: { type: group, fields: {} }
+"#;
+            assert!(Schema::from_yaml(yaml).is_err());
         }
     }
 
-    #[test]
-    fn can_parse_metadata() {
-        let yaml = r#"
+    // Metadata Tests
+    mod metadata_tests {
+        use super::*;
+
+        #[test]
+        fn parses_full_metadata() {
+            let yaml = r#"
 version: '1.0'
 metadata:
     name: BC7 Mode4
     description: Test description
-fields: {}
+root: { type: group, fields: {} }
 "#;
+            test_schema!(yaml, |schema: Schema| {
+                assert_eq!(schema.metadata.name, "BC7 Mode4");
+                assert_eq!(schema.metadata.description, "Test description");
+            });
+        }
 
-        test_schema!(yaml, |schema: Schema| {
-            assert_eq!(schema.metadata.name, "BC7 Mode4");
-            assert_eq!(schema.metadata.description, "Test description");
-        });
+        #[test]
+        fn handles_empty_metadata() {
+            let yaml = r#"
+version: '1.0'
+root: { type: group, fields: {} }
+"#;
+            test_schema!(yaml, |schema: Schema| {
+                assert_eq!(schema.metadata.name, "");
+                assert_eq!(schema.metadata.description, "");
+            });
+        }
     }
 
     // Analysis Section Tests
@@ -270,36 +327,71 @@ fields: {}
         use super::*;
 
         #[test]
-        fn can_group_by_config() {
+        fn supports_group_by_with_display_config() {
             let yaml = r#"
 version: '1.0'
 metadata: { name: Test }
 analysis:
     group_by:
     - field: partition
-      description: Partition grouping
+      description: Results by partition value
       display:
-        format: "Part %02d"
-        labels: { 0: "None", 255: "Max" }
-
+        format: "%02d"
+        labels: { 0: "None", 1: "Two", 255: "Max" }
     - field: colors.r.R0
-fields: {}
+      description: Red component grouping
+      display:
+        format: "%02X"
+root: { type: group, fields: {} }
 "#;
-
             test_schema!(yaml, |schema: Schema| {
                 let groups = &schema.analysis.group_by;
                 assert_eq!(groups.len(), 2);
 
                 let first = &groups[0];
                 assert_eq!(first.field, "partition");
-                assert_eq!(first.description, "Partition grouping");
-                assert_eq!(first.display.format, "Part %02d");
-                assert_eq!(first.display.labels["0"], "None");
-                assert_eq!(first.display.labels["255"], "Max");
+                assert_eq!(first.description, "Results by partition value");
+                assert_eq!(first.display.format, "%02d");
+                assert_eq!(first.display.labels.get("0").unwrap(), "None");
+                assert_eq!(first.display.labels.get("1").unwrap(), "Two");
+                assert_eq!(first.display.labels.get("255").unwrap(), "Max");
 
                 let second = &groups[1];
-                assert!(second.display.format.is_empty());
+                assert_eq!(second.field, "colors.r.R0");
+                assert_eq!(second.description, "Red component grouping");
+                assert_eq!(second.display.format, "%02X");
                 assert!(second.display.labels.is_empty());
+            });
+        }
+
+        #[test]
+        fn supports_multiple_format_specifiers() {
+            let yaml = r#"
+version: '1.0'
+metadata: { name: Test }
+analysis:
+    group_by:
+    - field: mode
+      display:
+        format: "%d"
+    - field: color
+      display:
+        format: "%02x"
+    - field: version
+      display:
+        format: "%X"
+    - field: name
+      display:
+        format: "%s"
+root: { type: group, fields: {} }
+"#;
+            test_schema!(yaml, |schema: Schema| {
+                let groups = &schema.analysis.group_by;
+                assert_eq!(groups.len(), 4);
+                assert_eq!(groups[0].display.format, "%d"); // decimal
+                assert_eq!(groups[1].display.format, "%02x"); // padded hex
+                assert_eq!(groups[2].display.format, "%X"); // uppercase hex
+                assert_eq!(groups[3].display.format, "%s"); // string
             });
         }
     }
@@ -309,187 +401,143 @@ fields: {}
         use super::*;
 
         #[test]
-        fn test_basic_field() {
+        fn supports_shorthand_field() {
             let yaml = r#"
 version: '1.0'
 metadata: { name: Test }
-fields:
-    mode:
-        type: field
-        bits: [0, 0]
-        description: Mode bit
-        bit_order: lsb
-"#;
-
-            test_schema!(yaml, |schema: Schema| {
-                let field = match &schema.fields["mode"] {
-                    FieldDefinition::Field(b) => b,
-                    _ => panic!("Expected basic field"),
-                };
-                assert_eq!(field.bits, (0, 0));
-                assert_eq!(field.description, "Mode bit");
-                assert_eq!(field.bit_order, BitOrder::Lsb);
-            });
-        }
-
-        #[test]
-        fn test_nested_group() {
-            let yaml = r#"
-version: '1.0'
-metadata: { name: Test }
-fields:
-    colors:
-        type: group
-        bits: [5, 28]
-        fields:
-            r:
-                type: group
-                bits: [5, 8]
-                components:
-                    R0: [5, 8]
-"#;
-
-            test_schema!(yaml, |schema: Schema| {
-                let colors = match &schema.fields["colors"] {
-                    FieldDefinition::Group(g) => g,
-                    _ => panic!("Expected group"),
-                };
-                assert_eq!(colors.bits, (5, 28));
-
-                let r = match &colors.fields["r"] {
-                    FieldDefinition::Group(g) => g,
-                    _ => panic!("Expected subgroup"),
-                };
-                assert_eq!(r.components["R0"], (5, 8));
-            });
-        }
-
-        #[test]
-        fn test_flat_group() {
-            let yaml = r#"
-version: '1.0'
-metadata: { name: Test }
-fields:
-    p_bits:
-        type: group
-        bits: [77, 78]
-        components:
-            P0: [77, 77]
-            P1: [78, 78]
-"#;
-
-            test_schema!(yaml, |schema: Schema| {
-                let pbits = match &schema.fields["p_bits"] {
-                    FieldDefinition::Group(g) => g,
-                    _ => panic!("Expected group"),
-                };
-                assert_eq!(pbits.components["P0"], (77, 77));
-                assert_eq!(pbits.components["P1"], (78, 78));
-            });
-        }
-    }
-
-    // Full File Test (Complete Example from Documentation)
-    #[test]
-    fn test_full_schema_example() {
-        let yaml = r#"
-version: '1.0'
-metadata:
-    name: BC1 Mode0 Block
-    description: Analysis schema for Mode0 packed color structure
-
-analysis:
-    group_by:
-    - field: partition
-        description: Results grouped by partition value
-        display:
-        format: "Partition %d"
-
-fields:
-    mode:
-    bits: [0, 0]
-    description: Mode bit
-
-    partition:
-    bits: [1, 4]
-    bit_order: lsb
-
-    colors:
+root:
     type: group
-    description: All color components
     fields:
-        r:
-        type: group
-        bits: [5, 28]
-        components:
-            R0: [5, 8]
-            R1: [9, 12]
-
-    p_bits:
-    type: group
-    bits: [77, 82]
-    components:
-        P0: [77, 77]
-        P1: [78, 78]
+        mode: 2
+        partition: 4
 "#;
+            test_schema!(yaml, |schema: Schema| {
+                let mode = match schema.root.fields.get("mode") {
+                    Some(FieldDefinition::Field(f)) => f,
+                    _ => panic!("Expected field"),
+                };
+                assert_eq!(mode.bits, 2);
 
-        test_schema!(yaml, |schema: Schema| {
-            // Verify metadata
-            assert_eq!(schema.metadata.name, "BC1 Mode0 Block");
-            assert_eq!(
-                schema.metadata.description,
-                "Analysis schema for Mode0 packed color structure"
-            );
+                let partition = match schema.root.fields.get("partition") {
+                    Some(FieldDefinition::Field(f)) => f,
+                    _ => panic!("Expected field"),
+                };
+                assert_eq!(partition.bits, 4);
+            });
+        }
 
-            // Verify analysis config
-            assert_eq!(schema.analysis.group_by[0].field, "partition");
-            assert_eq!(schema.analysis.group_by[0].display.format, "Partition %d");
+        #[test]
+        fn supports_extended_field() {
+            let yaml = r#"
+version: '1.0'
+metadata: { name: Test }
+root:
+    type: group
+    fields:
+        mode:
+            type: field
+            bits: 3
+            description: Mode selector
+            bit_order: msb
+"#;
+            test_schema!(yaml, |schema: Schema| {
+                let field = match schema.root.fields.get("mode") {
+                    Some(FieldDefinition::Field(f)) => f,
+                    _ => panic!("Expected field"),
+                };
+                assert_eq!(field.bits, 3);
+                assert_eq!(field.description, "Mode selector");
+                assert_eq!(field.bit_order, BitOrder::Msb);
+            });
+        }
 
-            // Verify fields
-            let mode = match &schema.fields["mode"] {
-                FieldDefinition::Field(b) => b,
-                _ => panic!("Expected basic field"),
-            };
-            assert_eq!(mode.bits, (0, 0));
+        #[test]
+        fn supports_nested_groups() {
+            let yaml = r#"
+version: '1.0'
+metadata: { name: Test }
+root:
+    type: group
+    fields:
+        header:
+            type: group
+            fields:
+                mode: 2
+                partition: 4
+        colors:
+            type: group
+            fields:
+                r:
+                    type: group
+                    fields:
+                        R0: 5
+                        R1: 5
+"#;
+            test_schema!(yaml, |schema: Schema| {
+                let header = match schema.root.fields.get("header") {
+                    Some(FieldDefinition::Group(g)) => g,
+                    _ => panic!("Expected group"),
+                };
+                assert_eq!(header.fields.len(), 2);
 
-            let colors = match &schema.fields["colors"] {
-                FieldDefinition::Group(g) => g,
-                _ => panic!("Expected group"),
-            };
-            assert_eq!(colors.description, "All color components");
-
-            let pbits = match &schema.fields["p_bits"] {
-                FieldDefinition::Group(g) => g,
-                _ => panic!("Expected group"),
-            };
-            assert_eq!(pbits.bits, (77, 82));
-        });
+                let colors = match schema.root.fields.get("colors") {
+                    Some(FieldDefinition::Group(g)) => g,
+                    _ => panic!("Expected group"),
+                };
+                let r = match colors.fields.get("r") {
+                    Some(FieldDefinition::Group(g)) => g,
+                    _ => panic!("Expected group"),
+                };
+                assert_eq!(r.fields.len(), 2);
+            });
+        }
     }
 
-    // Edge Case Tests
+    // Edge Cases
     mod edge_cases {
         use super::*;
 
         #[test]
-        fn test_minimal_valid_schema() {
+        fn accepts_minimal_valid_schema() {
             let yaml = r#"
 version: '1.0'
-metadata: { name: Minimal }
-fields: {}
+root: { type: group, fields: {} }
 "#;
-            assert!(Schema::from_yaml(yaml).is_ok());
+            test_schema!(yaml, |schema: Schema| {
+                assert_eq!(schema.version, "1.0");
+                assert!(schema.root.fields.is_empty());
+            });
         }
 
         #[test]
-        fn test_empty_group() {
+        fn handles_empty_analysis() {
             let yaml = r#"
 version: '1.0'
 metadata: { name: Test }
-fields:
-    empty_group:
-        type: group
+analysis: {}
+root: { type: group, fields: {} }
 "#;
-            assert!(Schema::from_yaml(yaml).is_err());
+            test_schema!(yaml, |schema: Schema| {
+                assert!(schema.analysis.group_by.is_empty());
+            });
+        }
+
+        #[test]
+        fn handles_empty_display_config() {
+            let yaml = r#"
+version: '1.0'
+metadata: { name: Test }
+analysis:
+    group_by:
+    - field: test
+      display: {}
+root: { type: group, fields: {} }
+"#;
+            test_schema!(yaml, |schema: Schema| {
+                let group = &schema.analysis.group_by[0];
+                assert!(group.display.format.is_empty());
+                assert!(group.display.labels.is_empty());
+            });
         }
     }
 }
