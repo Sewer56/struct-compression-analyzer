@@ -242,13 +242,20 @@ impl<'de> Deserialize<'de> for Group {
             })
             .sum();
 
-        Ok(Group {
+        // Create the group with its own bit_order
+        let mut group = Group {
             _type: group._type,
             description: group.description,
             fields: group.fields,
             bits,
             bit_order: group.bit_order,
-        })
+        };
+
+        // Propagate bit_order to children if not explicitly set
+        let bit_order = group.bit_order;
+        propagate_bit_order(&mut group, bit_order);
+
+        Ok(group)
     }
 }
 
@@ -263,13 +270,35 @@ impl<'de> Deserialize<'de> for Group {
 /// bit_order: msb  # Default, bits are read left-to-right
 /// bit_order: lsb  # Bits are read right-to-left
 /// ```
-#[derive(Debug, Deserialize, Default, PartialEq)]
+#[derive(Debug, Deserialize, Default, PartialEq, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum BitOrder {
     #[default]
     Default,
     Msb,
     Lsb,
+}
+
+/// Recursively propagates bit_order to child fields and groups
+fn propagate_bit_order(group: &mut Group, parent_bit_order: BitOrder) {
+    for (_, field_def) in group.fields.iter_mut() {
+        match field_def {
+            FieldDefinition::Field(field) => {
+                // Only inherit if field has default bit_order
+                if field.bit_order == BitOrder::Default {
+                    field.bit_order = parent_bit_order;
+                }
+            }
+            FieldDefinition::Group(child_group) => {
+                // Only inherit if child group has default bit_order
+                if child_group.bit_order == BitOrder::Default {
+                    child_group.bit_order = parent_bit_order;
+                }
+                // Recursively propagate to nested groups
+                propagate_bit_order(child_group, child_group.bit_order);
+            }
+        }
+    }
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -563,6 +592,135 @@ root:
                 match schema.root.fields.get("subgroup") {
                     Some(FieldDefinition::Group(g)) => assert_eq!(g.bits, 4),
                     _ => panic!("Expected subgroup"),
+                }
+            });
+        }
+    }
+
+    // Bit Order Tests
+    mod bit_order_tests {
+        use super::*;
+
+        #[test]
+        fn inherits_bit_order_from_parent() {
+            let yaml = r#"
+version: '1.0'
+root:
+    type: group
+    bit_order: lsb
+    fields:
+        a: 4
+        b: 8
+        subgroup:
+            type: group
+            fields:
+                c: 2
+                d: 2
+"#;
+            test_schema!(yaml, |schema: Schema| {
+                // Check root fields
+                match schema.root.fields.get("a") {
+                    Some(FieldDefinition::Field(f)) => assert_eq!(f.bit_order, BitOrder::Lsb),
+                    _ => panic!("Expected field"),
+                }
+                match schema.root.fields.get("b") {
+                    Some(FieldDefinition::Field(f)) => assert_eq!(f.bit_order, BitOrder::Lsb),
+                    _ => panic!("Expected field"),
+                }
+
+                // Check nested group and its fields
+                match schema.root.fields.get("subgroup") {
+                    Some(FieldDefinition::Group(g)) => {
+                        assert_eq!(g.bit_order, BitOrder::Lsb);
+                        match g.fields.get("c") {
+                            Some(FieldDefinition::Field(f)) => {
+                                assert_eq!(f.bit_order, BitOrder::Lsb)
+                            }
+                            _ => panic!("Expected field"),
+                        }
+                        match g.fields.get("d") {
+                            Some(FieldDefinition::Field(f)) => {
+                                assert_eq!(f.bit_order, BitOrder::Lsb)
+                            }
+                            _ => panic!("Expected field"),
+                        }
+                    }
+                    _ => panic!("Expected subgroup"),
+                }
+            });
+        }
+
+        #[test]
+        fn preserves_explicit_bit_order_in_children() {
+            let yaml = r#"
+version: '1.0'
+root:
+    type: group
+    bit_order: lsb
+    fields:
+        a: 4
+        b:
+            type: field
+            bits: 8
+            bit_order: msb
+        subgroup:
+            type: group
+            bit_order: msb
+            fields:
+                c: 2
+                d: 2
+"#;
+            test_schema!(yaml, |schema: Schema| {
+                // Check root fields
+                match schema.root.fields.get("a") {
+                    Some(FieldDefinition::Field(f)) => assert_eq!(f.bit_order, BitOrder::Lsb),
+                    _ => panic!("Expected field"),
+                }
+                match schema.root.fields.get("b") {
+                    Some(FieldDefinition::Field(f)) => assert_eq!(f.bit_order, BitOrder::Msb),
+                    _ => panic!("Expected field"),
+                }
+
+                // Check nested group and its fields
+                match schema.root.fields.get("subgroup") {
+                    Some(FieldDefinition::Group(g)) => {
+                        assert_eq!(g.bit_order, BitOrder::Msb);
+                        match g.fields.get("c") {
+                            Some(FieldDefinition::Field(f)) => {
+                                assert_eq!(f.bit_order, BitOrder::Msb)
+                            }
+                            _ => panic!("Expected field"),
+                        }
+                        match g.fields.get("d") {
+                            Some(FieldDefinition::Field(f)) => {
+                                assert_eq!(f.bit_order, BitOrder::Msb)
+                            }
+                            _ => panic!("Expected field"),
+                        }
+                    }
+                    _ => panic!("Expected subgroup"),
+                }
+            });
+        }
+
+        #[test]
+        fn uses_default_bit_order_when_not_specified() {
+            let yaml = r#"
+version: '1.0'
+root:
+    type: group
+    fields:
+        a: 4
+        b: 8
+"#;
+            test_schema!(yaml, |schema: Schema| {
+                match schema.root.fields.get("a") {
+                    Some(FieldDefinition::Field(f)) => assert_eq!(f.bit_order, BitOrder::Default),
+                    _ => panic!("Expected field"),
+                }
+                match schema.root.fields.get("b") {
+                    Some(FieldDefinition::Field(f)) => assert_eq!(f.bit_order, BitOrder::Default),
+                    _ => panic!("Expected field"),
                 }
             });
         }
