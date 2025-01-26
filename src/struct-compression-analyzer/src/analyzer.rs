@@ -1,4 +1,4 @@
-use crate::schema::FieldDefinition;
+use crate::schema::{BitOrder, FieldDefinition};
 
 use super::schema::{Group, Schema};
 use std::collections::HashMap;
@@ -36,6 +36,8 @@ struct FieldStats {
     data: Vec<u8>,
     /// Bit-level statistics. Index of tuple is bit offset.
     bit_counts: Vec<BitStats>,
+    /// The order of the bits within the field
+    bit_order: BitOrder,
 }
 
 /// Tracks statistics about individual bits in a field
@@ -116,6 +118,7 @@ fn build_field_stats(group: &Group, parent_path: &str, depth: usize) -> Vec<Fiel
                     data: Vec::new(),
                     bit_counts: vec![BitStats::default(); field.bits as usize],
                     name: name.clone(),
+                    bit_order: field.bit_order.get_with_default_resolve(),
                 });
             }
             FieldDefinition::Group(group) => {
@@ -128,6 +131,7 @@ fn build_field_stats(group: &Group, parent_path: &str, depth: usize) -> Vec<Fiel
                     data: Vec::new(),
                     bit_counts: vec![BitStats::default(); group.bits as usize],
                     name: name.clone(),
+                    bit_order: group.bit_order.get_with_default_resolve(),
                 });
 
                 // Process nested fields
@@ -172,6 +176,7 @@ root:
       description: "ID field"
     nested:
       type: group
+      bit_order: lsb
       fields:
         value:
           type: field
@@ -209,6 +214,7 @@ root:
         assert_eq!(root_group.lenbits, 32);
         assert!(root_group.data.is_empty());
         assert_eq!(root_group.bit_counts.len(), root_group.lenbits as usize);
+        assert_eq!(root_group.bit_order, BitOrder::Msb);
 
         let id_field = &analyzer.field_stats[1];
         assert_eq!(id_field.full_path, "nested");
@@ -218,6 +224,7 @@ root:
         assert_eq!(id_field.lenbits, 8);
         assert!(id_field.data.is_empty());
         assert_eq!(id_field.bit_counts.len(), id_field.lenbits as usize);
+        assert_eq!(id_field.bit_order, BitOrder::Lsb);
 
         let nested_value = &analyzer.field_stats[2];
         assert_eq!(nested_value.full_path, "nested.value");
@@ -227,5 +234,6 @@ root:
         assert_eq!(nested_value.lenbits, 8);
         assert!(nested_value.data.is_empty());
         assert_eq!(nested_value.bit_counts.len(), nested_value.lenbits as usize);
+        assert_eq!(nested_value.bit_order, BitOrder::Lsb); // inherited from parent
     }
 }

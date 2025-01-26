@@ -273,10 +273,21 @@ impl<'de> Deserialize<'de> for Group {
 #[derive(Debug, Deserialize, Default, PartialEq, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum BitOrder {
+    /// Not initialized. If not set down the road, defaults to [Msb](BitOrder::Msb)
     #[default]
     Default,
     Msb,
     Lsb,
+}
+
+impl BitOrder {
+    pub fn get_with_default_resolve(self) -> BitOrder {
+        if self == BitOrder::Default {
+            BitOrder::Msb
+        } else {
+            self
+        }
+    }
 }
 
 /// Recursively propagates bit_order to child fields and groups
