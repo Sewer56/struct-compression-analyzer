@@ -97,6 +97,8 @@ field_name:
 - Shorthand syntax is equivalent to a basic field with default values
 - Extended syntax allows for additional metadata
 
+Warning: It is assumed each field has a unique name; this includes subfields.
+
 #### Groups
 
 ```yaml

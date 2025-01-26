@@ -12,7 +12,7 @@ pub struct SchemaAnalyzer<'a> {
     schema: &'a Schema,
     /// Raw binary entries stored in big-endian byte order
     entries: Vec<Vec<u8>>,
-    /// Intermediate analysis state (field path → statistics)
+    /// Intermediate analysis state (field name → statistics)
     field_stats: HashMap<String, FieldStats>,
 }
 

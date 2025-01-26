@@ -338,8 +338,8 @@ analysis:
       display:
         format: "%02d"
         labels: { 0: "None", 1: "Two", 255: "Max" }
-    - field: colors.r.R0
-      description: Red component grouping
+    - field: R0
+      description: Red component grouping (nested field)
       display:
         format: "%02X"
 root: { type: group, fields: {} }
@@ -357,8 +357,8 @@ root: { type: group, fields: {} }
                 assert_eq!(first.display.labels.get("255").unwrap(), "Max");
 
                 let second = &groups[1];
-                assert_eq!(second.field, "colors.r.R0");
-                assert_eq!(second.description, "Red component grouping");
+                assert_eq!(second.field, "R0");
+                assert_eq!(second.description, "Red component grouping (nested field)");
                 assert_eq!(second.display.format, "%02X");
                 assert!(second.display.labels.is_empty());
             });
