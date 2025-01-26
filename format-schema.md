@@ -105,6 +105,9 @@ Warning: It is assumed each field has a unique name; this includes subfields.
 group_name:
   type: group
   description: text   # Optional group description
+  bit_order: order    # Optional, either "msb" (default) or "lsb"
+                      # If set here, all contained fields will inherit this order.
+                      # Unless explicitly overwritten
   fields:             # Contained fields and sub-groups
     subfield1: 3      # 3-bit field
     subfield2: 4      # 4-bit field

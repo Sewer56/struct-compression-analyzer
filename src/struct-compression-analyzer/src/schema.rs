@@ -201,6 +201,9 @@ pub struct Group {
     pub fields: IndexMap<String, FieldDefinition>,
     /// Total bits calculated from children fields/groups
     pub bits: u32,
+    /// The bit order of this group.
+    /// Inherited by all the children unless explicitly overwritten.
+    pub bit_order: BitOrder,
 }
 
 impl<'de> Deserialize<'de> for Group {
@@ -214,6 +217,8 @@ impl<'de> Deserialize<'de> for Group {
             _type: String,
             #[serde(default)]
             description: String,
+            #[serde(default)]
+            bit_order: BitOrder,
             #[serde(default)]
             fields: IndexMap<String, FieldDefinition>,
         }
@@ -242,6 +247,7 @@ impl<'de> Deserialize<'de> for Group {
             description: group.description,
             fields: group.fields,
             bits,
+            bit_order: group.bit_order,
         })
     }
 }
@@ -261,6 +267,7 @@ impl<'de> Deserialize<'de> for Group {
 #[serde(rename_all = "snake_case")]
 pub enum BitOrder {
     #[default]
+    Default,
     Msb,
     Lsb,
 }
