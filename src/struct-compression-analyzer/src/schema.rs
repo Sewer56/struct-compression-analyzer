@@ -194,14 +194,56 @@ impl<'de> Deserialize<'de> for Field {
 ///             R0: 5
 ///             R1: 5
 /// ```
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Default)]
 pub struct Group {
-    #[serde(rename = "type")]
     _type: String,
-    #[serde(default)]
     pub description: String,
-    #[serde(default)]
     pub fields: IndexMap<String, FieldDefinition>,
+    /// Total bits calculated from children fields/groups
+    pub bits: u32,
+}
+
+impl<'de> Deserialize<'de> for Group {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct GroupRepr {
+            #[serde(rename = "type")]
+            _type: String,
+            #[serde(default)]
+            description: String,
+            #[serde(default)]
+            fields: IndexMap<String, FieldDefinition>,
+        }
+
+        let group = GroupRepr::deserialize(deserializer)?;
+        if group._type != "group" {
+            return Err(serde::de::Error::custom(format!(
+                "Invalid group type: {} (must be 'group')",
+                group._type
+            )));
+        }
+
+        // Calculate total bits from children
+        // This is recursive. Deserialize of child would have calculated this for the child.
+        let bits = group
+            .fields
+            .values()
+            .map(|fd| match fd {
+                FieldDefinition::Field(f) => f.bits,
+                FieldDefinition::Group(g) => g.bits,
+            })
+            .sum();
+
+        Ok(Group {
+            _type: group._type,
+            description: group.description,
+            fields: group.fields,
+            bits,
+        })
+    }
 }
 
 /// Bit ordering specification for field values
@@ -489,6 +531,32 @@ root:
                     _ => panic!("Expected group"),
                 };
                 assert_eq!(r.fields.len(), 2);
+            });
+        }
+
+        #[test]
+        fn calculates_group_bits_from_children() {
+            let yaml = r#"                                                                                                                                                
+ version: '1.0'                                                                                                                                                    
+ root:                                                                                                                                                             
+     type: group                                                                                                                                                   
+     fields:                                                                                                                                                       
+         a: 4                                                                                                                                                      
+         b: 8                                                                                                                                                      
+         subgroup:                                                                                                                                                 
+             type: group                                                                                                                                           
+             fields:                                                                                                                                               
+                 c: 2                                                                                                                                              
+                 d: 2                                                                                                                                              
+ "#;
+            test_schema!(yaml, |schema: Schema| {
+                // Top level group should have 4 + 8 + (2+2) = 16 bits
+                assert_eq!(schema.root.bits, 16);
+                // Subgroup should have 2 + 2 = 4 bits
+                match schema.root.fields.get("subgroup") {
+                    Some(FieldDefinition::Group(g)) => assert_eq!(g.bits, 4),
+                    _ => panic!("Expected subgroup"),
+                }
             });
         }
     }
