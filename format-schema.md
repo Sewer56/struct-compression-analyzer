@@ -108,20 +108,19 @@ inclusive range where both start and end bits are part of the field.
 ```yaml
 group_name:
   type: group
-  bits: [start, end]  # Total range for all components
+  bits: [start, end]  # Total range for all contained fields
   description: text   # Optional group description
-  fields:             # For nested groups
+  fields:             # Contained fields and sub-groups
     subfield1: ...
     subfield2: ...
-  components:         # For flat groups
-    comp1: [start, end]
-    comp2: [start, end]
 ```
 
-Groups can be structured in two ways:
+Groups now exclusively use the `fields` property to define their contents, which can contain:
+- Nested groups
+- Basic fields
+- Mixed hierarchies of fields and groups
 
-1. Nested groups using the `fields` property
-2. Flat groups using the `components` property
+**Deprecated**: The `components` property should no longer be used - migrate existing schemas to use `fields` instead.
 
 ## Example Usage
 
@@ -165,10 +164,9 @@ colors:
     r:
       type: group
       bits: [5, 28]
-      components:
-        R0: [5, 8]
-        R1: [9, 12]
-        # ...
+      fields:
+        R0: [5, 8]    # Shorthand notation
+        R1: [9, 12]   # Equivalent to {bits: [9,12]}
 ```
 
 ### Flat Group Structure
@@ -178,10 +176,10 @@ p_bits:
   type: group
   bits: [77, 82]
   description: P-bits flags
-  components:
-    P0: [77, 77]
+  fields:
+    P0: [77, 77]  # Single-bit field
     P1: [78, 78]
-    # ...
+    P2: [79, 79]
 ```
 
 ## Best Practices
@@ -198,7 +196,13 @@ p_bits:
    - Include descriptions for complex fields and groups
    - Document any special cases or requirements
 
-4. Analysis Configuration
+4. Group Composition
+   - Use `fields` for both hierarchical and flat group structures
+   - Prefer nested groups over flat structures when logical hierarchy exists
+   - Maintain consistent field definition styles within a group
+   - Update legacy schemas to replace `components` with `fields`
+
+5. Analysis Configuration
    - Group by fields that have meaningful distributions
    - Provide clear labels for group values when applicable
    - Use hierarchical field names (e.g., "colors.r.R0") to access nested fields
@@ -239,8 +243,8 @@ fields:
     fields:
       r:
         type: group
-        bits: [5, 28]  # Full range for all R components
-        components:
+        bits: [5, 28]
+        fields:
           R0: [5, 8]
           R1: [9, 12]
           R2: [13, 16]
@@ -250,8 +254,8 @@ fields:
       
       g:
         type: group
-        bits: [29, 52]  # Full range for all G components
-        components:
+        bits: [29, 52]
+        fields:
           G0: [29, 32]
           G1: [33, 36]
           G2: [37, 40]
@@ -261,8 +265,8 @@ fields:
       
       b:
         type: group
-        bits: [53, 76]  # Full range for all B components
-        components:
+        bits: [53, 76]
+        fields:
           B0: [53, 56]
           B1: [57, 60]
           B2: [61, 64]
@@ -275,7 +279,7 @@ fields:
     type: group
     bits: [77, 82]
     description: P-bits flags
-    components:
+    fields:
       P0: [77, 77]
       P1: [78, 78]
       P2: [79, 79]
