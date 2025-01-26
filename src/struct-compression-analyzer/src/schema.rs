@@ -197,6 +197,338 @@ pub enum SchemaError {
     InvalidGroupType(String),
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Helper macro for testing schema parsing
+    macro_rules! test_schema {
+        ($yaml:expr, $test_fn:expr) => {
+            let schema = Schema::from_yaml($yaml).unwrap();
+            $test_fn(schema);
+        };
+    }
+
+    // Version Section Tests
+    mod version_tests {
+        use super::*;
+
+        #[test]
+        fn test_valid_version() {
+            let yaml = r#"version: '1.0'"#;
+            assert!(Schema::from_yaml(yaml).is_ok());
+        }
+
+        #[test]
+        fn test_invalid_version() {
+            let yaml = r#"version: '2.0'"#;
+            match Schema::from_yaml(yaml) {
+                Err(SchemaError::InvalidVersion) => (),
+                _ => panic!("Should reject invalid version"),
+            }
+        }
+    }
+
+    // Metadata Section Tests
+    mod metadata_tests {
+        use super::*;
+
+        #[test]
+        fn test_metadata_parsing() {
+            let yaml = r#"
+                version: '1.0'
+                metadata:
+                  name: BC7 Mode4
+                  description: Test description
+                fields: {}
+            "#;
+
+            test_schema!(yaml, |schema: Schema| {
+                assert_eq!(schema.metadata.name, "BC7 Mode4");
+                assert_eq!(schema.metadata.description, "Test description");
+            });
+        }
+
+        #[test]
+        fn test_optional_description() {
+            let yaml = r#"
+                version: '1.0'
+                metadata:
+                  name: Minimal Metadata
+                fields: {}
+            "#;
+
+            test_schema!(yaml, |schema: Schema| {
+                assert_eq!(schema.metadata.description, "");
+            });
+        }
+    }
+
+    // Analysis Section Tests
+    mod analysis_tests {
+        use super::*;
+
+        #[test]
+        fn test_group_by_config() {
+            let yaml = r#"
+                version: '1.0'
+                metadata: { name: Test }
+                analysis:
+                  group_by:
+                    - field: partition
+                      description: Partition grouping
+                      display:
+                        format: "Part %02d"
+                        labels: { 0: "None", 255: "Max" }
+                    - field: colors.r.R0
+                fields: {}
+            "#;
+
+            test_schema!(yaml, |schema: Schema| {
+                let groups = &schema.analysis.group_by;
+                assert_eq!(groups.len(), 2);
+
+                let first = &groups[0];
+                assert_eq!(first.field, "partition");
+                assert_eq!(first.description, "Partition grouping");
+                assert_eq!(first.display.format, "Part %02d");
+                assert_eq!(first.display.labels["0"], "None");
+                assert_eq!(first.display.labels["255"], "Max");
+
+                let second = &groups[1];
+                assert!(second.display.format.is_empty());
+                assert!(second.display.labels.is_empty());
+            });
+        }
+    }
+
+    // Fields Section Tests
+    mod fields_tests {
+        use super::*;
+
+        #[test]
+        fn test_basic_field() {
+            let yaml = r#"
+                version: '1.0'
+                metadata: { name: Test }
+                fields:
+                  mode:
+                    bits: [0, 0]
+                    description: Mode bit
+                    bit_order: lsb
+            "#;
+
+            test_schema!(yaml, |schema: Schema| {
+                let field = match &schema.fields["mode"] {
+                    FieldDefinition::Basic(b) => b,
+                    _ => panic!("Expected basic field"),
+                };
+                assert_eq!(field.bits, (0, 0));
+                assert_eq!(field.description, "Mode bit");
+                assert_eq!(field.bit_order, BitOrder::Lsb);
+            });
+        }
+
+        #[test]
+        fn test_nested_group() {
+            let yaml = r#"
+                version: '1.0'
+                metadata: { name: Test }
+                fields:
+                  colors:
+                    type: group
+                    bits: [5, 28]
+                    fields:
+                      r:
+                        type: group
+                        components:
+                          R0: [5, 8]
+            "#;
+
+            test_schema!(yaml, |schema: Schema| {
+                let colors = match &schema.fields["colors"] {
+                    FieldDefinition::Group(g) => g,
+                    _ => panic!("Expected group"),
+                };
+                assert_eq!(colors.bits, (5, 28));
+
+                let r = match &colors.fields["r"] {
+                    FieldDefinition::Group(g) => g,
+                    _ => panic!("Expected subgroup"),
+                };
+                assert_eq!(r.components["R0"], (5, 8));
+            });
+        }
+
+        #[test]
+        fn test_flat_group() {
+            let yaml = r#"
+                version: '1.0'
+                metadata: { name: Test }
+                fields:
+                  p_bits:
+                    type: group
+                    components:
+                      P0: [77, 77]
+                      P1: [78, 78]
+            "#;
+
+            test_schema!(yaml, |schema: Schema| {
+                let pbits = match &schema.fields["p_bits"] {
+                    FieldDefinition::Group(g) => g,
+                    _ => panic!("Expected group"),
+                };
+                assert_eq!(pbits.components["P0"], (77, 77));
+                assert_eq!(pbits.components["P1"], (78, 78));
+            });
+        }
+    }
+
+    // Full File Test (Complete Example from Documentation)
+    #[test]
+    fn test_full_schema_example() {
+        let yaml = r#"
+            version: '1.0'
+            metadata:
+              name: BC1 Mode0 Block
+              description: Analysis schema for Mode0 packed color structure
+
+            analysis:
+              group_by:
+                - field: partition
+                  description: Results grouped by partition value
+                  display:
+                    format: "Partition %d"
+
+            fields:
+              mode:
+                bits: [0, 0]
+                description: Mode bit
+
+              partition:
+                bits: [1, 4]
+                bit_order: lsb
+
+              colors:
+                type: group
+                description: All color components
+                fields:
+                  r:
+                    type: group
+                    bits: [5, 28]
+                    components:
+                      R0: [5, 8]
+                      R1: [9, 12]
+
+              p_bits:
+                type: group
+                bits: [77, 82]
+                components:
+                  P0: [77, 77]
+                  P1: [78, 78]
+        "#;
+
+        test_schema!(yaml, |schema: Schema| {
+            // Verify metadata
+            assert_eq!(schema.metadata.name, "BC1 Mode0 Block");
+            assert_eq!(
+                schema.metadata.description,
+                "Analysis schema for Mode0 packed color structure"
+            );
+
+            // Verify analysis config
+            assert_eq!(schema.analysis.group_by[0].field, "partition");
+            assert_eq!(schema.analysis.group_by[0].display.format, "Partition %d");
+
+            // Verify fields
+            let mode = match &schema.fields["mode"] {
+                FieldDefinition::Basic(b) => b,
+                _ => panic!("Expected basic field"),
+            };
+            assert_eq!(mode.bits, (0, 0));
+
+            let colors = match &schema.fields["colors"] {
+                FieldDefinition::Group(g) => g,
+                _ => panic!("Expected group"),
+            };
+            assert_eq!(colors.description, "All color components");
+
+            let pbits = match &schema.fields["p_bits"] {
+                FieldDefinition::Group(g) => g,
+                _ => panic!("Expected group"),
+            };
+            assert_eq!(pbits.bits, (77, 82));
+        });
+    }
+
+    // Error Handling Tests
+    mod error_tests {
+        use super::*;
+
+        #[test]
+        fn test_invalid_group_type() {
+            let yaml = r#"
+                version: '1.0'
+                metadata: { name: Test }
+                fields:
+                  invalid:
+                    type: invalid
+                    bits: [0, 0]
+            "#;
+
+            assert!(Schema::from_yaml(yaml).is_err());
+        }
+
+        #[test]
+        fn test_missing_required_fields() {
+            let yaml = r#"
+                version: '1.0'
+                metadata: { name: Test }
+            "#;
+
+            assert!(Schema::from_yaml(yaml).is_err());
+        }
+
+        #[test]
+        fn test_file_loading() -> Result<(), SchemaError> {
+            let temp_file = std::env::temp_dir().join("test_schema.yaml");
+            std::fs::write(&temp_file, include_str!("../../../format-schema.md"))?;
+
+            let result = Schema::load_from_file(&temp_file);
+            std::fs::remove_file(temp_file)?;
+            assert!(result.is_ok());
+            Ok(())
+        }
+    }
+
+    // Edge Case Tests
+    mod edge_cases {
+        use super::*;
+
+        #[test]
+        fn test_minimal_valid_schema() {
+            let yaml = r#"
+                version: '1.0'
+                metadata: { name: Minimal }
+                fields: {}
+            "#;
+            assert!(Schema::from_yaml(yaml).is_ok());
+        }
+
+        #[test]
+        fn test_empty_group() {
+            let yaml = r#"
+                version: '1.0'
+                metadata: { name: Test }
+                fields:
+                  empty_group:
+                    type: group
+            "#;
+            assert!(Schema::from_yaml(yaml).is_err());
+        }
+    }
+}
+
 impl Schema {
     pub fn from_yaml(content: &str) -> Result<Self, SchemaError> {
         let schema: Schema = serde_yaml::from_str(content)?;
@@ -213,15 +545,3 @@ impl Schema {
         Self::from_yaml(&content)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::collections::HashMap;
-
-    macro_rules! test_schema {
-        ($yaml:expr, $test_fn:expr) => {
-            let schema = Schema::from_yaml($yaml).unwrap();
-            $test_fn(schema);
-        };
-    }
