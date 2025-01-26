@@ -1,3 +1,5 @@
+use crate::schema::FieldDefinition;
+
 use super::schema::{Group, Schema};
 use std::collections::HashMap;
 
@@ -10,21 +12,33 @@ use std::collections::HashMap;
 pub struct SchemaAnalyzer<'a> {
     /// Schema definition tree
     schema: &'a Schema,
-    /// Raw binary entries stored in big-endian byte order
-    entries: Vec<Vec<u8>>,
+    /// Raw data as fed into the analyzer.
+    entries: Vec<u8>,
     /// Intermediate analysis state (field name → statistics)
-    field_stats: HashMap<String, FieldStats>,
+    /// This supports both 'groups' and fields.
+    field_stats: Vec<FieldStats>,
 }
 
-/// Intermediate statistics for a single field
+/// Intermediate statistics for a single field or group of fields
 #[derive(Default)]
 struct FieldStats {
+    /// Name of the field or group
+    name: String,
     /// Total number of observed values
     count: u64,
-    /// Bit-level statistics (position → (zeros, ones))
-    bit_counts: Vec<(u64, u64)>,
-    /// Observed value frequencies
-    value_counts: HashMap<u64, u64>,
+    /// Length of the field or group in bits.
+    lenbits: u32,
+    /// All of the data that fits under this field/group of fields. For entropy / match / frequency calculations.
+    data: Vec<u8>,
+    /// Bit-level statistics. Index of tuple is bit offset.
+    /// Value is
+    bit_counts: Vec<BitStats>,
+}
+
+#[derive(Default)]
+struct BitStats {
+    pub zeros: u64,
+    pub ones: u64,
 }
 
 impl<'a> SchemaAnalyzer<'a> {
@@ -41,7 +55,7 @@ impl<'a> SchemaAnalyzer<'a> {
         Self {
             schema,
             entries: Vec::new(),
-            field_stats,
+            field_stats: Vec::new(),
         }
     }
 
@@ -54,8 +68,20 @@ impl<'a> SchemaAnalyzer<'a> {
     /// - Byte order is assumed to be big-endian
     /// - Partial entries will be handled in future implementations
     pub fn add_entry(&mut self, entry: &[u8]) {
-        self.entries.push(entry.to_vec());
-        // TODO: Process entry and update field_stats
+        // Extend the total data state.
+        self.entries.extend_from_slice(entry);
+        for field in self.schema.root.fields.values() {}
+    }
+
+    fn process_field(&mut self, path: &str, field: &FieldDefinition) {
+        match field {
+            FieldDefinition::Field(field) => {}
+            FieldDefinition::Group(group) => {
+                for nested_field in group.fields.values() {
+                    self.process_field(path, nested_field);
+                }
+            }
+        }
     }
 
     /// Generates final analysis results
@@ -104,8 +130,9 @@ fn initialize_group_stats(
 ) {
     for (name, field_def) in &group.fields {
         let path = format!("{}{}", parent_path, name);
-
+        /*
         match field_def {
+
             super::schema::FieldDefinition::Field(field) => {
                 stats.insert(
                     path,
@@ -121,5 +148,6 @@ fn initialize_group_stats(
                 initialize_group_stats(subgroup, subgroup_path, stats);
             }
         }
+        */
     }
 }
