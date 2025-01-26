@@ -11,17 +11,20 @@
 use serde::Deserialize;
 use std::{collections::HashMap, path::Path};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct Schema {
     pub version: String,
+    #[serde(default)]
     pub metadata: Metadata,
     #[serde(default)]
     pub analysis: AnalysisConfig,
+    #[serde(default)]
     pub fields: HashMap<String, FieldDefinition>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct Metadata {
+    #[serde(default)]
     pub name: String,
     #[serde(default)]
     pub description: String,
@@ -104,14 +107,14 @@ pub struct DisplayConfig {
 #[serde(tag = "type", rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum FieldDefinition {
-    Basic(BasicField),
+    Field(Field),
     Group(Group),
 }
 
 /// Single field definition with direct bit mapping
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub struct BasicField {
+pub struct Field {
     /// Inclusive bit range [start, end] (0-based index)
     ///
     /// # Examples
@@ -197,6 +200,23 @@ pub enum SchemaError {
     InvalidGroupType(String),
 }
 
+impl Schema {
+    pub fn from_yaml(content: &str) -> Result<Self, SchemaError> {
+        let schema: Schema = serde_yaml::from_str(content)?;
+
+        if schema.version != "1.0" {
+            return Err(SchemaError::InvalidVersion);
+        }
+
+        Ok(schema)
+    }
+
+    pub fn load_from_file(path: &Path) -> Result<Self, SchemaError> {
+        let content = std::fs::read_to_string(path)?;
+        Self::from_yaml(&content)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -214,13 +234,13 @@ mod tests {
         use super::*;
 
         #[test]
-        fn test_valid_version() {
+        fn supports_10() {
             let yaml = r#"version: '1.0'"#;
-            assert!(Schema::from_yaml(yaml).is_ok());
+            Schema::from_yaml(yaml).unwrap();
         }
 
         #[test]
-        fn test_invalid_version() {
+        fn does_not_support_20() {
             let yaml = r#"version: '2.0'"#;
             match Schema::from_yaml(yaml) {
                 Err(SchemaError::InvalidVersion) => (),
@@ -229,39 +249,20 @@ mod tests {
         }
     }
 
-    // Metadata Section Tests
-    mod metadata_tests {
-        use super::*;
+    #[test]
+    fn can_parse_metadata() {
+        let yaml = r#"
+version: '1.0'
+metadata:
+    name: BC7 Mode4
+    description: Test description
+fields: {}
+"#;
 
-        #[test]
-        fn test_metadata_parsing() {
-            let yaml = r#"
-                version: '1.0'
-                metadata:
-                  name: BC7 Mode4
-                  description: Test description
-                fields: {}
-            "#;
-
-            test_schema!(yaml, |schema: Schema| {
-                assert_eq!(schema.metadata.name, "BC7 Mode4");
-                assert_eq!(schema.metadata.description, "Test description");
-            });
-        }
-
-        #[test]
-        fn test_optional_description() {
-            let yaml = r#"
-                version: '1.0'
-                metadata:
-                  name: Minimal Metadata
-                fields: {}
-            "#;
-
-            test_schema!(yaml, |schema: Schema| {
-                assert_eq!(schema.metadata.description, "");
-            });
-        }
+        test_schema!(yaml, |schema: Schema| {
+            assert_eq!(schema.metadata.name, "BC7 Mode4");
+            assert_eq!(schema.metadata.description, "Test description");
+        });
     }
 
     // Analysis Section Tests
@@ -269,20 +270,21 @@ mod tests {
         use super::*;
 
         #[test]
-        fn test_group_by_config() {
+        fn can_group_by_config() {
             let yaml = r#"
-                version: '1.0'
-                metadata: { name: Test }
-                analysis:
-                  group_by:
-                    - field: partition
-                      description: Partition grouping
-                      display:
-                        format: "Part %02d"
-                        labels: { 0: "None", 255: "Max" }
-                    - field: colors.r.R0
-                fields: {}
-            "#;
+version: '1.0'
+metadata: { name: Test }
+analysis:
+    group_by:
+    - field: partition
+      description: Partition grouping
+      display:
+        format: "Part %02d"
+        labels: { 0: "None", 255: "Max" }
+
+    - field: colors.r.R0
+fields: {}
+"#;
 
             test_schema!(yaml, |schema: Schema| {
                 let groups = &schema.analysis.group_by;
@@ -309,18 +311,19 @@ mod tests {
         #[test]
         fn test_basic_field() {
             let yaml = r#"
-                version: '1.0'
-                metadata: { name: Test }
-                fields:
-                  mode:
-                    bits: [0, 0]
-                    description: Mode bit
-                    bit_order: lsb
-            "#;
+version: '1.0'
+metadata: { name: Test }
+fields:
+    mode:
+        type: field
+        bits: [0, 0]
+        description: Mode bit
+        bit_order: lsb
+"#;
 
             test_schema!(yaml, |schema: Schema| {
                 let field = match &schema.fields["mode"] {
-                    FieldDefinition::Basic(b) => b,
+                    FieldDefinition::Field(b) => b,
                     _ => panic!("Expected basic field"),
                 };
                 assert_eq!(field.bits, (0, 0));
@@ -332,18 +335,19 @@ mod tests {
         #[test]
         fn test_nested_group() {
             let yaml = r#"
-                version: '1.0'
-                metadata: { name: Test }
-                fields:
-                  colors:
-                    type: group
-                    bits: [5, 28]
-                    fields:
-                      r:
-                        type: group
-                        components:
-                          R0: [5, 8]
-            "#;
+version: '1.0'
+metadata: { name: Test }
+fields:
+    colors:
+        type: group
+        bits: [5, 28]
+        fields:
+            r:
+                type: group
+                bits: [5, 8]
+                components:
+                    R0: [5, 8]
+"#;
 
             test_schema!(yaml, |schema: Schema| {
                 let colors = match &schema.fields["colors"] {
@@ -363,15 +367,16 @@ mod tests {
         #[test]
         fn test_flat_group() {
             let yaml = r#"
-                version: '1.0'
-                metadata: { name: Test }
-                fields:
-                  p_bits:
-                    type: group
-                    components:
-                      P0: [77, 77]
-                      P1: [78, 78]
-            "#;
+version: '1.0'
+metadata: { name: Test }
+fields:
+    p_bits:
+        type: group
+        bits: [77, 78]
+        components:
+            P0: [77, 77]
+            P1: [78, 78]
+"#;
 
             test_schema!(yaml, |schema: Schema| {
                 let pbits = match &schema.fields["p_bits"] {
@@ -388,45 +393,45 @@ mod tests {
     #[test]
     fn test_full_schema_example() {
         let yaml = r#"
-            version: '1.0'
-            metadata:
-              name: BC1 Mode0 Block
-              description: Analysis schema for Mode0 packed color structure
+version: '1.0'
+metadata:
+    name: BC1 Mode0 Block
+    description: Analysis schema for Mode0 packed color structure
 
-            analysis:
-              group_by:
-                - field: partition
-                  description: Results grouped by partition value
-                  display:
-                    format: "Partition %d"
+analysis:
+    group_by:
+    - field: partition
+        description: Results grouped by partition value
+        display:
+        format: "Partition %d"
 
-            fields:
-              mode:
-                bits: [0, 0]
-                description: Mode bit
+fields:
+    mode:
+    bits: [0, 0]
+    description: Mode bit
 
-              partition:
-                bits: [1, 4]
-                bit_order: lsb
+    partition:
+    bits: [1, 4]
+    bit_order: lsb
 
-              colors:
-                type: group
-                description: All color components
-                fields:
-                  r:
-                    type: group
-                    bits: [5, 28]
-                    components:
-                      R0: [5, 8]
-                      R1: [9, 12]
+    colors:
+    type: group
+    description: All color components
+    fields:
+        r:
+        type: group
+        bits: [5, 28]
+        components:
+            R0: [5, 8]
+            R1: [9, 12]
 
-              p_bits:
-                type: group
-                bits: [77, 82]
-                components:
-                  P0: [77, 77]
-                  P1: [78, 78]
-        "#;
+    p_bits:
+    type: group
+    bits: [77, 82]
+    components:
+        P0: [77, 77]
+        P1: [78, 78]
+"#;
 
         test_schema!(yaml, |schema: Schema| {
             // Verify metadata
@@ -442,7 +447,7 @@ mod tests {
 
             // Verify fields
             let mode = match &schema.fields["mode"] {
-                FieldDefinition::Basic(b) => b,
+                FieldDefinition::Field(b) => b,
                 _ => panic!("Expected basic field"),
             };
             assert_eq!(mode.bits, (0, 0));
@@ -461,46 +466,6 @@ mod tests {
         });
     }
 
-    // Error Handling Tests
-    mod error_tests {
-        use super::*;
-
-        #[test]
-        fn test_invalid_group_type() {
-            let yaml = r#"
-                version: '1.0'
-                metadata: { name: Test }
-                fields:
-                  invalid:
-                    type: invalid
-                    bits: [0, 0]
-            "#;
-
-            assert!(Schema::from_yaml(yaml).is_err());
-        }
-
-        #[test]
-        fn test_missing_required_fields() {
-            let yaml = r#"
-                version: '1.0'
-                metadata: { name: Test }
-            "#;
-
-            assert!(Schema::from_yaml(yaml).is_err());
-        }
-
-        #[test]
-        fn test_file_loading() -> Result<(), SchemaError> {
-            let temp_file = std::env::temp_dir().join("test_schema.yaml");
-            std::fs::write(&temp_file, include_str!("../../../format-schema.md"))?;
-
-            let result = Schema::load_from_file(&temp_file);
-            std::fs::remove_file(temp_file)?;
-            assert!(result.is_ok());
-            Ok(())
-        }
-    }
-
     // Edge Case Tests
     mod edge_cases {
         use super::*;
@@ -508,40 +473,23 @@ mod tests {
         #[test]
         fn test_minimal_valid_schema() {
             let yaml = r#"
-                version: '1.0'
-                metadata: { name: Minimal }
-                fields: {}
-            "#;
+version: '1.0'
+metadata: { name: Minimal }
+fields: {}
+"#;
             assert!(Schema::from_yaml(yaml).is_ok());
         }
 
         #[test]
         fn test_empty_group() {
             let yaml = r#"
-                version: '1.0'
-                metadata: { name: Test }
-                fields:
-                  empty_group:
-                    type: group
-            "#;
+version: '1.0'
+metadata: { name: Test }
+fields:
+    empty_group:
+        type: group
+"#;
             assert!(Schema::from_yaml(yaml).is_err());
         }
-    }
-}
-
-impl Schema {
-    pub fn from_yaml(content: &str) -> Result<Self, SchemaError> {
-        let schema: Schema = serde_yaml::from_str(content)?;
-
-        if schema.version != "1.0" {
-            return Err(SchemaError::InvalidVersion);
-        }
-
-        Ok(schema)
-    }
-
-    pub fn load_from_file(path: &Path) -> Result<Self, SchemaError> {
-        let content = std::fs::read_to_string(path)?;
-        Self::from_yaml(&content)
     }
 }

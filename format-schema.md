@@ -92,10 +92,10 @@ group_name:
   type: group
   bits: [start, end]  # Total range for all components
   description: text   # Optional group description
-  fields:            # For nested groups
+  fields:             # For nested groups
     subfield1: ...
     subfield2: ...
-  components:        # For flat groups
+  components:         # For flat groups
     comp1: [start, end]
     comp2: [start, end]
 ```
@@ -203,11 +203,13 @@ analysis:
 fields:
   # Basic fields
   mode:
+    type: field
     bits: [0, 0]  # Single bit field
     description: Mode bit
     bit_order: msb  # Default ordering (could be omitted)
 
   partition:
+    type: field
     bits: [1, 4]  # 4-bit field
     description: Partition value
     bit_order: lsb  # Interpret bits in reverse order
