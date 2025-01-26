@@ -37,7 +37,7 @@ struct FieldStats {
     bit_counts: Vec<BitStats>,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
 struct BitStats {
     pub zeros: u64,
     pub ones: u64,
@@ -56,7 +56,7 @@ impl<'a> SchemaAnalyzer<'a> {
         Self {
             schema,
             entries: Vec::new(),
-            field_stats: Vec::new(),
+            field_stats: build_field_stats(&schema.root, "", 0),
         }
     }
 
@@ -74,12 +74,15 @@ impl<'a> SchemaAnalyzer<'a> {
         for field in self.schema.root.fields.values() {}
     }
 
-    fn process_field(&mut self, path: &str, field: &FieldDefinition) {
+    fn process_field(&mut self, parent_path: &str, field: &FieldDefinition) {
         match field {
-            FieldDefinition::Field(field) => {}
+            FieldDefinition::Field(field) => {
+                // Field processing logic will be added here
+            }
             FieldDefinition::Group(group) => {
-                for nested_field in group.fields.values() {
-                    self.process_field(path, nested_field);
+                for (name, nested_field) in &group.fields {
+                    let path = format!("{}.{}", parent_path, name);
+                    self.process_field(&path, nested_field);
                 }
             }
         }
@@ -98,6 +101,48 @@ impl<'a> SchemaAnalyzer<'a> {
             per_field: HashMap::new(),
         }
     }
+}
+
+/// Recursively builds field statistics structures from schema definition
+fn build_field_stats(group: &Group, parent_path: &str, depth: usize) -> Vec<FieldStats> {
+    let mut stats = Vec::new();
+
+    for (name, field) in &group.fields {
+        let path = if parent_path.is_empty() {
+            name.clone()
+        } else {
+            format!("{}.{}", parent_path, name)
+        };
+
+        match field {
+            FieldDefinition::Field(field) => {
+                stats.push(FieldStats {
+                    name: path,
+                    depth,
+                    lenbits: field.bits,
+                    count: 0,
+                    data: Vec::new(),
+                    bit_counts: vec![BitStats::default(); field.bits as usize],
+                });
+            }
+            FieldDefinition::Group(group) => {
+                // Add stats entry for the group itself
+                stats.push(FieldStats {
+                    name: path.clone(),
+                    depth,
+                    lenbits: group.bits,
+                    count: 0,
+                    data: Vec::new(),
+                    bit_counts: Vec::new(),
+                });
+
+                // Process nested fields
+                stats.extend(build_field_stats(group, &path, depth + 1));
+            }
+        }
+    }
+
+    stats
 }
 
 /// Final computed metrics for output
