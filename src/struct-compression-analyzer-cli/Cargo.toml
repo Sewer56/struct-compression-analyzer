@@ -1,0 +1,11 @@
+[package]
+name = "struct-compression-analyzer-cli"
+version = "0.1.0"
+edition = "2021"
+description = "CLI for struct-compression-analyzer"
+repository = "https://github.com/Sewer56/struct-compression-analyzer"
+license-file = "../LICENSE"
+readme = "../README.MD"
+
+[dependencies]
+struct-compression-analyzer = { path = "../struct-compression-analyzer" }
