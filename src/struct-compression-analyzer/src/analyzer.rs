@@ -24,6 +24,8 @@ pub struct SchemaAnalyzer<'a> {
 struct FieldStats {
     /// Name of the field or group
     name: String,
+    /// Name of the full path to the field or group
+    full_path: String,
     /// The depth of the field in the group/field chain.
     depth: usize,
     /// Total number of observed values
@@ -117,23 +119,25 @@ fn build_field_stats(group: &Group, parent_path: &str, depth: usize) -> Vec<Fiel
         match field {
             FieldDefinition::Field(field) => {
                 stats.push(FieldStats {
-                    name: path,
+                    full_path: path,
                     depth,
                     lenbits: field.bits,
                     count: 0,
                     data: Vec::new(),
                     bit_counts: vec![BitStats::default(); field.bits as usize],
+                    name: name.clone(),
                 });
             }
             FieldDefinition::Group(group) => {
                 // Add stats entry for the group itself
                 stats.push(FieldStats {
-                    name: path.clone(),
+                    full_path: path.clone(),
                     depth,
                     lenbits: group.bits,
                     count: 0,
                     data: Vec::new(),
-                    bit_counts: Vec::new(),
+                    bit_counts: vec![BitStats::default(); group.bits as usize],
+                    name: name.clone(),
                 });
 
                 // Process nested fields
@@ -159,4 +163,79 @@ pub struct FieldMetrics {
     pub bit_distribution: Vec<(f64, f64)>,
     /// Value → occurrence count
     pub value_counts: HashMap<u64, u64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::schema::Schema;
+
+    fn create_test_schema() -> Schema {
+        let yaml = r###"
+version: '1.0'
+root:
+  type: group
+  fields:
+    id:
+      type: field
+      bits: 32
+      description: "ID field"
+    nested:
+      type: group
+      fields:
+        value:
+          type: field
+          bits: 8
+          description: "Nested value"
+        "###;
+
+        Schema::from_yaml(yaml).expect("Failed to parse test schema")
+    }
+
+    #[test]
+    fn test_analyzer_initialization() {
+        let schema = create_test_schema();
+        let analyzer = SchemaAnalyzer::new(&schema);
+
+        // Should collect stats for all fields and groups
+        assert_eq!(
+            analyzer.field_stats.len(),
+            3,
+            "Should have stats for root group + 2 fields"
+        );
+    }
+
+    #[test]
+    fn test_field_stats_structure() {
+        let schema = create_test_schema();
+        let analyzer = SchemaAnalyzer::new(&schema);
+
+        // Verify field hierarchy and properties
+        let root_group = &analyzer.field_stats[0];
+        assert_eq!(root_group.name, "id");
+        assert_eq!(root_group.full_path, "id");
+        assert_eq!(root_group.depth, 0);
+        assert_eq!(root_group.count, 0);
+        assert_eq!(root_group.lenbits, 32);
+        assert!(root_group.data.is_empty());
+        assert_eq!(root_group.bit_counts.len(), root_group.lenbits as usize);
+
+        let id_field = &analyzer.field_stats[1];
+        assert_eq!(id_field.full_path, "nested");
+        assert_eq!(id_field.name, "nested");
+        assert_eq!(id_field.depth, 0);
+        assert_eq!(id_field.count, 0);
+        assert_eq!(id_field.lenbits, 8);
+        assert!(id_field.data.is_empty());
+        assert_eq!(id_field.bit_counts.len(), id_field.lenbits as usize);
+
+        let nested_value = &analyzer.field_stats[2];
+        assert_eq!(nested_value.full_path, "nested.value");
+        assert_eq!(nested_value.name, "value");
+        assert_eq!(nested_value.depth, 1);
+        assert_eq!(nested_value.count, 0);
+        assert_eq!(nested_value.lenbits, 8);
+        assert!(nested_value.data.is_empty());
+        assert_eq!(nested_value.bit_counts.len(), nested_value.lenbits as usize);
+    }
 }
