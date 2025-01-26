@@ -35,13 +35,18 @@ struct FieldStats {
     /// All of the data that fits under this field/group of fields. For entropy / match / frequency calculations.
     data: Vec<u8>,
     /// Bit-level statistics. Index of tuple is bit offset.
-    /// Value is
     bit_counts: Vec<BitStats>,
 }
 
+/// Tracks statistics about individual bits in a field
+///
+/// Maintains counts of zero and one values observed at each bit position
+/// to support entropy calculations and bit distribution analysis.
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
 struct BitStats {
+    /// Count of zero values observed at this bit position
     pub zeros: u64,
+    /// Count of one values observed at this bit position
     pub ones: u64,
 }
 
@@ -73,21 +78,6 @@ impl<'a> SchemaAnalyzer<'a> {
     pub fn add_entry(&mut self, entry: &[u8]) {
         // Extend the total data state.
         self.entries.extend_from_slice(entry);
-        for field in self.schema.root.fields.values() {}
-    }
-
-    fn process_field(&mut self, parent_path: &str, field: &FieldDefinition) {
-        match field {
-            FieldDefinition::Field(field) => {
-                // Field processing logic will be added here
-            }
-            FieldDefinition::Group(group) => {
-                for (name, nested_field) in &group.fields {
-                    let path = format!("{}.{}", parent_path, name);
-                    self.process_field(&path, nested_field);
-                }
-            }
-        }
     }
 
     /// Generates final analysis results
