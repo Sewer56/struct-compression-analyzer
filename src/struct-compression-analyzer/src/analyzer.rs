@@ -84,22 +84,11 @@ impl<'a> SchemaAnalyzer<'a> {
     pub fn add_entry(&mut self, entry: &[u8]) {
         self.entries.extend_from_slice(entry);
         let mut reader = BitReader::endian(entry, BigEndian);
-        self.process_group(&self.schema.root, "", &mut reader);
+        self.process_group(&self.schema.root, &mut reader);
     }
 
-    fn process_group(
-        &mut self,
-        group: &Group,
-        parent_path: &str,
-        reader: &mut BitReader<&[u8], BigEndian>,
-    ) {
+    fn process_group(&mut self, group: &Group, reader: &mut BitReader<&[u8], BigEndian>) {
         for (name, field_def) in &group.fields {
-            let full_path = if parent_path.is_empty() {
-                name.clone()
-            } else {
-                format!("{}.{}", parent_path, name)
-            };
-
             match field_def {
                 FieldDefinition::Field(field) => {
                     let bits_left = field.bits;
@@ -120,7 +109,7 @@ impl<'a> SchemaAnalyzer<'a> {
                     process_field_or_group(reader, bits_left, field_stats);
 
                     // Process nested fields
-                    self.process_group(child_group, &full_path, reader);
+                    self.process_group(child_group, reader);
                 }
             }
         }
@@ -177,6 +166,12 @@ fn process_field_or_group<'a>(
         }
 
         bits_left -= max_bits;
+    }
+
+    // Flush any remaining bits to ensure all data is written
+    match writer {
+        BitWriterContainer::Msb(writer) => writer.flush().unwrap(),
+        BitWriterContainer::Lsb(writer) => writer.flush().unwrap(),
     }
 }
 
@@ -299,6 +294,68 @@ root:
             3,
             "Should have stats for root group + 2 fields"
         );
+    }
+
+    #[test]
+    fn test_big_endian_bitorder() {
+        let yaml = r###"
+version: '1.0'
+root:
+  type: group
+  fields:
+    flags:
+      type: field
+      bits: 2
+      bit_order: msb
+"###;
+        let schema = Schema::from_yaml(yaml).expect("Failed to parse test schema");
+        let mut analyzer = SchemaAnalyzer::new(&schema);
+
+        // Add 4 entries (2 bits each) to make exactly 1 byte (8 bits)
+        // Values: 0b11, 0b00, 0b10, 0b01 → combined as 0b11001001 (0xC9)
+        analyzer.add_entry(&[0b11000000]); // 0b11 in first 2 bits
+        analyzer.add_entry(&[0b00000000]); // 0b00
+        analyzer.add_entry(&[0b10000000]); // 0b10
+        analyzer.add_entry(&[0b01000000]); // 0b01
+
+        let flags_field = analyzer
+            .field_stats
+            .iter_mut()
+            .find(|s| s.name == "flags")
+            .unwrap();
+
+        assert_eq!(flags_field.count, 4, "Should process 4 entries");
+        assert_eq!(
+            flags_field.bit_counts.len(),
+            2,
+            "Should track 2 bits per field"
+        );
+
+        // Check writer accumulated correct bits
+        match &mut flags_field.writer {
+            BitWriterContainer::Msb(writer) => {
+                // Get a reference to the writer's underlying buffer without moving ownership
+                writer.flush().unwrap();
+                let inner_writer = writer.writer().unwrap();
+                let data = inner_writer.get_ref();
+                assert_eq!(*data, vec![0xC9_u8], "Combined bits should form 0xC9");
+            }
+            _ => panic!("Expected MSB bit writer"),
+        }
+
+        // Check bit counts (each bit position should have 2 zeros and 2 ones)
+        for (x, stats) in flags_field.bit_counts.iter().enumerate() {
+            assert_eq!(
+                stats.zeros, 2,
+                "Bit {} should have 2 zeros (actual: {})",
+                x, stats.zeros
+            );
+            assert_eq!(
+                stats.ones, 2,
+                "Bit {} should have 2 ones (actual: {})",
+                x, stats.ones
+            );
+        }
     }
 
     #[test]

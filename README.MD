@@ -40,6 +40,12 @@ Analyzes the bit distribution and compression statistics of arrays of packed str
 - Print bit distribution (1/0) for every bit
 - Print distribution statistics grouped by field value
 
+## Known Limitations
+
+Will fix when suitable. I don't need those features for now.
+
+- Structs have to be byte aligned.
+
 ## Development
 
 For information on how to work with this codebase, see [README-DEV.MD](README-DEV.MD).
