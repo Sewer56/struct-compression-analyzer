@@ -1,7 +1,7 @@
-use crate::schema::{BitOrder, FieldDefinition};
-
 use super::schema::{Group, Schema};
-use std::collections::HashMap;
+use crate::schema::{BitOrder, FieldDefinition};
+use bitstream_io::{BigEndian, BitRead, BitReader, BitWrite, BitWriter, Endianness, LittleEndian};
+use std::{collections::HashMap, io::Cursor};
 
 /// Analyzes binary structures against a schema definition
 ///
@@ -20,7 +20,6 @@ pub struct SchemaAnalyzer<'a> {
 }
 
 /// Intermediate statistics for a single field or group of fields
-#[derive(Default)]
 struct FieldStats {
     /// Name of the field or group
     name: String,
@@ -32,8 +31,8 @@ struct FieldStats {
     count: u64,
     /// Length of the field or group in bits.
     lenbits: u32,
-    /// All of the data that fits under this field/group of fields. For entropy / match / frequency calculations.
-    data: Vec<u8>,
+    /// Bitstream writer for accumulating data in the correct bit order
+    writer: BitWriterContainer,
     /// Bit-level statistics. Index of tuple is bit offset.
     bit_counts: Vec<BitStats>,
     /// The order of the bits within the field
@@ -44,7 +43,12 @@ struct FieldStats {
 ///
 /// Maintains counts of zero and one values observed at each bit position
 /// to support entropy calculations and bit distribution analysis.
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
+enum BitWriterContainer {
+    Msb(BitWriter<Cursor<Vec<u8>>, BigEndian>),
+    Lsb(BitWriter<Cursor<Vec<u8>>, LittleEndian>),
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct BitStats {
     /// Count of zero values observed at this bit position
     pub zeros: u64,
@@ -78,8 +82,48 @@ impl<'a> SchemaAnalyzer<'a> {
     /// - Byte order is assumed to be big-endian
     /// - Partial entries will be handled in future implementations
     pub fn add_entry(&mut self, entry: &[u8]) {
-        // Extend the total data state.
         self.entries.extend_from_slice(entry);
+        let mut reader = BitReader::endian(entry, BigEndian);
+        self.process_group(&self.schema.root, "", &mut reader);
+    }
+
+    fn process_group(
+        &mut self,
+        group: &Group,
+        parent_path: &str,
+        reader: &mut BitReader<&[u8], BigEndian>,
+    ) {
+        for (name, field_def) in &group.fields {
+            let full_path = if parent_path.is_empty() {
+                name.clone()
+            } else {
+                format!("{}.{}", parent_path, name)
+            };
+
+            match field_def {
+                FieldDefinition::Field(field) => {
+                    let bits_left = field.bits;
+                    let field_stats = self
+                        .field_stats
+                        .iter_mut()
+                        .find(|s| s.name == *name)
+                        .unwrap(); // exists by definition
+                    process_field_or_group(reader, bits_left, field_stats);
+                }
+                FieldDefinition::Group(child_group) => {
+                    let bits_left = child_group.bits;
+                    let field_stats = self
+                        .field_stats
+                        .iter_mut()
+                        .find(|s| s.name == *name)
+                        .unwrap(); // exists by definition
+                    process_field_or_group(reader, bits_left, field_stats);
+
+                    // Process nested fields
+                    self.process_group(child_group, &full_path, reader);
+                }
+            }
+        }
     }
 
     /// Generates final analysis results
@@ -97,8 +141,60 @@ impl<'a> SchemaAnalyzer<'a> {
     }
 }
 
+fn process_field_or_group<'a>(
+    reader: &mut BitReader<&[u8], BigEndian>,
+    mut bits_left: u32,
+    field_stats: &mut FieldStats,
+) {
+    let writer = &mut field_stats.writer;
+
+    // Update statistics
+    field_stats.count += 1;
+
+    while bits_left > 0 {
+        // Read max possible number of bits at once.
+        let max_bits = bits_left.min(64);
+        let bits = reader.read::<u64>(max_bits).unwrap();
+
+        // Write the values to the output
+        match writer {
+            BitWriterContainer::Msb(writer) => {
+                writer.write(max_bits, bits).unwrap();
+            }
+            BitWriterContainer::Lsb(writer) => {
+                writer.write(max_bits, bits).unwrap();
+            }
+        }
+
+        // Update stats for individual bits.
+        for i in 0..max_bits {
+            let bit_value = (bits >> (max_bits - 1 - i)) & 1;
+            if bit_value == 0 {
+                field_stats.bit_counts[i as usize].zeros += 1;
+            } else {
+                field_stats.bit_counts[i as usize].ones += 1;
+            }
+        }
+
+        bits_left -= max_bits;
+    }
+}
+
 /// Recursively builds field statistics structures from schema definition
-fn build_field_stats(group: &Group, parent_path: &str, depth: usize) -> Vec<FieldStats> {
+/// Creates a BitWriterContainer based on the specified bit order
+fn create_bit_writer(bit_order: BitOrder) -> BitWriterContainer {
+    match bit_order.get_with_default_resolve() {
+        BitOrder::Msb => {
+            BitWriterContainer::Msb(BitWriter::endian(Cursor::new(Vec::new()), BigEndian))
+        }
+        BitOrder::Lsb => {
+            BitWriterContainer::Lsb(BitWriter::endian(Cursor::new(Vec::new()), LittleEndian))
+        }
+        _ => unreachable!(),
+    }
+}
+
+fn build_field_stats<'a>(group: &'a Group, parent_path: &'a str, depth: usize) -> Vec<FieldStats> {
     let mut stats = Vec::new();
 
     for (name, field) in &group.fields {
@@ -110,25 +206,29 @@ fn build_field_stats(group: &Group, parent_path: &str, depth: usize) -> Vec<Fiel
 
         match field {
             FieldDefinition::Field(field) => {
+                let writer = create_bit_writer(field.bit_order);
+
                 stats.push(FieldStats {
                     full_path: path,
                     depth,
                     lenbits: field.bits,
                     count: 0,
-                    data: Vec::new(),
+                    writer,
                     bit_counts: vec![BitStats::default(); field.bits as usize],
                     name: name.clone(),
                     bit_order: field.bit_order.get_with_default_resolve(),
                 });
             }
             FieldDefinition::Group(group) => {
+                let writer = create_bit_writer(group.bit_order);
+
                 // Add stats entry for the group itself
                 stats.push(FieldStats {
                     full_path: path.clone(),
                     depth,
                     lenbits: group.bits,
                     count: 0,
-                    data: Vec::new(),
+                    writer,
                     bit_counts: vec![BitStats::default(); group.bits as usize],
                     name: name.clone(),
                     bit_order: group.bit_order.get_with_default_resolve(),
@@ -161,6 +261,7 @@ pub struct FieldMetrics {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     use crate::schema::Schema;
 
@@ -212,7 +313,7 @@ root:
         assert_eq!(root_group.depth, 0);
         assert_eq!(root_group.count, 0);
         assert_eq!(root_group.lenbits, 32);
-        assert!(root_group.data.is_empty());
+        assert!(matches!(root_group.writer, BitWriterContainer::Msb(_)));
         assert_eq!(root_group.bit_counts.len(), root_group.lenbits as usize);
         assert_eq!(root_group.bit_order, BitOrder::Msb);
 
@@ -222,7 +323,7 @@ root:
         assert_eq!(id_field.depth, 0);
         assert_eq!(id_field.count, 0);
         assert_eq!(id_field.lenbits, 8);
-        assert!(id_field.data.is_empty());
+        assert!(matches!(id_field.writer, BitWriterContainer::Lsb(_)));
         assert_eq!(id_field.bit_counts.len(), id_field.lenbits as usize);
         assert_eq!(id_field.bit_order, BitOrder::Lsb);
 
@@ -232,7 +333,7 @@ root:
         assert_eq!(nested_value.depth, 1);
         assert_eq!(nested_value.count, 0);
         assert_eq!(nested_value.lenbits, 8);
-        assert!(nested_value.data.is_empty());
+        assert!(matches!(nested_value.writer, BitWriterContainer::Lsb(_)));
         assert_eq!(nested_value.bit_counts.len(), nested_value.lenbits as usize);
         assert_eq!(nested_value.bit_order, BitOrder::Lsb); // inherited from parent
     }

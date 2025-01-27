@@ -270,7 +270,7 @@ impl<'de> Deserialize<'de> for Group {
 /// bit_order: msb  # Default, bits are read left-to-right
 /// bit_order: lsb  # Bits are read right-to-left
 /// ```
-#[derive(Debug, Deserialize, Default, PartialEq, Clone, Copy)]
+#[derive(Debug, Deserialize, Default, PartialEq, Eq, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum BitOrder {
     /// Not initialized. If not set down the road, defaults to [Msb](BitOrder::Msb)
