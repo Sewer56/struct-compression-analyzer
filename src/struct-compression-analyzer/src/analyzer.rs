@@ -147,7 +147,23 @@ fn process_field_or_group(
         let bits = reader.read::<u64>(max_bits).unwrap();
 
         // Update the value counts
-        *field_stats.value_counts.entry(bits).or_insert(0) += 1;
+        if field_stats.bit_order == BitOrder::Lsb {
+            // Reverse bits for lsb order
+            // You must you must reverse only bits up to a bit count specified in `max_bits`
+            let mut reversed_bits = 0u64;
+            for i in 0..max_bits {
+                if bits & (1 << i) != 0 {
+                    reversed_bits |= 1 << (max_bits - 1 - i);
+                }
+            }
+
+            field_stats.value_counts.insert(
+                reversed_bits,
+                field_stats.value_counts.get(&reversed_bits).unwrap_or(&0) + 1,
+            );
+        } else {
+            *field_stats.value_counts.entry(bits).or_insert(0) += 1;
+        }
 
         // Write the values to the output
         match writer {
