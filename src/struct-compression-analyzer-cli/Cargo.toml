@@ -9,3 +9,4 @@ readme = "../README.MD"
 
 [dependencies]
 struct-compression-analyzer = { path = "../struct-compression-analyzer" }
+argh = "0.1.13"

@@ -16,7 +16,7 @@ pub struct Schema {
     pub root: Group,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Clone, Debug, Deserialize, Default)]
 pub struct Metadata {
     #[serde(default)]
     pub name: String,

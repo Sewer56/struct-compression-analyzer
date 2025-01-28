@@ -1,5 +1,8 @@
 use super::schema::{Group, Schema};
-use crate::schema::{BitOrder, FieldDefinition};
+use crate::{
+    analysis_results::{compute_analysis_results, AnalysisResults},
+    schema::{BitOrder, FieldDefinition},
+};
 use bitstream_io::{BigEndian, BitRead, BitReader, BitWrite, BitWriter, LittleEndian};
 use std::{collections::HashMap, io::Cursor};
 
@@ -11,47 +14,54 @@ use std::{collections::HashMap, io::Cursor};
 /// - Intermediate analysis state
 pub struct SchemaAnalyzer<'a> {
     /// Schema definition tree
-    schema: &'a Schema,
+    pub schema: &'a Schema,
     /// Raw data as fed into the analyzer.
-    entries: Vec<u8>,
+    pub entries: Vec<u8>,
     /// Intermediate analysis state (field name → statistics)
     /// This supports both 'groups' and fields.
-    field_stats: Vec<FieldStats>,
+    pub field_stats: Vec<FieldStats>,
 }
 
 /// Intermediate statistics for a single field or group of fields
-struct FieldStats {
+pub struct FieldStats {
     /// Name of the field or group
-    name: String,
+    pub name: String,
     /// Name of the full path to the field or group
-    full_path: String,
+    pub full_path: String,
     /// The depth of the field in the group/field chain.
-    depth: usize,
+    pub depth: usize,
     /// Total number of observed values
-    count: u64,
+    pub count: u64,
     /// Length of the field or group in bits.
-    lenbits: u32,
+    pub lenbits: u32,
     /// Bitstream writer for accumulating data in the correct bit order
-    writer: BitWriterContainer,
+    pub writer: BitWriterContainer,
     /// Bit-level statistics. Index of tuple is bit offset.
-    bit_counts: Vec<BitStats>,
+    pub bit_counts: Vec<BitStats>,
     /// The order of the bits within the field
-    bit_order: BitOrder,
+    pub bit_order: BitOrder,
     /// Count of occurrences for each observed value
-    value_counts: HashMap<u64, u64>,
+    pub value_counts: HashMap<u64, u64>,
 }
 
 /// Tracks statistics about individual bits in a field
 ///
 /// Maintains counts of zero and one values observed at each bit position
 /// to support entropy calculations and bit distribution analysis.
-enum BitWriterContainer {
+pub enum BitWriterContainer {
     Msb(BitWriter<Cursor<Vec<u8>>, BigEndian>),
     Lsb(BitWriter<Cursor<Vec<u8>>, LittleEndian>),
 }
 
+pub fn get_writer_buffer(writer: &mut BitWriterContainer) -> &[u8] {
+    match writer {
+        BitWriterContainer::Msb(writer) => writer.writer().unwrap().get_ref(),
+        BitWriterContainer::Lsb(writer) => writer.writer().unwrap().get_ref(),
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-struct BitStats {
+pub struct BitStats {
     /// Count of zero values observed at this bit position
     pub zeros: u64,
     /// Count of one values observed at this bit position
@@ -124,11 +134,8 @@ impl<'a> SchemaAnalyzer<'a> {
     /// - Entropy calculations
     /// - Bit distribution statistics
     /// - Value frequency analysis
-    pub fn generate_results(&self) -> AnalysisResults {
-        AnalysisResults {
-            // TODO: Convert field_stats to computed metrics
-            per_field: HashMap::new(),
-        }
+    pub fn generate_results(&mut self) -> AnalysisResults {
+        compute_analysis_results(self)
     }
 }
 
@@ -258,22 +265,6 @@ fn build_field_stats<'a>(group: &'a Group, parent_path: &'a str, depth: usize) -
     }
 
     stats
-}
-
-/// Final computed metrics for output
-pub struct AnalysisResults {
-    /// Field path → computed metrics
-    per_field: HashMap<String, FieldMetrics>,
-}
-
-/// Complete analysis metrics for a single field
-pub struct FieldMetrics {
-    /// Shannon entropy in bits
-    pub entropy: f64,
-    /// Bit position → (zero_probability, one_probability)
-    pub bit_distribution: Vec<(f64, f64)>,
-    /// Value → occurrence count
-    pub value_counts: HashMap<u64, u64>,
 }
 
 #[cfg(test)]
