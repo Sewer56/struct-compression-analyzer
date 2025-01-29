@@ -6,21 +6,24 @@ metadata:
 root:
   type: group
   fields:
-    color0:
+    colors:
       type: group
-      description: First RGB565 color value
       fields:
-        r0: 5  # Red component
-        g0: 6  # Green component
-        b0: 5  # Blue component
-    
-    color1:
-      type: group
-      description: Second RGB565 color value
-      fields:
-        r1: 5  # Red component
-        g1: 6  # Green component
-        b1: 5  # Blue component
+        color0:   
+          type: group
+          description: First RGB565 color value
+          fields:
+            r0: 5  # Red component
+            g0: 6  # Green component
+            b0: 5  # Blue component
+        
+        color1:
+          type: group
+          description: Second RGB565 color value
+          fields:
+            r1: 5  # Red component
+            g1: 6  # Green component
+            b1: 5  # Blue component
     
     indices:
       type: group
