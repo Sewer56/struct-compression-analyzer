@@ -4,7 +4,10 @@ use crate::{
     schema::{BitOrder, FieldDefinition},
 };
 use bitstream_io::{BigEndian, BitRead, BitReader, BitWrite, BitWriter, LittleEndian};
-use std::{collections::HashMap, io::Cursor};
+use std::{
+    collections::HashMap,
+    io::{Cursor, SeekFrom},
+};
 
 /// Analyzes binary structures against a schema definition
 ///
@@ -55,8 +58,14 @@ pub enum BitWriterContainer {
 
 pub fn get_writer_buffer(writer: &mut BitWriterContainer) -> &[u8] {
     match writer {
-        BitWriterContainer::Msb(writer) => writer.writer().unwrap().get_ref(),
-        BitWriterContainer::Lsb(writer) => writer.writer().unwrap().get_ref(),
+        BitWriterContainer::Msb(writer) => {
+            writer.byte_align().unwrap();
+            writer.writer().unwrap().get_ref()
+        }
+        BitWriterContainer::Lsb(writer) => {
+            writer.byte_align().unwrap();
+            writer.writer().unwrap().get_ref()
+        }
     }
 }
 
@@ -95,11 +104,11 @@ impl<'a> SchemaAnalyzer<'a> {
     /// - Partial entries will be handled in future implementations
     pub fn add_entry(&mut self, entry: &[u8]) {
         self.entries.extend_from_slice(entry);
-        let mut reader = BitReader::endian(entry, BigEndian);
+        let mut reader = BitReader::endian(Cursor::new(entry), BigEndian);
         self.process_group(&self.schema.root, &mut reader);
     }
 
-    fn process_group(&mut self, group: &Group, reader: &mut BitReader<&[u8], BigEndian>) {
+    fn process_group(&mut self, group: &Group, reader: &mut BitReader<Cursor<&[u8]>, BigEndian>) {
         for (name, field_def) in &group.fields {
             match field_def {
                 FieldDefinition::Field(field) => {
@@ -118,7 +127,11 @@ impl<'a> SchemaAnalyzer<'a> {
                         .iter_mut()
                         .find(|s| s.name == *name)
                         .unwrap(); // exists by definition
+
+                    // Note (processing field/group)
+                    let current_offset = reader.position_in_bits().unwrap();
                     process_field_or_group(reader, bits_left, field_stats);
+                    reader.seek_bits(SeekFrom::Start(current_offset)).unwrap();
 
                     // Process nested fields
                     self.process_group(child_group, reader);
@@ -140,7 +153,7 @@ impl<'a> SchemaAnalyzer<'a> {
 }
 
 fn process_field_or_group(
-    reader: &mut BitReader<&[u8], BigEndian>,
+    reader: &mut BitReader<Cursor<&[u8]>, BigEndian>,
     mut bits_left: u32,
     field_stats: &mut FieldStats,
 ) {
