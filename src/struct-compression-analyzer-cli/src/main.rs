@@ -38,10 +38,6 @@ struct FileCommand {
     /// path to the file to analyze
     path: PathBuf,
 
-    #[argh(option, short = 'b')]
-    /// number of bytes per struct element
-    bytes_per_element: usize,
-
     /// offset to start analyzing from
     #[argh(option, short = 'o')]
     offset: Option<usize>,
@@ -62,10 +58,6 @@ struct DirectoryCommand {
     #[argh(positional)]
     /// path to the directory containing files to analyze
     path: PathBuf,
-
-    #[argh(option, short = 'b')]
-    /// number of bytes per struct element
-    bytes_by_element: usize,
 
     /// offset to start analyzing from
     #[argh(option, short = 'o')]
@@ -102,7 +94,7 @@ fn main() -> anyhow::Result<()> {
             let analysis_result = analyze_file(&AnalyzeFileParams {
                 schema: &schema,
                 path: &file_cmd.path,
-                bytes_per_element: file_cmd.bytes_per_element,
+                bytes_per_element: (schema.root.bits / 8) as usize,
                 offset: file_cmd.offset.unwrap_or(0),
                 length: file_cmd.length,
             })?;
@@ -118,7 +110,7 @@ fn main() -> anyhow::Result<()> {
         Command::Directory(dir_cmd) => {
             println!("Analyzing directory: {}", dir_cmd.path.display());
 
-            let schema = load_schema(&dir_cmd.schema);
+            let schema = load_schema(&dir_cmd.schema)?;
             let analysis_result: Option<AnalysisResults> = None;
             let mut files = Vec::new();
 
@@ -129,10 +121,11 @@ fn main() -> anyhow::Result<()> {
                 files.push(path);
             }
 
+            // Load schema from JSON file
+
             // Process every file with rayon, outputting AnalysisResults
             // Using parallel iterator
-            //files.par_iter()
-            //    .for_each(|input| );
+            println!("Finished processing all files.");
 
             // Add code to analyze all files in the directory here
         }
