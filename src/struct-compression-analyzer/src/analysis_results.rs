@@ -219,12 +219,11 @@ impl AnalysisResults {
             // Indent based on field depth to show hierarchy
             let indent = "  ".repeat(field.depth);
             println!(
-                "{}{}: {:.2} bits entropy, {} LZ matches, {} values, {} bits, {} unique, {:?}, size (estimated/zstd/original): {}/{}/{}",
+                "{}{}: {:.2} bits entropy (packed), {} LZ matches, {} bits, {} unique values, {:?}, size (estimate/zstd 9/original): {}/{}/{}",
                 indent,
                 field.name,
                 field.entropy,
                 field.lz_matches,
-                field.count,
                 field.lenbits,
                 field.value_counts.len(),
                 field.bit_order,
