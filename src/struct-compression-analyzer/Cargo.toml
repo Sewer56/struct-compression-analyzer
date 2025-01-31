@@ -19,3 +19,4 @@ bitstream-io = { version = "2.6.0" }
 lossless-transform-utils = "0.1.0"
 serde-aux = "4.5.0"
 walkdir = "2.5.0"
+zstd = { version = "0.13.2" }

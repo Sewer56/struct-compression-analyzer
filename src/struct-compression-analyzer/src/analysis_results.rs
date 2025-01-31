@@ -1,3 +1,5 @@
+use crate::analyze_utils::get_zstd_compressed_size;
+use crate::analyze_utils::size_estimate;
 use crate::analyzer::get_writer_buffer;
 use crate::analyzer::BitStats;
 use crate::analyzer::SchemaAnalyzer;
@@ -21,6 +23,8 @@ pub fn compute_analysis_results(analyzer: &mut SchemaAnalyzer) -> AnalysisResult
         let writer_buffer = get_writer_buffer(&mut stats.writer);
         let entropy = calculate_file_entropy(writer_buffer);
         let lz_matches = estimate_num_lz_matches_fast(writer_buffer);
+        let estimated_size = size_estimate(writer_buffer, lz_matches, entropy);
+        let actual_size = get_zstd_compressed_size(writer_buffer);
 
         field_metrics.insert(
             stats.full_path.clone(),
@@ -35,6 +39,9 @@ pub fn compute_analysis_results(analyzer: &mut SchemaAnalyzer) -> AnalysisResult
                 count: stats.count,
                 lenbits: stats.lenbits,
                 bit_order: stats.bit_order,
+                estimated_size,
+                zstd_size: actual_size,
+                original_size: writer_buffer.len(),
             },
         );
     }
@@ -44,6 +51,9 @@ pub fn compute_analysis_results(analyzer: &mut SchemaAnalyzer) -> AnalysisResult
         file_lz_matches,
         per_field: field_metrics,
         schema_metadata: analyzer.schema.metadata.clone(),
+        estimated_file_size: size_estimate(&analyzer.entries, file_lz_matches, file_entropy),
+        zstd_file_size: get_zstd_compressed_size(&analyzer.entries),
+        original_size: analyzer.entries.len(),
     }
 }
 
@@ -64,6 +74,15 @@ pub struct AnalysisResults {
 
     /// LZ compression matches in the file
     pub file_lz_matches: usize,
+
+    /// Estimated size of the compressed data from our estimator
+    pub estimated_file_size: usize,
+
+    /// Actual size of the compressed data when compressed with zstandard at level 9
+    pub zstd_file_size: usize,
+
+    /// Original size of the uncompressed data
+    pub original_size: usize,
 
     /// Field path → computed metrics
     /// This is a map of `full_path` to [`FieldMetrics`], such that we
@@ -95,7 +114,14 @@ pub struct FieldMetrics {
     /// Value → occurrence count
     /// Count of occurrences for each observed value.
     pub value_counts: HashMap<u64, u64>,
+    /// Estimated size of the compressed data from our estimator
+    pub estimated_size: usize,
+    /// Actual size of the compressed data when compressed with zstandard at level 9
+    pub zstd_size: usize,
+    /// Original size of the data before compression
+    pub original_size: usize,
 }
+
 impl FieldMetrics {
     /// Merge two [`FieldMetrics`] objects into one.
     /// This is useful when analyzing multiple files or groups of fields.
@@ -115,6 +141,18 @@ impl FieldMetrics {
             / (other.len() + 1);
         self.entropy = entropy;
         self.lz_matches = lz_matches;
+
+        // Merge estimated and actual sizes
+        let estimated_size = (self.estimated_size
+            + other.iter().map(|m| m.estimated_size).sum::<usize>())
+            / (other.len() + 1);
+        let actual_size =
+            (self.zstd_size + other.iter().map(|m| m.zstd_size).sum::<usize>()) / (other.len() + 1);
+        self.estimated_size = estimated_size;
+        self.zstd_size = actual_size;
+        self.original_size = (self.original_size
+            + other.iter().map(|m| m.original_size).sum::<usize>())
+            / (other.len() + 1);
 
         // Sum up arrays from both items
         let bit_counts = &mut self.bit_counts;
@@ -167,6 +205,10 @@ impl AnalysisResults {
         println!("Description: {}", self.schema_metadata.description);
         println!("File Entropy: {:.2} bits", self.file_entropy);
         println!("File LZ Matches: {}", self.file_lz_matches);
+        println!("File Original Size: {}", self.original_size);
+        println!("File Compressed Size: {}", self.zstd_file_size);
+        println!("File Estimated Size: {}", self.estimated_file_size);
+        println!("File Original Size: {}", self.original_size);
         println!("\nPer-field Metrics:");
 
         // Collect and sort fields by their full path for consistent ordering
@@ -177,7 +219,7 @@ impl AnalysisResults {
             // Indent based on field depth to show hierarchy
             let indent = "  ".repeat(field.depth);
             println!(
-                "{}{}: {:.2} bits entropy, {} LZ matches, {} values, {} bits, {} unique, {:?} order",
+                "{}{}: {:.2} bits entropy, {} LZ matches, {} values, {} bits, {} unique, {:?}, size (estimated/zstd/original): {}/{}/{}",
                 indent,
                 field.name,
                 field.entropy,
@@ -185,7 +227,10 @@ impl AnalysisResults {
                 field.count,
                 field.lenbits,
                 field.value_counts.len(),
-                field.bit_order
+                field.bit_order,
+                field.estimated_size,
+                field.zstd_size,
+                field.original_size
             );
         }
     }
