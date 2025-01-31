@@ -12,3 +12,4 @@ struct-compression-analyzer = { path = "../struct-compression-analyzer" }
 argh = "0.1.13"
 anyhow = "1.0.95"
 rayon = "1.10.0"
+walkdir = "2.5.0"

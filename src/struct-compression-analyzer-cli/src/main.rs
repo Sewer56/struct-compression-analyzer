@@ -1,6 +1,7 @@
 use argh::FromArgs;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::{
-    fs::{read_dir, File},
+    fs::File,
     io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
     time::Instant,
@@ -9,6 +10,7 @@ use struct_compression_analyzer::{
     analysis_results::AnalysisResults, analyzer::SchemaAnalyzer,
     offset_evaluator::try_evaluate_file_offset, schema::Schema,
 };
+use walkdir::WalkDir;
 
 #[derive(Debug, FromArgs)]
 /// CLI for analyzing struct compression
@@ -85,10 +87,9 @@ struct AnalyzeFileParams<'a> {
 fn main() -> anyhow::Result<()> {
     let args: Args = argh::from_env();
 
+    let start_time = Instant::now();
     match args.command {
         Command::File(file_cmd) => {
-            // Start stopwatch
-            let start_time = Instant::now();
             let schema = load_schema(&file_cmd.schema)?;
             let analysis_result = analyze_file(&AnalyzeFileParams {
                 schema: &schema,
@@ -97,38 +98,50 @@ fn main() -> anyhow::Result<()> {
                 offset: file_cmd.offset,
                 length: file_cmd.length,
             })?;
+            println!("Analysis Results:");
             analysis_result.print();
-
-            // Print time taken for analysis
-            println!(
-                "Analysis complete for: {} in {}ms",
-                file_cmd.path.display(),
-                start_time.elapsed().as_millis()
-            );
         }
         Command::Directory(dir_cmd) => {
             println!("Analyzing directory: {}", dir_cmd.path.display());
 
             let schema = load_schema(&dir_cmd.schema)?;
-            let analysis_result: Option<AnalysisResults> = None;
-            let mut files = Vec::new();
+            let files = find_directory_files_recursive(&dir_cmd.path)?;
 
-            for file in read_dir(dir_cmd.path)? {
-                let file = file?;
-                let path = file.path();
-                println!("Found file: {}", path.display());
-                files.push(path);
-            }
+            // Process every file with rayon, collecting individual results
+            let individual_results: Vec<AnalysisResults> = files
+                .par_iter()
+                .map(|path| {
+                    analyze_file(&AnalyzeFileParams {
+                        schema: &schema,
+                        path,
+                        bytes_per_element: (schema.root.bits / 8) as u64,
+                        offset: dir_cmd.offset,
+                        length: dir_cmd.length,
+                    })
+                })
+                .filter_map(|result| match result {
+                    Ok(results) => Some(results),
+                    Err(e) => {
+                        eprintln!("Error processing {}: {}", dir_cmd.path.display(), e);
+                        None
+                    }
+                })
+                .collect();
 
-            // Load schema from JSON file
+            // Merge all results
+            let mut merged_results = individual_results.first().unwrap().clone();
+            merged_results.merge_many(&individual_results[1..]);
 
-            // Process every file with rayon, outputting AnalysisResults
-            // Using parallel iterator
-            println!("Finished processing all files.");
-
-            // Add code to analyze all files in the directory here
+            // Print final aggregated results
+            println!("Aggregated Analysis Results:");
+            merged_results.print();
         }
     }
+    // Print time taken for analysis
+    println!(
+        "Analysis complete in {}ms",
+        start_time.elapsed().as_millis()
+    );
 
     Ok(())
 }
@@ -171,4 +184,16 @@ fn analyze_file(params: &AnalyzeFileParams) -> anyhow::Result<AnalysisResults> {
 
 fn load_schema(schema_path: &Path) -> anyhow::Result<Schema> {
     Ok(Schema::load_from_file(schema_path)?)
+}
+
+fn find_directory_files_recursive(path: &Path) -> anyhow::Result<Vec<PathBuf>> {
+    let mut files = Vec::new();
+    for entry in WalkDir::new(path)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+    {
+        files.push(entry.path().to_path_buf());
+    }
+    Ok(files)
 }

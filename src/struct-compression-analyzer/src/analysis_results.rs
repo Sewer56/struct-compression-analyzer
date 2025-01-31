@@ -54,6 +54,7 @@ fn calculate_file_entropy(bytes: &[u8]) -> f64 {
 }
 
 /// Final computed metrics for output
+#[derive(Clone)]
 pub struct AnalysisResults {
     /// Schema name
     pub schema_metadata: Metadata,
@@ -71,6 +72,7 @@ pub struct AnalysisResults {
 }
 
 /// Complete analysis metrics for a single field
+#[derive(Clone)]
 pub struct FieldMetrics {
     /// Name of the field or group
     pub name: String,
@@ -151,10 +153,16 @@ impl AnalysisResults {
             // Now merge as one operation
             field_metrics.merge_many(&matches);
         }
+
+        // Merge the file entropy and LZ matches
+        self.file_entropy = (self.file_entropy + other.iter().map(|m| m.file_entropy).sum::<f64>())
+            / (other.len() + 1) as f64;
+        self.file_lz_matches = (self.file_lz_matches
+            + other.iter().map(|m| m.file_lz_matches).sum::<usize>())
+            / (other.len() + 1);
     }
 
     pub fn print(&self) {
-        println!("Analysis Results");
         println!("Schema: {}", self.schema_metadata.name);
         println!("Description: {}", self.schema_metadata.description);
         println!("File Entropy: {:.2} bits", self.file_entropy);
