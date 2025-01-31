@@ -13,6 +13,9 @@ pub struct Schema {
     /// Contains user-provided metadata about the schema
     #[serde(default)]
     pub metadata: Metadata,
+    /// Conditional offsets for the schema
+    #[serde(default)]
+    pub conditional_offsets: Vec<ConditionalOffset>,
     /// Configuration for analysis operations and output grouping
     #[serde(default)]
     pub analysis: AnalysisConfig,
@@ -319,6 +322,52 @@ fn propagate_bit_order(group: &mut Group, parent_bit_order: BitOrder) {
             }
         }
     }
+}
+
+/// Defines a single condition for offset selection
+///
+/// # Examples
+///
+/// ```yaml
+/// byte_offset: 0x00
+/// bit_offset: 0
+/// bits: 32
+/// value: 0x44445320  # DDS magic
+/// ```
+#[derive(Debug, PartialEq, Clone, serde::Deserialize)]
+pub struct Condition {
+    /// Byte offset from start of structure
+    pub byte_offset: u64,
+    /// Bit offset within the byte (0-7, left to right)
+    pub bit_offset: u8,
+    /// Number of bits to compare (1-32)
+    pub bits: u8,
+    /// Expected value in big-endian byte order
+    pub value: u64,
+}
+
+/// Defines conditional offset selection rules
+///
+/// # Examples
+///
+/// ```yaml
+/// - offset: 0x94  # BC7 data offset
+///   conditions:
+///     - byte_offset: 0x00
+///       bit_offset: 0
+///       bits: 32
+///       value: 0x44445320
+///     - byte_offset: 0x54
+///       bit_offset: 0
+///       bits: 32
+///       value: 0x44583130
+/// ```
+#[derive(Debug, Clone, Deserialize)]
+pub struct ConditionalOffset {
+    /// Target offset to use if conditions match
+    pub offset: u64,
+    /// List of conditions that must all be satisfied
+    pub conditions: Vec<Condition>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -791,6 +840,62 @@ root: { type: group, fields: {} }
                 assert!(group.display.format.is_empty());
                 assert!(group.display.labels.is_empty());
             });
+        }
+    }
+
+    // Conditional Offset Tests
+    mod conditional_offset_tests {
+        use super::*;
+
+        #[test]
+        fn parses_basic_conditional_offset() {
+            let yaml = r#"
+version: '1.0'
+metadata:
+  name: Test Schema
+conditional_offsets:
+  - offset: 0x94
+    conditions:
+      - byte_offset: 0x00
+        bit_offset: 0
+        bits: 32
+        value: 0x44445320
+      - byte_offset: 0x54
+        bit_offset: 0
+        bits: 32
+        value: 0x44583130
+root:
+  type: group
+  fields: {}
+"#;
+
+            let schema: Schema = serde_yaml::from_str(yaml).unwrap();
+            assert_eq!(schema.conditional_offsets.len(), 1);
+
+            let offset = &schema.conditional_offsets[0];
+            assert_eq!(offset.offset, 0x94);
+            assert_eq!(offset.conditions.len(), 2);
+
+            let cond1 = &offset.conditions[0];
+            assert_eq!(cond1.byte_offset, 0x00);
+            assert_eq!(cond1.bit_offset, 0);
+            assert_eq!(cond1.bits, 32);
+            assert_eq!(cond1.value, 0x44445320);
+        }
+
+        #[test]
+        fn handles_missing_optional_fields() {
+            let yaml = r#"
+version: '1.0'
+metadata:
+  name: Minimal Schema
+root:
+  type: group
+  fields: {}
+"#;
+
+            let schema: Schema = serde_yaml::from_str(yaml).unwrap();
+            assert!(schema.conditional_offsets.is_empty());
         }
     }
 }

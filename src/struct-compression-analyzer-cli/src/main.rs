@@ -1,14 +1,13 @@
 use argh::FromArgs;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::{
     fs::{read_dir, File},
-    io::{Read, Seek},
-    os::unix::fs::FileExt,
+    io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
     time::Instant,
 };
 use struct_compression_analyzer::{
-    analysis_results::AnalysisResults, analyzer::SchemaAnalyzer, schema::Schema,
+    analysis_results::AnalysisResults, analyzer::SchemaAnalyzer,
+    offset_evaluator::try_evaluate_file_offset, schema::Schema,
 };
 
 #[derive(Debug, FromArgs)]
@@ -40,11 +39,11 @@ struct FileCommand {
 
     /// offset to start analyzing from
     #[argh(option, short = 'o')]
-    offset: Option<usize>,
+    offset: Option<u64>,
 
     /// length of the data to analyze. If not specified, the entire rest of the file is analyzed.
     #[argh(option, short = 'l')]
-    length: Option<usize>,
+    length: Option<u64>,
 }
 
 #[derive(Debug, FromArgs)]
@@ -61,25 +60,26 @@ struct DirectoryCommand {
 
     /// offset to start analyzing from
     #[argh(option, short = 'o')]
-    offset: Option<usize>,
+    offset: Option<u64>,
 
     /// length of the data to analyze. If not specified, the entire rest of the file is analyzed.
     #[argh(option, short = 'l')]
-    length: Option<usize>,
+    length: Option<u64>,
 }
 
 /// Parameters to function used to analyze a single file.
 struct AnalyzeFileParams<'a> {
-    // The schema to use for analysis
+    /// The schema to use for analysis
     schema: &'a Schema,
-    // The path to the file being analyzed
+    /// The path to the file being analyzed
     path: &'a PathBuf,
-    // The number of bytes per struct element
-    bytes_per_element: usize,
-    // The offset to start analyzing from
-    offset: usize,
-    // The length of the data to analyze. If not specified, the entire rest of the file is analyzed.
-    length: Option<usize>,
+    /// The number of bytes per struct element
+    bytes_per_element: u64,
+    /// The offset to start analyzing from
+    /// If not specified, we read based on schema, or assign 0.
+    offset: Option<u64>,
+    /// The length of the data to analyze. If not specified, the entire rest of the file is analyzed.
+    length: Option<u64>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -89,13 +89,12 @@ fn main() -> anyhow::Result<()> {
         Command::File(file_cmd) => {
             // Start stopwatch
             let start_time = Instant::now();
-
             let schema = load_schema(&file_cmd.schema)?;
             let analysis_result = analyze_file(&AnalyzeFileParams {
                 schema: &schema,
                 path: &file_cmd.path,
-                bytes_per_element: (schema.root.bits / 8) as usize,
-                offset: file_cmd.offset.unwrap_or(0),
+                bytes_per_element: (schema.root.bits / 8) as u64,
+                offset: file_cmd.offset,
                 length: file_cmd.length,
             })?;
             analysis_result.print();
@@ -136,16 +135,23 @@ fn main() -> anyhow::Result<()> {
 
 fn analyze_file(params: &AnalyzeFileParams) -> anyhow::Result<AnalysisResults> {
     // Read the file contents
-    let file = File::open(params.path)?;
+    let mut file = File::open(params.path)?;
+
+    let offset = if params.offset.is_none() {
+        try_evaluate_file_offset(&params.schema.conditional_offsets, &mut file)?.unwrap_or(0)
+    } else {
+        params.offset.unwrap_or(0)
+    };
 
     // Read up to length in AnalyzeFileParams at file offset
     let length = match params.length {
         Some(l) => l,
-        None => file.metadata()?.len() as usize - params.offset,
+        None => file.metadata()?.len() - offset,
     };
 
-    let mut data = unsafe { Box::new_uninit_slice(length).assume_init() };
-    file.read_exact_at(&mut data, params.offset as u64)?;
+    file.seek(SeekFrom::Start(offset))?;
+    let mut data = unsafe { Box::new_uninit_slice(length as usize).assume_init() };
+    file.read_exact(&mut data)?;
 
     // Analyze the file with SchemaAnalyzer
     let mut analyzer = SchemaAnalyzer::new(params.schema);
@@ -153,7 +159,8 @@ fn analyze_file(params: &AnalyzeFileParams) -> anyhow::Result<AnalysisResults> {
 
     while bytes_left > 0 {
         let start_offset = length - bytes_left;
-        let slice = &data[start_offset..start_offset + params.bytes_per_element];
+        let slice =
+            &data[start_offset as usize..start_offset as usize + params.bytes_per_element as usize];
         analyzer.add_entry(slice);
         bytes_left -= params.bytes_per_element;
     }

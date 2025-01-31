@@ -2,6 +2,18 @@ version: '1.0'
 metadata:
   name: DXT1/BC1 Block
   description: Analysis schema for DXT1/BC1 compressed texture block format
+conditional_offsets:
+  - offset: 0x80  # DXT1 data starts at 128 bytes
+    conditions:
+      - byte_offset: 0x00  # file magic
+        bit_offset: 0
+        bits: 32
+        value: 0x44445320  # DDS magic
+
+      - byte_offset: 0x54  # fourCC field position
+        bit_offset: 0
+        bits: 32
+        value: 0x44585431  # 'DXT1' fourCC code
 
 root:
   type: group

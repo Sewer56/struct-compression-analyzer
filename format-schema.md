@@ -19,8 +19,9 @@ The schema is designed to represent and analyze bit-packed structures with the f
 ```yaml
 version: '1.0'
 metadata: ...
+conditional_offsets: ..
 analysis: ...
-root: ...
+root: ....
 ```
 
 #### Version Field
@@ -70,6 +71,37 @@ The `analysis` section configures how results should be analyzed and presented:
       - `%02d` - zero-padded decimal
       - `%s` - string
   - `labels` can provide meaningful names for specific values
+
+### Conditional Offsets
+
+```yaml
+conditional_offsets:
+  # BC7 format detection
+  - offset: 0x94  # BC7 data starts at 148 bytes
+    conditions:
+      - byte_offset: 0x00 # file magic
+        bit_offset: 0
+        bits: 32
+        value: 0x44445320 # DDS magic
+      - byte_offset: 0x54 # ddspf.dourCC
+        bit_offset: 0
+        bits: 32
+        value: 0x44583130 # DX10 header
+      - byte_offset: 0x80 # ds_header_dxt10.dxgiFormat
+        bit_offset: 0
+        bits: 32
+        value: 0x62000000 # DXGI_FORMAT_BC7_UNORM
+```
+
+Conditional offsets validate headers in specified order using big-endian comparisons:
+
+1. First checks for DDS magic number `0x44445320` (DDS) at offset 0
+2. Then verifies DX10 header `0x44583130` (DX10) at offset 0x54
+3. Finally confirms BC7 format `0x62000000` (BC7) at offset 0x80
+4. If all three match, sets offset to 148 bytes (0x94)
+
+The hex values are specified in big-endian byte order; i.e. the same order as you would
+see in a hex editor.
 
 ### Root Section
 
@@ -200,6 +232,23 @@ version: '1.0'
 metadata:
   name: BC1 Mode0 Block
   description: Analysis schema for Mode0 packed color structure with mode, partition, and color components
+
+conditional_offsets:
+  # BC7 format detection
+  - offset: 0x94  # BC7 data starts at 148 bytes
+    conditions:
+      - byte_offset: 0x00 # file magic
+        bit_offset: 0
+        bits: 32
+        value: 0x44445320 # DDS magic
+      - byte_offset: 0x54 # ddspf.dourCC
+        bit_offset: 0
+        bits: 32
+        value: 0x44583130 # DX10 header
+      - byte_offset: 0x80 # ds_header_dxt10.dxgiFormat
+        bit_offset: 0
+        bits: 32
+        value: 0x62000000 # DXGI_FORMAT_BC7_UNORM
 
 analysis:
   group_by:
