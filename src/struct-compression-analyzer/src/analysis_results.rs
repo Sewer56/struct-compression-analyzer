@@ -216,7 +216,7 @@ impl AnalysisResults {
             if let Some(field) = self.per_field.get(&field_path) {
                 // Indent based on field depth to show hierarchy
                 let indent = "  ".repeat(field.depth);
-                let parent_field = field_path.rsplit_once(".").unwrap_or(("", "")).0;
+                let parent_field = field_path.rsplit_once(".").unwrap_or((&field_path, "")).0;
                 let parent_stats = self.per_field.get(parent_field);
                 println!(
                     "{}{}: {:.2} bit entropy, {} LZ 3 Byte matches ({:.2}%)",
