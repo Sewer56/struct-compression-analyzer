@@ -79,7 +79,7 @@ pub struct AnalysisResults {
     /// Estimated size of the compressed data from our estimator
     pub estimated_file_size: usize,
 
-    /// Actual size of the compressed data when compressed with zstandard at level 9
+    /// Actual size of the compressed data when compressed with zstandard
     pub zstd_file_size: usize,
 
     /// Original size of the uncompressed data
@@ -117,7 +117,7 @@ pub struct FieldMetrics {
     pub value_counts: HashMap<u64, u64>,
     /// Estimated size of the compressed data from our estimator
     pub estimated_size: usize,
-    /// Actual size of the compressed data when compressed with zstandard at level 9
+    /// Actual size of the compressed data when compressed with zstandard
     pub zstd_size: usize,
     /// Original size of the data before compression
     pub original_size: usize,
@@ -216,20 +216,47 @@ impl AnalysisResults {
             if let Some(field) = self.per_field.get(&field_path) {
                 // Indent based on field depth to show hierarchy
                 let indent = "  ".repeat(field.depth);
+                let parent_field = field_path.rsplit_once(".").unwrap_or(("", "")).0;
+                let parent_stats = self.per_field.get(parent_field);
                 println!(
-                    "{}{}: {:.2} bits entropy (packed), {} LZ matches, {} bits, {} unique values, {:?}, size (estimate/zstd 9/original): {}/{}/{}",
+                    "{}{}: {:.2} bit entropy, {} LZ 3 Byte matches ({:.2}%)",
                     indent,
                     field.name,
                     field.entropy,
                     field.lz_matches,
-                    field.lenbits,
-                    field.value_counts.len(),
-                    field.bit_order,
+                    parent_stats.map_or(0.0, |p| calculate_percentage(
+                        field.lz_matches as f64,
+                        p.lz_matches as f64
+                    ))
+                );
+                let padding = format!("{}{}", indent, field.name).len() + 2; // +2 for ": "
+                println!(
+                    "{:padding$}Sizes: Estimated/ZStandard -16/Original: {}/{}/{} ({:.2}%/{:.2}%/{:.2}%)",
+                    "",
                     field.estimated_size,
                     field.zstd_size,
-                    field.original_size
+                    field.original_size,
+                    parent_stats.map_or(0.0, |p| calculate_percentage(field.estimated_size as f64, p.estimated_size as f64)),
+                    parent_stats.map_or(0.0, |p| calculate_percentage(field.zstd_size as f64, p.zstd_size as f64)),
+                    parent_stats.map_or(0.0, |p| calculate_percentage(field.original_size as f64, p.original_size as f64))
+                );
+                println!(
+                    "{:padding$}{} bit, {} unique values, {:?}",
+                    "",
+                    field.lenbits,
+                    field.value_counts.len(),
+                    field.bit_order
                 );
             }
         }
+    }
+}
+
+// Helper function to calculate percentage
+fn calculate_percentage(child: f64, parent: f64) -> f64 {
+    if parent == 0.0 {
+        0.0
+    } else {
+        (child / parent) * 100.0
     }
 }

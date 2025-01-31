@@ -15,9 +15,9 @@ pub fn size_estimate(data: &[u8], num_lz_matches: usize, entropy: f64) -> usize 
 }
 
 /// Determines the actual size of the compressed data by compressing with a realistic compressor.
-/// That is, zstandard at level 9.
+/// That is, zstandard at level 16.
 pub fn get_zstd_compressed_size(data: &[u8]) -> usize {
-    zstd::bulk::compress(data, 9)
+    zstd::bulk::compress(data, 16)
         .ok()
         .map(|compressed| compressed.len())
         .unwrap()
