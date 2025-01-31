@@ -8,18 +8,25 @@ use std::{collections::HashMap, path::Path};
 
 #[derive(Debug, Deserialize, Default)]
 pub struct Schema {
+    /// Schema version. Currently only `1.0` is supported
     pub version: String,
+    /// Contains user-provided metadata about the schema
     #[serde(default)]
     pub metadata: Metadata,
+    /// Configuration for analysis operations and output grouping
     #[serde(default)]
     pub analysis: AnalysisConfig,
+    /// The root group of the schema
     pub root: Group,
 }
 
+/// Contains user-provided metadata about the schema
 #[derive(Clone, Debug, Deserialize, Default)]
 pub struct Metadata {
+    /// Name of the schema
     #[serde(default)]
     pub name: String,
+    /// Description of the schema
     #[serde(default)]
     pub description: String,
 }
@@ -110,6 +117,7 @@ pub struct DisplayConfig {
     pub labels: HashMap<String, String>,
 }
 
+/// Allows us to define a nested item as either a field or group
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 #[non_exhaustive]
@@ -118,6 +126,7 @@ pub enum FieldDefinition {
     Group(Group),
 }
 
+/// A single field definition
 #[derive(Debug)]
 pub struct Field {
     pub bits: u32,
