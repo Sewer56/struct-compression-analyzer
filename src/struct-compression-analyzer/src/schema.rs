@@ -271,6 +271,34 @@ impl<'de> Deserialize<'de> for Group {
     }
 }
 
+impl Group {
+    /// Collects a list of field paths in schema order
+    /// This includes both fields and groups
+    fn collect_field_paths(&self, paths: &mut Vec<String>, parent_path: &str) {
+        for (name, item) in &self.fields {
+            match item {
+                FieldDefinition::Field(_) => {
+                    let full_path = if parent_path.is_empty() {
+                        name
+                    } else {
+                        &format!("{}.{}", parent_path, name)
+                    };
+                    paths.push(full_path.clone());
+                }
+                FieldDefinition::Group(g) => {
+                    let new_parent = if parent_path.is_empty() {
+                        name
+                    } else {
+                        &format!("{}.{}", parent_path, name)
+                    };
+                    paths.push(new_parent.clone());
+                    g.collect_field_paths(paths, new_parent);
+                }
+            }
+        }
+    }
+}
+
 /// Bit ordering specification for field values
 ///
 /// Determines how bits are interpreted within a field:
@@ -396,6 +424,14 @@ impl Schema {
     pub fn load_from_file(path: &Path) -> Result<Self, SchemaError> {
         let content = std::fs::read_to_string(path)?;
         Self::from_yaml(&content)
+    }
+
+    /// Returns a list of field paths in schema order
+    /// This includes both fields and groups
+    pub fn ordered_field_paths(&self) -> Vec<String> {
+        let mut paths = Vec::new();
+        self.root.collect_field_paths(&mut paths, "");
+        paths
     }
 }
 
@@ -859,7 +895,7 @@ conditional_offsets:
       - byte_offset: 0x00
         bit_offset: 0
         bits: 32
-        value: 0x44445320
+        value: 0x44445320  # DDS magic
       - byte_offset: 0x54
         bit_offset: 0
         bits: 32

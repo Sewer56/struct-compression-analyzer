@@ -5,6 +5,7 @@ use crate::analyzer::BitStats;
 use crate::analyzer::SchemaAnalyzer;
 use crate::schema::BitOrder;
 use crate::schema::Metadata;
+use crate::schema::Schema;
 use lossless_transform_utils::entropy::code_length_of_histogram32;
 use lossless_transform_utils::histogram::histogram32_from_bytes;
 use lossless_transform_utils::histogram::Histogram32;
@@ -200,7 +201,7 @@ impl AnalysisResults {
             / (other.len() + 1);
     }
 
-    pub fn print(&self) {
+    pub fn print(&self, schema: &Schema) {
         println!("Schema: {}", self.schema_metadata.name);
         println!("Description: {}", self.schema_metadata.description);
         println!("File Entropy: {:.2} bits", self.file_entropy);
@@ -208,29 +209,27 @@ impl AnalysisResults {
         println!("File Original Size: {}", self.original_size);
         println!("File Compressed Size: {}", self.zstd_file_size);
         println!("File Estimated Size: {}", self.estimated_file_size);
-        println!("File Original Size: {}", self.original_size);
-        println!("\nPer-field Metrics:");
+        println!("\nPer-field Metrics (in schema order):");
 
-        // Collect and sort fields by their full path for consistent ordering
-        let mut fields: Vec<&FieldMetrics> = self.per_field.values().collect();
-        fields.sort_by(|a, b| a.full_path.cmp(&b.full_path));
-
-        for field in fields {
-            // Indent based on field depth to show hierarchy
-            let indent = "  ".repeat(field.depth);
-            println!(
-                "{}{}: {:.2} bits entropy (packed), {} LZ matches, {} bits, {} unique values, {:?}, size (estimate/zstd 9/original): {}/{}/{}",
-                indent,
-                field.name,
-                field.entropy,
-                field.lz_matches,
-                field.lenbits,
-                field.value_counts.len(),
-                field.bit_order,
-                field.estimated_size,
-                field.zstd_size,
-                field.original_size
-            );
+        // Iterate through schema-defined fields in order
+        for field_path in schema.ordered_field_paths() {
+            if let Some(field) = self.per_field.get(&field_path) {
+                // Indent based on field depth to show hierarchy
+                let indent = "  ".repeat(field.depth);
+                println!(
+                    "{}{}: {:.2} bits entropy (packed), {} LZ matches, {} bits, {} unique values, {:?}, size (estimate/zstd 9/original): {}/{}/{}",
+                    indent,
+                    field.name,
+                    field.entropy,
+                    field.lz_matches,
+                    field.lenbits,
+                    field.value_counts.len(),
+                    field.bit_order,
+                    field.estimated_size,
+                    field.zstd_size,
+                    field.original_size
+                );
+            }
         }
     }
 }

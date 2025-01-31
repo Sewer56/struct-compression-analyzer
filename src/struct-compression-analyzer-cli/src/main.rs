@@ -99,7 +99,7 @@ fn main() -> anyhow::Result<()> {
                 length: file_cmd.length,
             })?;
             println!("Analysis Results:");
-            analysis_result.print();
+            analysis_result.print(&schema);
         }
         Command::Directory(dir_cmd) => {
             println!("Analyzing directory: {}", dir_cmd.path.display());
@@ -133,8 +133,8 @@ fn main() -> anyhow::Result<()> {
             merged_results.merge_many(&individual_results[1..]);
 
             // Print final aggregated results
-            println!("Aggregated Analysis Results:");
-            merged_results.print();
+            println!("Aggregated (Merged) Analysis Results:");
+            merged_results.print(&schema);
         }
     }
     // Print time taken for analysis
