@@ -13,7 +13,7 @@ pub fn try_evaluate_file_offset(
     let max_read = conditional_offsets
         .iter()
         .flat_map(|o| &o.conditions)
-        .map(|c| c.byte_offset as u64 + ((c.bits as u64 + 7) / 8)) // Bytes needed
+        .map(|c| c.byte_offset + ((c.bits as u64 + 7) / 8)) // Bytes needed
         .max()
         .unwrap_or(0);
 
@@ -43,7 +43,7 @@ fn matches_all_conditions(offset_def: &ConditionalOffset, data: &[u8]) -> bool {
 
 fn check_condition(condition: &Condition, data: &[u8]) -> bool {
     let mut reader = BitReader::endian(Cursor::new(data), BigEndian);
-    let start_bit = ((condition.byte_offset as u64) * 8) + condition.bit_offset as u64;
+    let start_bit = (condition.byte_offset * 8) + condition.bit_offset as u64;
 
     if reader.seek_bits(SeekFrom::Start(start_bit)).is_err() {
         return false;
