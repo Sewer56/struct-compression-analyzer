@@ -202,6 +202,23 @@ impl AnalysisResults {
     }
 
     pub fn print(&self, schema: &Schema) {
+        // Create file-level metrics for parent comparison
+        let file_metrics = FieldMetrics {
+            name: "File".to_string(),
+            full_path: String::new(),
+            depth: 0,
+            zstd_size: self.zstd_file_size,
+            estimated_size: self.estimated_file_size,
+            original_size: self.original_size,
+            count: 0,
+            lenbits: 0,
+            entropy: self.file_entropy,
+            lz_matches: self.file_lz_matches,
+            bit_counts: Vec::new(),
+            bit_order: BitOrder::Default,
+            value_counts: HashMap::new(),
+        };
+
         println!("Schema: {}", self.schema_metadata.name);
         println!("Description: {}", self.schema_metadata.description);
         println!("File Entropy: {:.2} bits", self.file_entropy);
@@ -216,18 +233,19 @@ impl AnalysisResults {
             if let Some(field) = self.per_field.get(&field_path) {
                 // Indent based on field depth to show hierarchy
                 let indent = "  ".repeat(field.depth);
-                let parent_field = field_path.rsplit_once(".").unwrap_or((&field_path, "")).0;
-                let parent_stats = self.per_field.get(parent_field);
+
+                // Get parent path or use file metrics
+                let parent_path = field_path.rsplit_once('.').map(|(p, _)| p).unwrap_or("");
+                let parent_stats = self.per_field.get(parent_path).unwrap_or(&file_metrics);
+
+                // Calculate percentages
                 println!(
                     "{}{}: {:.2} bit entropy, {} LZ 3 Byte matches ({:.2}%)",
                     indent,
                     field.name,
                     field.entropy,
                     field.lz_matches,
-                    parent_stats.map_or(0.0, |p| calculate_percentage(
-                        field.lz_matches as f64,
-                        p.lz_matches as f64
-                    ))
+                    calculate_percentage(field.lz_matches as f64, parent_stats.lz_matches as f64)
                 );
                 let padding = format!("{}{}", indent, field.name).len() + 2; // +2 for ": "
                 println!(
@@ -236,9 +254,9 @@ impl AnalysisResults {
                     field.estimated_size,
                     field.zstd_size,
                     field.original_size,
-                    parent_stats.map_or(0.0, |p| calculate_percentage(field.estimated_size as f64, p.estimated_size as f64)),
-                    parent_stats.map_or(0.0, |p| calculate_percentage(field.zstd_size as f64, p.zstd_size as f64)),
-                    parent_stats.map_or(0.0, |p| calculate_percentage(field.original_size as f64, p.original_size as f64))
+                    calculate_percentage(field.estimated_size as f64, parent_stats.estimated_size as f64),
+                    calculate_percentage(field.zstd_size as f64, parent_stats.zstd_size as f64),
+                    calculate_percentage(field.original_size as f64, parent_stats.original_size as f64)
                 );
                 println!(
                     "{:padding$}{} bit, {} unique values, {:?}",
