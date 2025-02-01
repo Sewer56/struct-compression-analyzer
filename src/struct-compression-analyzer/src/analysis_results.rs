@@ -245,42 +245,46 @@ impl AnalysisResults {
 
         // Iterate through schema-defined fields in order
         for field_path in schema.ordered_field_paths() {
-            if let Some(field) = self.per_field.get(&field_path) {
-                // Indent based on field depth to show hierarchy
-                let indent = "  ".repeat(field.depth);
+            self.detailed_print_field(file_metrics, &field_path);
+        }
+    }
 
-                // Get parent path or use file metrics
-                let parent_path = field_path.rsplit_once('.').map(|(p, _)| p).unwrap_or("");
-                let parent_stats = self.per_field.get(parent_path).unwrap_or(&file_metrics);
+    fn detailed_print_field(&self, file_metrics: &FieldMetrics, field_path: &str) {
+        if let Some(field) = self.per_field.get(field_path) {
+            // Indent based on field depth to show hierarchy
+            let indent = "  ".repeat(field.depth);
 
-                // Calculate percentages
-                println!(
-                    "{}{}: {:.2} bit entropy, {} LZ 3 Byte matches ({:.2}%)",
-                    indent,
-                    field.name,
-                    field.entropy,
-                    field.lz_matches,
-                    calculate_percentage(field.lz_matches as f64, parent_stats.lz_matches as f64)
-                );
-                let padding = format!("{}{}", indent, field.name).len() + 2; // +2 for ": "
-                println!(
-                    "{:padding$}Sizes: Estimated/ZStandard -16/Original: {}/{}/{} ({:.2}%/{:.2}%/{:.2}%)",
-                    "",
-                    field.estimated_size,
-                    field.zstd_size,
-                    field.original_size,
-                    calculate_percentage(field.estimated_size as f64, parent_stats.estimated_size as f64),
-                    calculate_percentage(field.zstd_size as f64, parent_stats.zstd_size as f64),
-                    calculate_percentage(field.original_size as f64, parent_stats.original_size as f64)
-                );
-                println!(
-                    "{:padding$}{} bit, {} unique values, {:?}",
-                    "",
-                    field.lenbits,
-                    field.value_counts.len(),
-                    field.bit_order
-                );
-            }
+            // Get parent path or use file metrics
+            let parent_path = field_path.rsplit_once('.').map(|(p, _)| p).unwrap_or("");
+            let parent_stats = self.per_field.get(parent_path).unwrap_or(file_metrics);
+
+            // Calculate percentages
+            println!(
+                "{}{}: {:.2} bit entropy, {} LZ 3 Byte matches ({:.2}%)",
+                indent,
+                field.name,
+                field.entropy,
+                field.lz_matches,
+                calculate_percentage(field.lz_matches as f64, parent_stats.lz_matches as f64)
+            );
+            let padding = format!("{}{}", indent, field.name).len() + 2; // +2 for ": "
+            println!(
+                "{:padding$}Sizes: Estimated/ZStandard -16/Original: {}/{}/{} ({:.2}%/{:.2}%/{:.2}%)",
+                "",
+                field.estimated_size,
+                field.zstd_size,
+                field.original_size,
+                calculate_percentage(field.estimated_size as f64, parent_stats.estimated_size as f64),
+                calculate_percentage(field.zstd_size as f64, parent_stats.zstd_size as f64),
+                calculate_percentage(field.original_size as f64, parent_stats.original_size as f64)
+            );
+            println!(
+                "{:padding$}{} bit, {} unique values, {:?}",
+                "",
+                field.lenbits,
+                field.value_counts.len(),
+                field.bit_order
+            );
         }
     }
 
@@ -300,27 +304,31 @@ impl AnalysisResults {
 
         println!("\nField Metrics:");
         for field_path in schema.ordered_field_paths() {
-            if let Some(field) = self.per_field.get(&field_path) {
-                let indent = "  ".repeat(field.depth);
-                let parent_path = field_path.rsplit_once('.').map(|(p, _)| p).unwrap_or("");
-                let parent_stats = self.per_field.get(parent_path).unwrap_or(file_metrics);
+            self.concise_print_field(file_metrics, &field_path);
+        }
+    }
 
-                println!(
-                    "{}{}: {:.2}bpb, {} LZ ({:.2}%), {}/{}/{} ({:.2}%/{:.2}%/{:.2}%) (est/zstd/orig), {}bit",
-                    indent,
-                    field.name,
-                    field.entropy,
-                    field.lz_matches,
-                    calculate_percentage(field.lz_matches as f64, parent_stats.lz_matches as f64),
-                    field.estimated_size,
-                    field.zstd_size,
-                    field.original_size,
-                    calculate_percentage(field.estimated_size as f64, parent_stats.estimated_size as f64),
-                    calculate_percentage(field.zstd_size as f64, parent_stats.zstd_size as f64),
-                    calculate_percentage(field.original_size as f64, parent_stats.original_size as f64),
-                    field.lenbits
-                );
-            }
+    fn concise_print_field(&self, file_metrics: &FieldMetrics, field_path: &str) {
+        if let Some(field) = self.per_field.get(field_path) {
+            let indent = "  ".repeat(field.depth);
+            let parent_path = field_path.rsplit_once('.').map(|(p, _)| p).unwrap_or("");
+            let parent_stats = self.per_field.get(parent_path).unwrap_or(file_metrics);
+
+            println!(
+                "{}{}: {:.2}bpb, {} LZ ({:.2}%), {}/{}/{} ({:.2}%/{:.2}%/{:.2}%) (est/zstd/orig), {}bit",
+                indent,
+                field.name,
+                field.entropy,
+                field.lz_matches,
+                calculate_percentage(field.lz_matches as f64, parent_stats.lz_matches as f64),
+                field.estimated_size,
+                field.zstd_size,
+                field.original_size,
+                calculate_percentage(field.estimated_size as f64, parent_stats.estimated_size as f64),
+                calculate_percentage(field.zstd_size as f64, parent_stats.zstd_size as f64),
+                calculate_percentage(field.original_size as f64, parent_stats.original_size as f64),
+                field.lenbits
+            );
         }
     }
 }
