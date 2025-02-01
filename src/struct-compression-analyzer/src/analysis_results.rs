@@ -6,6 +6,7 @@ use crate::analyzer::SchemaAnalyzer;
 use crate::schema::BitOrder;
 use crate::schema::Metadata;
 use crate::schema::Schema;
+use derive_more::derive::FromStr;
 use lossless_transform_utils::entropy::code_length_of_histogram32;
 use lossless_transform_utils::histogram::histogram32_from_bytes;
 use lossless_transform_utils::histogram::Histogram32;
@@ -177,6 +178,13 @@ impl FieldMetrics {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, FromStr)]
+pub enum PrintFormat {
+    #[default]
+    Detailed,
+    Concise,
+}
+
 impl AnalysisResults {
     /// Merge multiple [`AnalysisResults`] objects into one.
     /// This is useful when analyzing multiple files or groups of fields.
@@ -201,7 +209,7 @@ impl AnalysisResults {
             / (other.len() + 1);
     }
 
-    pub fn print(&self, schema: &Schema) {
+    pub fn print(&self, schema: &Schema, format: PrintFormat) {
         // Create file-level metrics for parent comparison
         let file_metrics = FieldMetrics {
             name: "File".to_string(),
@@ -219,6 +227,13 @@ impl AnalysisResults {
             value_counts: HashMap::new(),
         };
 
+        match format {
+            PrintFormat::Detailed => self.print_detailed(schema, &file_metrics),
+            PrintFormat::Concise => self.print_concise(schema, &file_metrics),
+        }
+    }
+
+    fn print_detailed(&self, schema: &Schema, file_metrics: &FieldMetrics) {
         println!("Schema: {}", self.schema_metadata.name);
         println!("Description: {}", self.schema_metadata.description);
         println!("File Entropy: {:.2} bits", self.file_entropy);
@@ -264,6 +279,46 @@ impl AnalysisResults {
                     field.lenbits,
                     field.value_counts.len(),
                     field.bit_order
+                );
+            }
+        }
+    }
+
+    fn print_concise(&self, schema: &Schema, file_metrics: &FieldMetrics) {
+        println!("Schema: {}", self.schema_metadata.name);
+        println!(
+            "File: {:.2}bpb, {} LZ, {}/{}/{} ({:.2}%/{:.2}%/{:.2}%) (est/zstd/orig)",
+            self.file_entropy,
+            self.file_lz_matches,
+            self.estimated_file_size,
+            self.zstd_file_size,
+            self.original_size,
+            calculate_percentage(self.estimated_file_size as f64, self.original_size as f64),
+            calculate_percentage(self.zstd_file_size as f64, self.original_size as f64),
+            100.0
+        );
+
+        println!("\nField Metrics:");
+        for field_path in schema.ordered_field_paths() {
+            if let Some(field) = self.per_field.get(&field_path) {
+                let indent = "  ".repeat(field.depth);
+                let parent_path = field_path.rsplit_once('.').map(|(p, _)| p).unwrap_or("");
+                let parent_stats = self.per_field.get(parent_path).unwrap_or(file_metrics);
+
+                println!(
+                    "{}{}: {:.2}bpb, {} LZ ({:.2}%), {}/{}/{} ({:.2}%/{:.2}%/{:.2}%) (est/zstd/orig), {}bit",
+                    indent,
+                    field.name,
+                    field.entropy,
+                    field.lz_matches,
+                    calculate_percentage(field.lz_matches as f64, parent_stats.lz_matches as f64),
+                    field.estimated_size,
+                    field.zstd_size,
+                    field.original_size,
+                    calculate_percentage(field.estimated_size as f64, parent_stats.estimated_size as f64),
+                    calculate_percentage(field.zstd_size as f64, parent_stats.zstd_size as f64),
+                    calculate_percentage(field.original_size as f64, parent_stats.original_size as f64),
+                    field.lenbits
                 );
             }
         }

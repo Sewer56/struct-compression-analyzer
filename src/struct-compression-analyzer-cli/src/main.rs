@@ -7,8 +7,10 @@ use std::{
     time::Instant,
 };
 use struct_compression_analyzer::{
-    analysis_results::AnalysisResults, analyzer::SchemaAnalyzer,
-    offset_evaluator::try_evaluate_file_offset, schema::Schema,
+    analysis_results::{AnalysisResults, PrintFormat},
+    analyzer::SchemaAnalyzer,
+    offset_evaluator::try_evaluate_file_offset,
+    schema::Schema,
 };
 use walkdir::WalkDir;
 
@@ -46,6 +48,10 @@ struct FileCommand {
     /// length of the data to analyze. If not specified, the entire rest of the file is analyzed.
     #[argh(option, short = 'l')]
     length: Option<u64>,
+
+    /// output format ('detailed', 'concise')
+    #[argh(option, short = 'f')]
+    format: Option<PrintFormat>,
 }
 
 #[derive(Debug, FromArgs)]
@@ -67,6 +73,10 @@ struct DirectoryCommand {
     /// length of the data to analyze. If not specified, the entire rest of the file is analyzed.
     #[argh(option, short = 'l')]
     length: Option<u64>,
+
+    /// output format ('detailed', 'concise')
+    #[argh(option, short = 'f')]
+    format: Option<PrintFormat>,
 }
 
 /// Parameters to function used to analyze a single file.
@@ -99,7 +109,7 @@ fn main() -> anyhow::Result<()> {
                 length: file_cmd.length,
             })?;
             println!("Analysis Results:");
-            analysis_result.print(&schema);
+            analysis_result.print(&schema, file_cmd.format.unwrap_or(PrintFormat::default()));
         }
         Command::Directory(dir_cmd) => {
             println!("Analyzing directory: {}", dir_cmd.path.display());
@@ -134,7 +144,7 @@ fn main() -> anyhow::Result<()> {
 
             // Print final aggregated results
             println!("Aggregated (Merged) Analysis Results:");
-            merged_results.print(&schema);
+            merged_results.print(&schema, dir_cmd.format.unwrap_or(PrintFormat::default()));
         }
     }
     // Print time taken for analysis
