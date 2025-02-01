@@ -3,6 +3,7 @@ use crate::analyze_utils::size_estimate;
 use crate::analyzer::get_writer_buffer;
 use crate::analyzer::BitStats;
 use crate::analyzer::SchemaAnalyzer;
+use crate::constants::CHILD_MARKER;
 use crate::schema::BitOrder;
 use crate::schema::Metadata;
 use crate::schema::Schema;
@@ -176,6 +177,26 @@ impl FieldMetrics {
             }
         }
     }
+
+    /// Returns the parent path of the current field.
+    /// The parent path is the part of the full path before the last dot.
+    pub fn parent_path(&self) -> Option<&str> {
+        self.full_path.rsplit_once(CHILD_MARKER).map(|(p, _)| p)
+    }
+
+    /// Returns the [`FieldMetrics`] object for the parent of the current field.
+    /// Returns `None` if there is no parent.
+    pub fn parent_metrics_or<'a>(
+        &self,
+        results: &'a AnalysisResults,
+        optb: &'a FieldMetrics,
+    ) -> &'a FieldMetrics {
+        let parent_path = self.parent_path();
+        let parent_stats = parent_path
+            .and_then(|p| results.per_field.get(p))
+            .unwrap_or(optb);
+        parent_stats
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, FromStr)]
@@ -209,10 +230,12 @@ impl AnalysisResults {
             / (other.len() + 1);
     }
 
-    pub fn print(&self, schema: &Schema, format: PrintFormat) {
-        // Create file-level metrics for parent comparison
-        let file_metrics = FieldMetrics {
-            name: "File".to_string(),
+    /// Converts the file level statistics into a [`FieldMetrics`] object
+    /// which can be used for comparison with parent in places such as the
+    /// print function.
+    pub fn as_field_metrics(&self) -> FieldMetrics {
+        FieldMetrics {
+            name: String::new(),
             full_path: String::new(),
             depth: 0,
             zstd_size: self.zstd_file_size,
@@ -225,11 +248,13 @@ impl AnalysisResults {
             bit_counts: Vec::new(),
             bit_order: BitOrder::Default,
             value_counts: HashMap::new(),
-        };
+        }
+    }
 
+    pub fn print(&self, schema: &Schema, format: PrintFormat) {
         match format {
-            PrintFormat::Detailed => self.print_detailed(schema, &file_metrics),
-            PrintFormat::Concise => self.print_concise(schema, &file_metrics),
+            PrintFormat::Detailed => self.print_detailed(schema, &self.as_field_metrics()),
+            PrintFormat::Concise => self.print_concise(schema, &self.as_field_metrics()),
         }
     }
 
@@ -253,10 +278,7 @@ impl AnalysisResults {
         if let Some(field) = self.per_field.get(field_path) {
             // Indent based on field depth to show hierarchy
             let indent = "  ".repeat(field.depth);
-
-            // Get parent path or use file metrics
-            let parent_path = field_path.rsplit_once('.').map(|(p, _)| p).unwrap_or("");
-            let parent_stats = self.per_field.get(parent_path).unwrap_or(file_metrics);
+            let parent_stats = field.parent_metrics_or(self, file_metrics);
 
             // Calculate percentages
             println!(
@@ -311,8 +333,7 @@ impl AnalysisResults {
     fn concise_print_field(&self, file_metrics: &FieldMetrics, field_path: &str) {
         if let Some(field) = self.per_field.get(field_path) {
             let indent = "  ".repeat(field.depth);
-            let parent_path = field_path.rsplit_once('.').map(|(p, _)| p).unwrap_or("");
-            let parent_stats = self.per_field.get(parent_path).unwrap_or(file_metrics);
+            let parent_stats = field.parent_metrics_or(self, file_metrics);
 
             println!(
                 "{}{}: {:.2}bpb, {} LZ ({:.2}%), {}/{}/{} ({:.2}%/{:.2}%/{:.2}%) (est/zstd/orig), {}bit",

@@ -1,4 +1,5 @@
 use super::schema::{Group, Schema};
+use crate::constants::CHILD_MARKER;
 use crate::{
     analysis_results::{compute_analysis_results, AnalysisResults},
     schema::{BitOrder, FieldDefinition},
@@ -236,7 +237,7 @@ fn build_field_stats<'a>(group: &'a Group, parent_path: &'a str, depth: usize) -
         let path = if parent_path.is_empty() {
             name.clone()
         } else {
-            format!("{}.{}", parent_path, name)
+            format!("{}{CHILD_MARKER}{}", parent_path, name)
         };
 
         match field {

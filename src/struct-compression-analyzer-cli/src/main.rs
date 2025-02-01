@@ -9,6 +9,7 @@ use std::{
 use struct_compression_analyzer::{
     analysis_results::{AnalysisResults, PrintFormat},
     analyzer::SchemaAnalyzer,
+    csv_writer,
     offset_evaluator::try_evaluate_file_offset,
     schema::Schema,
 };
@@ -81,6 +82,10 @@ struct DirectoryCommand {
     /// print info for all files
     #[argh(switch, short = 'a')]
     all_files: bool,
+
+    /// output directory for CSV reports
+    #[argh(option)]
+    csv_output: Option<PathBuf>,
 }
 
 /// Parameters to function used to analyze a single file.
@@ -159,6 +164,12 @@ fn main() -> anyhow::Result<()> {
                         .print(&schema, dir_cmd.format.unwrap_or(PrintFormat::default()));
                     println!();
                 }
+            }
+
+            // Write CSV reports
+            if let Some(output_dir) = &dir_cmd.csv_output {
+                csv_writer::write_field_csvs(&individual_results, output_dir)?;
+                println!("Generated field CSV reports in: {}", output_dir.display());
             }
         }
     }
