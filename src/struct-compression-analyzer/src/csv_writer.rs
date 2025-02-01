@@ -1,6 +1,9 @@
 use crate::analysis_results::{get_parent_path, AnalysisResults};
 use csv::Writer;
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 const CSV_HEADERS: &[&str] = &[
     "name",
@@ -18,25 +21,28 @@ const CSV_HEADERS: &[&str] = &[
     "lenbits",
     "unique_values",
     "bit_order",
+    "file_name",
 ];
 
 const CSV_SPLIT_HEADERS: &[&str] = &[
-    "name",
-    "full_path",
-    "depth",
-    "entropy",
-    "estimated_size",
-    "zstd_size",
-    "original_size",
-    "children_estimated_size",
-    "children_zstd_size",
-    "children_original_size",
-    "children_estimated_ratio",
-    "children_zstd_ratio",
-    "children_original_ratio",
+    "file_name",
+    "parent_full_path",
+    "parent_entropy",
+    "parent_lz_matches",
+    "parent_estimated_size",
+    "parent_zstd_size",
+    "parent_original_size",
+    "child_estimated_size",
+    "child_zstd_size",
+    "child_estimated_ratio",
+    "child_zstd_ratio",
 ];
 
-pub fn write_field_csvs(results: &[AnalysisResults], output_dir: &Path) -> std::io::Result<()> {
+pub fn write_field_csvs(
+    results: &[AnalysisResults],
+    output_dir: &Path,
+    file_paths: &[PathBuf],
+) -> std::io::Result<()> {
     std::fs::create_dir_all(output_dir)?;
 
     // Get field paths from first result (all results have same fields)
@@ -46,7 +52,9 @@ pub fn write_field_csvs(results: &[AnalysisResults], output_dir: &Path) -> std::
         wtr.write_record(CSV_HEADERS)?;
 
         // Write all individual field and group records
-        for result in results {
+        for x in 0..results.len() {
+            let result = &results[x];
+            let file_path = &file_paths[x];
             let file_metrics = result.as_field_metrics();
             if let Some(field) = result.per_field.get(field_path) {
                 let parent_stats = field.parent_metrics_or(result, &file_metrics);
@@ -66,6 +74,11 @@ pub fn write_field_csvs(results: &[AnalysisResults], output_dir: &Path) -> std::
                     field.lenbits.to_string(),
                     field.value_counts.len().to_string(),
                     format!("{:?}", field.bit_order),
+                    file_path
+                        .file_name()
+                        .and_then(|os_str| os_str.to_str())
+                        .unwrap_or_default()
+                        .to_string(),
                 ])?;
             }
         }
@@ -93,38 +106,72 @@ pub fn write_field_csvs(results: &[AnalysisResults], output_dir: &Path) -> std::
         let mut wtr = Writer::from_path(
             output_dir.join(format!("{}_split.csv", sanitize_filename(parent_path))),
         )?;
-        wtr.write_record(CSV_SPLIT_HEADERS)?;
 
-        for result in results {
+        // Generate all columns.
+        let mut child_columns: Vec<String> = Vec::new();
+        for child in &children {
+            child_columns.push(format!("{}_entropy", child));
+            child_columns.push(format!("{}_lz_matches", child));
+            child_columns.push(format!("{}_estimated_size", child));
+            child_columns.push(format!("{}_zstd_size", child));
+            child_columns.push(format!("{}_original_size", child));
+        }
+
+        // Write header with all columns
+        let mut all_columns = CSV_SPLIT_HEADERS
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
+        all_columns.extend_from_slice(&child_columns);
+        wtr.write_record(&all_columns)?;
+
+        for x in 0..results.len() {
+            let result = &results[x];
+            let file_path = &file_paths[x];
+
             // Sum up the estimates, zstd sizes, original sizes
             let mut children_estimated_size = 0;
             let mut children_zstd_size = 0;
-            let mut children_original_size = 0;
             for child in &children {
                 if let Some(field) = result.per_field.get(*child) {
                     children_estimated_size += field.estimated_size;
                     children_zstd_size += field.zstd_size;
-                    children_original_size += field.original_size;
                 }
             }
 
             // Write split record.
             if let Some(parent_field) = result.per_field.get(parent_path) {
-                wtr.write_record(vec![
-                    parent_field.name.clone(),
-                    parent_field.full_path.clone(),
-                    parent_field.depth.to_string(),
-                    parent_field.entropy.to_string(),
-                    parent_field.estimated_size.to_string(),
-                    parent_field.zstd_size.to_string(),
-                    parent_field.original_size.to_string(),
-                    children_estimated_size.to_string(),
-                    children_zstd_size.to_string(),
-                    children_original_size.to_string(),
-                    safe_ratio(children_estimated_size, parent_field.estimated_size),
-                    safe_ratio(children_zstd_size, parent_field.zstd_size),
-                    safe_ratio(children_original_size, parent_field.original_size),
-                ])?;
+                let mut record = vec![
+                    file_path
+                        .file_name()
+                        .and_then(|os_str| os_str.to_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    parent_field.full_path.clone(), // parent_full_path
+                    parent_field.entropy.to_string(), // parent_entropy
+                    parent_field.lz_matches.to_string(), // parent_lz_matches
+                    parent_field.estimated_size.to_string(), // parent_estimated_size
+                    parent_field.zstd_size.to_string(), // parent_zstd_size
+                    parent_field.original_size.to_string(), // parent_original_size
+                    children_estimated_size.to_string(), // child_estimated_size
+                    children_zstd_size.to_string(), // child_zstd_size
+                    safe_ratio(children_estimated_size, parent_field.estimated_size), // child_estimated_ratio
+                    safe_ratio(children_zstd_size, parent_field.zstd_size), // child_zstd_ratio
+                ];
+
+                // Now write child specific fields to the record
+                for child in &children {
+                    if let Some(child_field) = result.per_field.get(*child) {
+                        record.extend_from_slice(&[
+                            child_field.entropy.to_string(),        // "{}_entropy"
+                            child_field.lz_matches.to_string(),     // "{}_lz_matches"
+                            child_field.estimated_size.to_string(), // "{}_estimated_size"
+                            child_field.zstd_size.to_string(),      // "{}_zstd_size"
+                            child_field.original_size.to_string(),  // "{}_original_size"
+                        ]);
+                    }
+                }
+                wtr.write_record(&record)?;
             }
         }
 

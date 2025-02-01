@@ -168,7 +168,7 @@ fn main() -> anyhow::Result<()> {
 
             // Write CSV reports
             if let Some(output_dir) = &dir_cmd.csv_output {
-                csv_writer::write_field_csvs(&individual_results, output_dir)?;
+                csv_writer::write_field_csvs(&individual_results, output_dir, &files)?;
                 println!("Generated field CSV reports in: {}", output_dir.display());
             }
         }
