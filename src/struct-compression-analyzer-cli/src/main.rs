@@ -77,6 +77,10 @@ struct DirectoryCommand {
     /// output format ('detailed', 'concise')
     #[argh(option, short = 'f')]
     format: Option<PrintFormat>,
+
+    /// print info for all files
+    #[argh(switch, short = 'a')]
+    all_files: bool,
 }
 
 /// Parameters to function used to analyze a single file.
@@ -145,6 +149,17 @@ fn main() -> anyhow::Result<()> {
             // Print final aggregated results
             println!("Aggregated (Merged) Analysis Results:");
             merged_results.print(&schema, dir_cmd.format.unwrap_or(PrintFormat::default()));
+
+            // Print individual files
+            if dir_cmd.all_files {
+                println!("Individual Files:");
+                for x in 0..individual_results.len() {
+                    println!("- {}", files[x].display());
+                    individual_results[x]
+                        .print(&schema, dir_cmd.format.unwrap_or(PrintFormat::default()));
+                    println!();
+                }
+            }
         }
     }
     // Print time taken for analysis
