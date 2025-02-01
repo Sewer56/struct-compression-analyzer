@@ -181,7 +181,7 @@ impl FieldMetrics {
     /// Returns the parent path of the current field.
     /// The parent path is the part of the full path before the last dot.
     pub fn parent_path(&self) -> Option<&str> {
-        self.full_path.rsplit_once(CHILD_MARKER).map(|(p, _)| p)
+        get_parent_path(&self.full_path)
     }
 
     /// Returns the [`FieldMetrics`] object for the parent of the current field.
@@ -197,6 +197,10 @@ impl FieldMetrics {
             .unwrap_or(optb);
         parent_stats
     }
+}
+
+pub(crate) fn get_parent_path(field_path: &str) -> Option<&str> {
+    field_path.rsplit_once(CHILD_MARKER).map(|(p, _)| p)
 }
 
 #[derive(Debug, Clone, Copy, Default, FromStr)]
