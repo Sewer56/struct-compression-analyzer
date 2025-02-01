@@ -110,11 +110,11 @@ pub fn write_field_csvs(
         // Generate all columns.
         let mut child_columns: Vec<String> = Vec::new();
         for child in &children {
-            child_columns.push(format!("{}_entropy", child));
-            child_columns.push(format!("{}_lz_matches", child));
-            child_columns.push(format!("{}_estimated_size", child));
-            child_columns.push(format!("{}_zstd_size", child));
-            child_columns.push(format!("{}_original_size", child));
+            child_columns.push(format!("{}_entropy", get_child_field_name(child)));
+            child_columns.push(format!("{}_lz_matches", get_child_field_name(child)));
+            child_columns.push(format!("{}_estimated_size", get_child_field_name(child)));
+            child_columns.push(format!("{}_zstd_size", get_child_field_name(child)));
+            child_columns.push(format!("{}_original_size", get_child_field_name(child)));
         }
 
         // Write header with all columns
@@ -179,6 +179,14 @@ pub fn write_field_csvs(
     }
 
     Ok(())
+}
+
+fn get_child_field_name(field_path: &str) -> String {
+    field_path
+        .split('.')
+        .next_back()
+        .unwrap_or_default()
+        .to_string()
 }
 
 fn safe_ratio(child: usize, parent: usize) -> String {
