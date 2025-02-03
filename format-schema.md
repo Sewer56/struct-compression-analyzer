@@ -56,6 +56,11 @@ analysis:
           1: "Label for value 1"
     - field: another_field
       description: text
+  compare_groups:
+    - name: split_colors
+      group_1: [colors]          # Base group to compare against.
+      group_2: [color0, color1]  # Derived group to compare with.
+      description: Compare regular interleaved colour format `colors` against their split components `color0` and `color1`.
 ```
 
 The `analysis` section configures how results should be analyzed and presented:
@@ -71,6 +76,11 @@ The `analysis` section configures how results should be analyzed and presented:
       - `%02d` - zero-padded decimal
       - `%s` - string
   - `labels` can provide meaningful names for specific values
+- `compare_groups`: Custom group comparisons
+  - This feature allows you to compare fields (or groups) against each other.
+  - A common use case is to compare a struct, or sub struct against its inner components.
+    - This allows you to compare `structure of array` vs `array of structure` very easily.
+  - `group_1` is used as baseline, while `group_2` is compared against it.
 
 ### Conditional Offsets
 
@@ -163,6 +173,11 @@ analysis:
       description: Results grouped by partition value
       display:
         format: "Partition %d"
+  compare_groups:
+    - name: split_colors
+      group_1: [colors]          # Base group to compare against.
+      group_2: [color0, color1]  # Derived group to compare with.
+      description: Compare regular interleaved colour format `colors` against their split components `color0` and `color1`.
 ```
 
 ### Single Bit Field
@@ -256,6 +271,11 @@ analysis:
       description: Results grouped by partition value
       display:
         format: "Partition %d"
+  compare_groups:
+    - name: split_colors
+      group_1: [colors]          # Base group to compare against.
+      group_2: [color0, color1]  # Derived group to compare with.
+      description: Compare regular interleaved colour format `colors` against their split components `color0` and `color1`.
 
 root:
   type: group
@@ -291,7 +311,7 @@ root:
           type: group
           fields:
             B0: 4
-            B1: 4
+        B1: 4
             B2: 4
             B3: 4
             B4: 4

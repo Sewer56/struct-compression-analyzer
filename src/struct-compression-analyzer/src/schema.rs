@@ -51,6 +51,34 @@ pub struct AnalysisConfig {
     /// ```
     #[serde(default)]
     pub group_by: Vec<GroupByConfig>,
+
+    /// Compare structural equivalence between different field groups. Each comparison
+    /// verifies that the compared groups have identical total bits and field structure.
+    ///
+    /// # Example
+    /// ```yaml
+    /// compare_groups:
+    ///   - name: colors
+    ///     group_1: [colors]                       # Original interleaved (structure of array) RGB layout
+    ///     group_2: [color_r, color_g, color_b]    # array of structure layout (e.g. RRRGGGBBB)
+    ///     description: Compare compression ratio of original interleaved format against grouping of colour components.
+    /// ```
+    #[serde(default)]
+    pub compare_groups: Vec<GroupComparison>,
+}
+
+/// Configuration for comparing field groups
+#[derive(Debug, Deserialize)]
+pub struct GroupComparison {
+    /// Friendly name for this comparison.
+    pub name: String,
+    /// First group path to compare. This is the 'baseline'.
+    pub group_1: Vec<String>,
+    /// Second group path to compare. This is the group compared against the baseline (group_1).
+    pub group_2: Vec<String>,
+    /// Optional description of the comparison
+    #[serde(default)]
+    pub description: String,
 }
 
 /// Configuration for grouping analysis results by field values
@@ -932,6 +960,63 @@ root:
 
             let schema: Schema = serde_yaml::from_str(yaml).unwrap();
             assert!(schema.conditional_offsets.is_empty());
+        }
+    }
+
+    mod group_compare_tests {
+        use crate::schema::Schema;
+
+        #[test]
+        fn parses_basic_comparison() {
+            let yaml = r#"
+version: '1.0'
+analysis:
+  compare_groups:
+    - name: color_layouts
+      group_1: [colors]
+      group_2: [color_r, color_g, color_b]
+      description: Compare interleaved vs planar layouts
+root:
+  type: group
+  fields: {}
+"#;
+
+            let schema = Schema::from_yaml(yaml).unwrap();
+            let comparisons = &schema.analysis.compare_groups;
+
+            assert_eq!(comparisons.len(), 1);
+            assert_eq!(comparisons[0].name, "color_layouts");
+            assert_eq!(comparisons[0].group_1, vec!["colors"]);
+            assert_eq!(
+                comparisons[0].group_2,
+                vec!["color_r", "color_g", "color_b"]
+            );
+            assert_eq!(
+                comparisons[0].description,
+                "Compare interleaved vs planar layouts"
+            );
+        }
+
+        #[test]
+        fn handles_minimal_comparison() {
+            let yaml = r#"
+version: '1.0'
+analysis:
+  compare_groups:
+    - name: basic
+      group_1: [a]
+      group_2: [b]
+root:
+  type: group
+  fields: {}
+"#;
+
+            let schema = Schema::from_yaml(yaml).unwrap();
+            let comparisons = &schema.analysis.compare_groups;
+
+            assert_eq!(comparisons.len(), 1);
+            assert_eq!(comparisons[0].name, "basic");
+            assert!(comparisons[0].description.is_empty());
         }
     }
 }
