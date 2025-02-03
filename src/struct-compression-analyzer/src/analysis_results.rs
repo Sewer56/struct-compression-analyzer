@@ -49,6 +49,78 @@ pub fn compute_analysis_results(analyzer: &mut SchemaAnalyzer) -> AnalysisResult
         );
     }
 
+    // Process group comparisons
+    let mut group_comparisons = Vec::new();
+    for comparison in &analyzer.schema.analysis.compare_groups {
+        let mut group1_bytes: Vec<u8> = Vec::new();
+        let mut group2_bytes: Vec<u8> = Vec::new();
+
+        // Sum up bytes for group 1
+        for path in &comparison.group_1 {
+            if let Some(stats) = analyzer.field_stats.iter_mut().find(|k| k.name == *path) {
+                group1_bytes.extend_from_slice(get_writer_buffer(&mut stats.writer));
+            }
+        }
+
+        // Sum up bytes for group 2
+        for path in &comparison.group_2 {
+            if let Some(stats) = analyzer.field_stats.iter_mut().find(|k| k.name == *path) {
+                group2_bytes.extend_from_slice(get_writer_buffer(&mut stats.writer));
+            }
+        }
+
+        let mut group1_field_metrics: Vec<FieldMetrics> = Vec::new();
+        let mut group2_field_metrics: Vec<FieldMetrics> = Vec::new();
+        for path in &comparison.group_1 {
+            if let Some(metrics) = field_metrics.iter().find(|(_k, v)| v.name == *path) {
+                group1_field_metrics.push(metrics.1.clone());
+            }
+        }
+        for path in &comparison.group_2 {
+            if let Some(metrics) = field_metrics.iter().find(|(_k, v)| v.name == *path) {
+                group2_field_metrics.push(metrics.1.clone());
+            }
+        }
+
+        // Calculate entropy and LZ matches for both group sets.
+        let entropy1 = calculate_file_entropy(&group1_bytes);
+        let entropy2 = calculate_file_entropy(&group2_bytes);
+        let lz_matches1 = estimate_num_lz_matches_fast(&group1_bytes);
+        let lz_matches2 = estimate_num_lz_matches_fast(&group2_bytes);
+        let estimated_size_1 = size_estimate(&group1_bytes, lz_matches1, entropy1);
+        let estimated_size_2 = size_estimate(&group2_bytes, lz_matches2, entropy2);
+        let actual_size_1 = get_zstd_compressed_size(&group1_bytes);
+        let actual_size_2 = get_zstd_compressed_size(&group2_bytes);
+
+        group_comparisons.push(GroupComparisonResult {
+            name: comparison.name.clone(),
+            description: comparison.description.clone(),
+            group1_metrics: GroupComparisonMetrics {
+                lz_matches: lz_matches1 as u64,
+                entropy: entropy1,
+                estimated_size: estimated_size_1 as u64,
+                zstd_size: actual_size_1 as u64,
+                original_size: group1_bytes.len() as u64,
+            },
+            group2_metrics: GroupComparisonMetrics {
+                lz_matches: lz_matches2 as u64,
+                entropy: entropy2,
+                estimated_size: estimated_size_2 as u64,
+                zstd_size: actual_size_2 as u64,
+                original_size: group2_bytes.len() as u64,
+            },
+            difference: GroupDifference {
+                lz_matches: (lz_matches2.wrapping_sub(lz_matches1)) as i64,
+                entropy: (entropy2 - entropy1).abs(),
+                estimated_size: (estimated_size_2.wrapping_sub(estimated_size_1)) as i64,
+                zstd_size: (actual_size_2.wrapping_sub(actual_size_1)) as i64,
+                original_size: (group2_bytes.len().wrapping_sub(group1_bytes.len())) as i64,
+            },
+            group1_field_metrics,
+            group2_field_metrics,
+        });
+    }
+
     AnalysisResults {
         file_entropy,
         file_lz_matches,
@@ -57,6 +129,7 @@ pub fn compute_analysis_results(analyzer: &mut SchemaAnalyzer) -> AnalysisResult
         estimated_file_size: size_estimate(&analyzer.entries, file_lz_matches, file_entropy),
         zstd_file_size: get_zstd_compressed_size(&analyzer.entries),
         original_size: analyzer.entries.len(),
+        group_comparisons,
     }
 }
 
@@ -91,6 +164,9 @@ pub struct AnalysisResults {
     /// This is a map of `full_path` to [`FieldMetrics`], such that we
     /// can easily merge the results of different fields down the road.
     pub per_field: HashMap<String, FieldMetrics>,
+
+    /// Group comparison results
+    pub group_comparisons: Vec<GroupComparisonResult>,
 }
 
 /// Complete analysis metrics for a single field
@@ -276,6 +352,11 @@ impl AnalysisResults {
         for field_path in schema.ordered_field_paths() {
             self.detailed_print_field(file_metrics, &field_path);
         }
+
+        println!("\nGroup Comparisons:");
+        for comparison in &self.group_comparisons {
+            self.detailed_print_comparison(comparison);
+        }
     }
 
     fn detailed_print_field(&self, file_metrics: &FieldMetrics, field_path: &str) {
@@ -314,6 +395,10 @@ impl AnalysisResults {
         }
     }
 
+    fn detailed_print_comparison(&self, comparison: &GroupComparisonResult) {
+        self.concise_print_comparison(comparison);
+    }
+
     fn print_concise(&self, schema: &Schema, file_metrics: &FieldMetrics) {
         println!("Schema: {}", self.schema_metadata.name);
         println!(
@@ -331,6 +416,11 @@ impl AnalysisResults {
         println!("\nField Metrics:");
         for field_path in schema.ordered_field_paths() {
             self.concise_print_field(file_metrics, &field_path);
+        }
+
+        println!("\nGroup Comparisons:");
+        for comparison in &self.group_comparisons {
+            self.concise_print_comparison(comparison);
         }
     }
 
@@ -356,6 +446,131 @@ impl AnalysisResults {
             );
         }
     }
+
+    fn concise_print_comparison(&self, comparison: &GroupComparisonResult) {
+        let base_lz = comparison.group1_metrics.lz_matches;
+        let size_orig = comparison.group1_metrics.original_size;
+        let base_entropy = comparison.group1_metrics.entropy;
+
+        let base_est = comparison.group1_metrics.estimated_size;
+        let base_zstd = comparison.group1_metrics.zstd_size;
+
+        let comp_lz = comparison.group2_metrics.lz_matches;
+        let comp_entropy = comparison.group2_metrics.entropy;
+
+        let comp_est = comparison.group2_metrics.estimated_size;
+        let comp_zstd = comparison.group2_metrics.zstd_size;
+
+        let ratio_est = calculate_percentage(comp_est as f64, base_est as f64);
+        let ratio_zstd = calculate_percentage(comp_zstd as f64, base_zstd as f64);
+
+        let diff_est = comparison.difference.estimated_size;
+        let diff_zstd = comparison.difference.zstd_size;
+
+        println!("  {}: {}", comparison.name, comparison.description);
+        println!("    Original Size: {}", size_orig);
+        println!("    Base LZ, Entropy: ({}, {:.2}):", base_lz, base_entropy);
+        println!("    Comp LZ, Entropy: ({}, {:.2}):", comp_lz, comp_entropy);
+        println!(
+            "    Base Group LZ, Entropy: ({:?}, {:?})",
+            comparison
+                .group1_field_metrics
+                .iter()
+                .map(|m| m.lz_matches)
+                .collect::<Vec<_>>(),
+            comparison
+                .group1_field_metrics
+                .iter()
+                .map(|m| format!("{:.2}", m.entropy))
+                .collect::<Vec<_>>()
+        );
+        println!(
+            "    Comp Group LZ, Entropy: ({:?}, {:?})",
+            comparison
+                .group2_field_metrics
+                .iter()
+                .map(|m| m.lz_matches)
+                .collect::<Vec<_>>(),
+            comparison
+                .group2_field_metrics
+                .iter()
+                .map(|m| format!("{:.2}", m.entropy))
+                .collect::<Vec<_>>()
+        );
+
+        println!("    Base (est/zstd): ({}/{})", base_est, base_zstd);
+        println!("    Comp (est/zstd): ({}/{})", comp_est, comp_zstd);
+        println!("    Ratio (est/zstd): ({}/{})", ratio_est, ratio_zstd);
+        println!("    Diff (est/zstd): ({}/{})", diff_est, diff_zstd);
+    }
+}
+
+/// The result of comparing 2 arbitrary groups of fields based on the schema.
+#[derive(Clone)]
+pub struct GroupComparisonResult {
+    /// The name of the group comparison. (Copied from schema)
+    pub name: String,
+    /// A description of the group comparison. (Copied from schema)
+    pub description: String,
+    /// The metrics for the first group.
+    pub group1_metrics: GroupComparisonMetrics,
+    /// The metrics for the second group.
+    pub group2_metrics: GroupComparisonMetrics,
+    /// Comparison between group 2 and group 1.
+    pub difference: GroupDifference,
+    /// The size difference between the two groups.
+    pub group1_field_metrics: Vec<FieldMetrics>,
+    /// The size difference between the two groups.
+    pub group2_field_metrics: Vec<FieldMetrics>,
+}
+
+impl GroupComparisonResult {
+    /// Generates a name from all field metrics in group 1
+    pub fn group1_name(&self) -> String {
+        self.group1_field_metrics
+            .iter()
+            .map(|m| m.name.as_str())
+            .collect::<Vec<&str>>()
+            .join(", ")
+    }
+
+    /// Generates a name from all field metrics in group 2
+    pub fn group2_name(&self) -> String {
+        self.group2_field_metrics
+            .iter()
+            .map(|m| m.name.as_str())
+            .collect::<Vec<&str>>()
+            .join(", ")
+    }
+}
+
+/// The metrics for a group of fields.
+#[derive(Clone, Default)]
+pub struct GroupComparisonMetrics {
+    /// Number of total LZ matches
+    pub lz_matches: u64,
+    /// Amount of entropy in the input data set
+    pub entropy: f64,
+    /// Size estimated by the size estimator function.
+    pub estimated_size: u64,
+    /// Size compressed by zstd.
+    pub zstd_size: u64,
+    /// Size of the original data.
+    pub original_size: u64,
+}
+
+#[derive(Clone, Default)]
+pub struct GroupDifference {
+    /// The difference in LZ matches.
+    pub lz_matches: i64,
+    /// The difference in entropy
+    pub entropy: f64,
+    /// Difference in estimated size
+    pub estimated_size: i64,
+    /// Difference in zstd size
+    pub zstd_size: i64,
+    /// Difference in original size
+    pub original_size: i64,
 }
 
 // Helper function to calculate percentage

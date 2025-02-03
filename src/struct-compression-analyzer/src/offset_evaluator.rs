@@ -13,7 +13,7 @@ pub fn try_evaluate_file_offset(
     let max_read = conditional_offsets
         .iter()
         .flat_map(|o| &o.conditions)
-        .map(|c| c.byte_offset + ((c.bits as u64 + 7) / 8)) // Bytes needed
+        .map(|c| c.byte_offset + (c.bits as u64).div_ceil(8)) // Bytes needed
         .max()
         .unwrap_or(0);
 
