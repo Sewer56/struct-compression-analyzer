@@ -1,9 +1,6 @@
-use crate::analysis_results::{get_parent_path, AnalysisResults};
+use crate::analysis_results::AnalysisResults;
 use csv::Writer;
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 const CSV_HEADERS: &[&str] = &[
     "name",
@@ -22,20 +19,6 @@ const CSV_HEADERS: &[&str] = &[
     "unique_values",
     "bit_order",
     "file_name",
-];
-
-const CSV_SPLIT_HEADERS: &[&str] = &[
-    "file_name",
-    "parent_full_path",
-    "parent_entropy",
-    "parent_lz_matches",
-    "parent_estimated_size",
-    "parent_zstd_size",
-    "parent_original_size",
-    "child_estimated_size",
-    "child_zstd_size",
-    "child_estimated_ratio",
-    "child_zstd_ratio",
 ];
 
 pub fn write_field_csvs(
@@ -85,108 +68,134 @@ pub fn write_field_csvs(
         wtr.flush()?;
     }
 
-    // Calculate all parent->child mappings for calculating splits.
-    let mut parent_to_child: HashMap<&str, Vec<&str>> = HashMap::new();
-    let field_paths = results[0].per_field.keys();
-    for field_path in field_paths {
-        let parent_path = get_parent_path(field_path).unwrap_or("");
-        // Append to parent->child mapping
-        if !parent_to_child.contains_key(parent_path) {
-            parent_to_child.insert(parent_path, vec![field_path]);
-        } else {
-            parent_to_child
-                .get_mut(parent_path)
-                .unwrap()
-                .push(field_path);
-        }
+    // Add group comparison CSVs
+    let group_headers = &[
+        "name",
+        "file_name",
+        "size",
+        "base lz",
+        "comp lz",
+        "base est",
+        "base zstd",
+        "comp est",
+        "comp zstd",
+        "ratio est",
+        "ratio zstd",
+        "diff est",
+        "diff zstd",
+        "base group lz",
+        "comp group lz",
+        "base group entropy",
+        "comp group entropy",
+        "max comp lz diff",
+        "max comp entropy diff",
+    ];
+
+    if results.is_empty() {
+        return Ok(());
     }
 
-    // Write all of the split data
-    for (parent_path, children) in parent_to_child {
+    // It's assumed all results correspond to same data/schema.
+    for (comp_idx, comparison) in results[0].group_comparisons.iter().enumerate() {
         let mut wtr = Writer::from_path(
-            output_dir.join(format!("{}_split.csv", sanitize_filename(parent_path))),
+            output_dir.join(sanitize_filename(&comparison.name) + "_comparison.csv"),
         )?;
+        wtr.write_record(group_headers)?;
 
-        // Generate all columns.
-        let mut child_columns: Vec<String> = Vec::new();
-        for child in &children {
-            child_columns.push(format!("{}_entropy", get_child_field_name(child)));
-            child_columns.push(format!("{}_lz_matches", get_child_field_name(child)));
-            child_columns.push(format!("{}_estimated_size", get_child_field_name(child)));
-            child_columns.push(format!("{}_zstd_size", get_child_field_name(child)));
-            child_columns.push(format!("{}_original_size", get_child_field_name(child)));
+        for (file_idx, result) in results.iter().enumerate() {
+            // Get equivalent comparison for this result.
+            let comparison = &result.group_comparisons[comp_idx];
+            let base_group_lz: Vec<_> = comparison
+                .group1_field_metrics
+                .iter()
+                .map(|m| m.lz_matches.to_string())
+                .collect();
+            let comp_group_lz: Vec<_> = comparison
+                .group2_field_metrics
+                .iter()
+                .map(|m| m.lz_matches.to_string())
+                .collect();
+            let comp_group_entropy: Vec<_> = comparison
+                .group2_field_metrics
+                .iter()
+                .map(|m| format!("{:.2}", m.entropy))
+                .collect();
+            let base_group_entropy: Vec<_> = comparison
+                .group1_field_metrics
+                .iter()
+                .map(|m| format!("{:.2}", m.entropy))
+                .collect();
+
+            let group2_lz_values: Vec<usize> = comparison
+                .group2_field_metrics
+                .iter()
+                .map(|m| m.lz_matches)
+                .collect();
+
+            let max_intra_comp_lz_diff_ratio = if group2_lz_values.len() < 2 {
+                0.0
+            } else {
+                let max = *group2_lz_values.iter().max().unwrap() as f64;
+                let min = *group2_lz_values.iter().min().unwrap() as f64;
+                max / min
+            };
+
+            let group2_entropy_values: Vec<f64> = comparison
+                .group2_field_metrics
+                .iter()
+                .map(|m| m.entropy)
+                .collect();
+
+            let max_intra_comp_entropy_diff = if group2_entropy_values.len() < 2 {
+                0.0
+            } else {
+                let max = group2_entropy_values
+                    .iter()
+                    .max_by(|a, b| a.partial_cmp(b).unwrap())
+                    .unwrap();
+                let min = group2_entropy_values
+                    .iter()
+                    .min_by(|a, b| a.partial_cmp(b).unwrap())
+                    .unwrap();
+                max - min
+            };
+
+            wtr.write_record(vec![
+                comparison.name.clone(), // name
+                file_paths[file_idx]
+                    .file_name()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap(), // file name
+                comparison.group1_metrics.original_size.to_string(), // size
+                comparison.group1_metrics.lz_matches.to_string(), // base lz
+                comparison.group2_metrics.lz_matches.to_string(), // comp lz
+                comparison.group1_metrics.estimated_size.to_string(), // base est
+                comparison.group1_metrics.zstd_size.to_string(), // base zstd
+                comparison.group2_metrics.estimated_size.to_string(), // comp est
+                comparison.group2_metrics.zstd_size.to_string(), // comp zstd
+                safe_ratio(
+                    comparison.group2_metrics.estimated_size as usize,
+                    comparison.group1_metrics.estimated_size as usize,
+                ), // ratio est
+                safe_ratio(
+                    comparison.group2_metrics.zstd_size as usize,
+                    comparison.group1_metrics.zstd_size as usize,
+                ), // ratio zstd
+                comparison.difference.estimated_size.to_string(), // diff est
+                comparison.difference.zstd_size.to_string(), // diff zstd
+                base_group_lz.join("|"),
+                comp_group_lz.join("|"),
+                base_group_entropy.join("|"),
+                comp_group_entropy.join("|"),
+                format!("{:.2}", max_intra_comp_lz_diff_ratio),
+                format!("{:.2}", max_intra_comp_entropy_diff),
+            ])?;
+
+            wtr.flush()?;
         }
-
-        // Write header with all columns
-        let mut all_columns = CSV_SPLIT_HEADERS
-            .iter()
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>();
-        all_columns.extend_from_slice(&child_columns);
-        wtr.write_record(&all_columns)?;
-
-        for x in 0..results.len() {
-            let result = &results[x];
-            let file_path = &file_paths[x];
-
-            // Sum up the estimates, zstd sizes, original sizes
-            let mut children_estimated_size = 0;
-            let mut children_zstd_size = 0;
-            for child in &children {
-                if let Some(field) = result.per_field.get(*child) {
-                    children_estimated_size += field.estimated_size;
-                    children_zstd_size += field.zstd_size;
-                }
-            }
-
-            // Write split record.
-            if let Some(parent_field) = result.per_field.get(parent_path) {
-                let mut record = vec![
-                    file_path
-                        .file_name()
-                        .and_then(|os_str| os_str.to_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    parent_field.full_path.clone(), // parent_full_path
-                    parent_field.entropy.to_string(), // parent_entropy
-                    parent_field.lz_matches.to_string(), // parent_lz_matches
-                    parent_field.estimated_size.to_string(), // parent_estimated_size
-                    parent_field.zstd_size.to_string(), // parent_zstd_size
-                    parent_field.original_size.to_string(), // parent_original_size
-                    children_estimated_size.to_string(), // child_estimated_size
-                    children_zstd_size.to_string(), // child_zstd_size
-                    safe_ratio(children_estimated_size, parent_field.estimated_size), // child_estimated_ratio
-                    safe_ratio(children_zstd_size, parent_field.zstd_size), // child_zstd_ratio
-                ];
-
-                // Now write child specific fields to the record
-                for child in &children {
-                    if let Some(child_field) = result.per_field.get(*child) {
-                        record.extend_from_slice(&[
-                            child_field.entropy.to_string(),        // "{}_entropy"
-                            child_field.lz_matches.to_string(),     // "{}_lz_matches"
-                            child_field.estimated_size.to_string(), // "{}_estimated_size"
-                            child_field.zstd_size.to_string(),      // "{}_zstd_size"
-                            child_field.original_size.to_string(),  // "{}_original_size"
-                        ]);
-                    }
-                }
-                wtr.write_record(&record)?;
-            }
-        }
-
-        wtr.flush()?;
     }
 
     Ok(())
-}
-
-fn get_child_field_name(field_path: &str) -> String {
-    field_path
-        .split('.')
-        .next_back()
-        .unwrap_or_default()
-        .to_string()
 }
 
 fn safe_ratio(child: usize, parent: usize) -> String {
