@@ -53,6 +53,10 @@ struct FileCommand {
     /// output format ('detailed', 'concise')
     #[argh(option, short = 'f')]
     format: Option<PrintFormat>,
+
+    /// show extra stats
+    #[argh(switch, long = "show-extra-stats")]
+    show_extra_stats: bool,
 }
 
 #[derive(Debug, FromArgs)]
@@ -86,6 +90,10 @@ struct DirectoryCommand {
     /// output directory for CSV reports
     #[argh(option)]
     csv_output: Option<PathBuf>,
+
+    /// show extra stats
+    #[argh(switch, long = "show-extra-stats")]
+    show_extra_stats: bool,
 }
 
 /// Parameters to function used to analyze a single file.
@@ -118,7 +126,11 @@ fn main() -> anyhow::Result<()> {
                 length: file_cmd.length,
             })?;
             println!("Analysis Results:");
-            analysis_result.print(&schema, file_cmd.format.unwrap_or(PrintFormat::default()));
+            analysis_result.print(
+                &schema,
+                file_cmd.format.unwrap_or(PrintFormat::default()),
+                !file_cmd.show_extra_stats,
+            );
         }
         Command::Directory(dir_cmd) => {
             println!("Analyzing directory: {}", dir_cmd.path.display());
@@ -153,15 +165,22 @@ fn main() -> anyhow::Result<()> {
 
             // Print final aggregated results
             println!("Aggregated (Merged) Analysis Results:");
-            merged_results.print(&schema, dir_cmd.format.unwrap_or(PrintFormat::default()));
+            merged_results.print(
+                &schema,
+                dir_cmd.format.unwrap_or(PrintFormat::default()),
+                !dir_cmd.show_extra_stats,
+            );
 
             // Print individual files
             if dir_cmd.all_files {
                 println!("Individual Files:");
                 for x in 0..individual_results.len() {
                     println!("- {}", files[x].display());
-                    individual_results[x]
-                        .print(&schema, dir_cmd.format.unwrap_or(PrintFormat::default()));
+                    individual_results[x].print(
+                        &schema,
+                        dir_cmd.format.unwrap_or(PrintFormat::default()),
+                        !dir_cmd.show_extra_stats,
+                    );
                     println!();
                 }
             }

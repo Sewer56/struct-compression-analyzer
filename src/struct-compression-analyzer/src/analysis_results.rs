@@ -338,14 +338,18 @@ impl AnalysisResults {
         }
     }
 
-    pub fn print(&self, schema: &Schema, format: PrintFormat) {
+    pub fn print(&self, schema: &Schema, format: PrintFormat, skip_misc_stats: bool) {
         match format {
-            PrintFormat::Detailed => self.print_detailed(schema, &self.as_field_metrics()),
-            PrintFormat::Concise => self.print_concise(schema, &self.as_field_metrics()),
+            PrintFormat::Detailed => {
+                self.print_detailed(schema, &self.as_field_metrics(), skip_misc_stats)
+            }
+            PrintFormat::Concise => {
+                self.print_concise(schema, &self.as_field_metrics(), skip_misc_stats)
+            }
         }
     }
 
-    fn print_detailed(&self, schema: &Schema, file_metrics: &FieldMetrics) {
+    fn print_detailed(&self, schema: &Schema, file_metrics: &FieldMetrics, skip_misc_stats: bool) {
         println!("Schema: {}", self.schema_metadata.name);
         println!("Description: {}", self.schema_metadata.description);
         println!("File Entropy: {:.2} bits", self.file_entropy);
@@ -365,14 +369,16 @@ impl AnalysisResults {
             detailed_print_comparison(comparison);
         }
 
-        println!("\nField Value Stats: [as `value: probability %`]");
-        for field_path in schema.ordered_field_paths() {
-            self.concise_print_field_value_stats(&field_path);
-        }
+        if !skip_misc_stats {
+            println!("\nField Value Stats: [as `value: probability %`]");
+            for field_path in schema.ordered_field_paths() {
+                self.concise_print_field_value_stats(&field_path);
+            }
 
-        println!("\nField Bit Stats: [as `(zeros/ones) (percentage %)`]");
-        for field_path in schema.ordered_field_paths() {
-            self.concise_print_field_bit_stats(&field_path);
+            println!("\nField Bit Stats: [as `(zeros/ones) (percentage %)`]");
+            for field_path in schema.ordered_field_paths() {
+                self.concise_print_field_bit_stats(&field_path);
+            }
         }
     }
 
@@ -393,21 +399,21 @@ impl AnalysisResults {
             );
             let padding = format!("{}{}", indent, field.name).len() + 2; // +2 for ": "
             println!(
-            "{:padding$}Sizes: Estimated/ZStandard -16/Original: {}/{}/{} ({:.2}%/{:.2}%/{:.2}%)",
-            "",
-            field.estimated_size,
-            field.zstd_size,
-            field.original_size,
-            calculate_percentage(
-                field.estimated_size as f64,
-                parent_stats.estimated_size as f64
-            ),
-            calculate_percentage(field.zstd_size as f64, parent_stats.zstd_size as f64),
-            calculate_percentage(
-                field.original_size as f64,
-                parent_stats.original_size as f64
-            )
-        );
+                "{:padding$}Sizes: Estimated/ZStandard -16/Original: {}/{}/{} ({:.2}%/{:.2}%/{:.2}%)",
+                "",
+                field.estimated_size,
+                field.zstd_size,
+                field.original_size,
+                calculate_percentage(
+                    field.estimated_size as f64,
+                    parent_stats.estimated_size as f64
+                ),
+                calculate_percentage(field.zstd_size as f64, parent_stats.zstd_size as f64),
+                calculate_percentage(
+                    field.original_size as f64,
+                    parent_stats.original_size as f64
+                )
+            );
             println!(
                 "{:padding$}{} bit, {} unique values, {:?}",
                 "",
@@ -418,7 +424,7 @@ impl AnalysisResults {
         }
     }
 
-    fn print_concise(&self, schema: &Schema, file_metrics: &FieldMetrics) {
+    fn print_concise(&self, schema: &Schema, file_metrics: &FieldMetrics, skip_misc_stats: bool) {
         println!("Schema: {}", self.schema_metadata.name);
         println!(
             "File: {:.2}bpb, {} LZ, {}/{}/{} ({:.2}%/{:.2}%/{:.2}%) (est/zstd/orig)",
@@ -442,14 +448,16 @@ impl AnalysisResults {
             concise_print_comparison(comparison);
         }
 
-        println!("\nField Value Stats: [as `value: probability %`]");
-        for field_path in schema.ordered_field_paths() {
-            self.concise_print_field_value_stats(&field_path);
-        }
+        if !skip_misc_stats {
+            println!("\nField Value Stats: [as `value: probability %`]");
+            for field_path in schema.ordered_field_paths() {
+                self.concise_print_field_value_stats(&field_path);
+            }
 
-        println!("\nField Bit Stats: [as `(zeros/ones) (percentage %)`]");
-        for field_path in schema.ordered_field_paths() {
-            self.concise_print_field_bit_stats(&field_path);
+            println!("\nField Bit Stats: [as `(zeros/ones) (percentage %)`]");
+            for field_path in schema.ordered_field_paths() {
+                self.concise_print_field_bit_stats(&field_path);
+            }
         }
     }
 
