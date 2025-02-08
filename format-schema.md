@@ -46,7 +46,7 @@ Contains high-level information about the structure being analyzed.
 
 ```yaml
 analysis:
-  group_by:
+  group_by_field:
     - field: field_name # Name of the field to group by
       description: text # Optional description of this grouping
       display:          # Optional display configuration
@@ -65,7 +65,7 @@ analysis:
 
 The `analysis` section configures how results should be analyzed and presented:
 
-- `group_by`: List of fields to use for grouping results
+- `group_by_field`: List of fields to use for grouping results
   - Each entry specifies a field and optional display configuration
   - Multiple fields allow for different views of the same data
   - The `display` section can customize how groups are presented:
@@ -168,7 +168,7 @@ Here's how different types of fields and analysis configurations are represented
 
 ```yaml
 analysis:
-  group_by:
+  group_by_field:
     - field: partition
       description: Results grouped by partition value
       display:
@@ -266,7 +266,7 @@ conditional_offsets:
         value: 0x62000000 # DXGI_FORMAT_BC7_UNORM
 
 analysis:
-  group_by:
+  group_by_field:
     - field: partition
       description: Results grouped by partition value
       display:

@@ -42,7 +42,7 @@ pub struct AnalysisConfig {
     /// # Example
     /// ```yaml
     /// analysis:
-    ///   group_by:
+    ///   group_by_field:
     ///     - field: partition
     ///       description: Results by partition value
     ///     - field: colors.r.R0
@@ -50,7 +50,7 @@ pub struct AnalysisConfig {
     ///         format: "R Component %02X"
     /// ```
     #[serde(default)]
-    pub group_by: Vec<GroupByConfig>,
+    pub group_by_field: Vec<GroupByFieldConfig>,
 
     /// Compare structural equivalence between different field groups. Each comparison
     /// verifies that the compared groups have identical total bits and field structure.
@@ -83,7 +83,7 @@ pub struct GroupComparison {
 
 /// Configuration for grouping analysis results by field values
 #[derive(Debug, Deserialize)]
-pub struct GroupByConfig {
+pub struct GroupByFieldConfig {
     /// Field path to group by (supports nested dot notation)
     ///
     /// # Examples
@@ -538,12 +538,12 @@ root: { type: group, fields: {} }
         use super::*;
 
         #[test]
-        fn supports_group_by_with_display_config() {
+        fn supports_group_by_field_with_display_config() {
             let yaml = r#"
 version: '1.0'
 metadata: { name: Test }
 analysis:
-    group_by:
+    group_by_field:
     - field: partition
       description: Results by partition value
       display:
@@ -556,7 +556,7 @@ analysis:
 root: { type: group, fields: {} }
 "#;
             test_schema!(yaml, |schema: Schema| {
-                let groups = &schema.analysis.group_by;
+                let groups = &schema.analysis.group_by_field;
                 assert_eq!(groups.len(), 2);
 
                 let first = &groups[0];
@@ -581,7 +581,7 @@ root: { type: group, fields: {} }
 version: '1.0'
 metadata: { name: Test }
 analysis:
-    group_by:
+    group_by_field:
     - field: mode
       display:
         format: "%d"
@@ -597,7 +597,7 @@ analysis:
 root: { type: group, fields: {} }
 "#;
             test_schema!(yaml, |schema: Schema| {
-                let groups = &schema.analysis.group_by;
+                let groups = &schema.analysis.group_by_field;
                 assert_eq!(groups.len(), 4);
                 assert_eq!(groups[0].display.format, "%d"); // decimal
                 assert_eq!(groups[1].display.format, "%02x"); // padded hex
@@ -884,7 +884,7 @@ analysis: {}
 root: { type: group, fields: {} }
 "#;
             test_schema!(yaml, |schema: Schema| {
-                assert!(schema.analysis.group_by.is_empty());
+                assert!(schema.analysis.group_by_field.is_empty());
             });
         }
 
@@ -894,13 +894,13 @@ root: { type: group, fields: {} }
 version: '1.0'
 metadata: { name: Test }
 analysis:
-    group_by:
+    group_by_field:
     - field: test
       display: {}
 root: { type: group, fields: {} }
 "#;
             test_schema!(yaml, |schema: Schema| {
-                let group = &schema.analysis.group_by[0];
+                let group = &schema.analysis.group_by_field[0];
                 assert!(group.display.format.is_empty());
                 assert!(group.display.labels.is_empty());
             });
