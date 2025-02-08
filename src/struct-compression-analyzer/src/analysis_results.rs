@@ -362,7 +362,7 @@ impl AnalysisResults {
 
         println!("\nGroup Comparisons:");
         for comparison in &self.group_comparisons {
-            self.detailed_print_comparison(comparison);
+            detailed_print_comparison(comparison);
         }
 
         println!("\nField Value Stats: [as `value: probability %`]");
@@ -393,15 +393,21 @@ impl AnalysisResults {
             );
             let padding = format!("{}{}", indent, field.name).len() + 2; // +2 for ": "
             println!(
-                "{:padding$}Sizes: Estimated/ZStandard -16/Original: {}/{}/{} ({:.2}%/{:.2}%/{:.2}%)",
-                "",
-                field.estimated_size,
-                field.zstd_size,
-                field.original_size,
-                calculate_percentage(field.estimated_size as f64, parent_stats.estimated_size as f64),
-                calculate_percentage(field.zstd_size as f64, parent_stats.zstd_size as f64),
-                calculate_percentage(field.original_size as f64, parent_stats.original_size as f64)
-            );
+            "{:padding$}Sizes: Estimated/ZStandard -16/Original: {}/{}/{} ({:.2}%/{:.2}%/{:.2}%)",
+            "",
+            field.estimated_size,
+            field.zstd_size,
+            field.original_size,
+            calculate_percentage(
+                field.estimated_size as f64,
+                parent_stats.estimated_size as f64
+            ),
+            calculate_percentage(field.zstd_size as f64, parent_stats.zstd_size as f64),
+            calculate_percentage(
+                field.original_size as f64,
+                parent_stats.original_size as f64
+            )
+        );
             println!(
                 "{:padding$}{} bit, {} unique values, {:?}",
                 "",
@@ -410,10 +416,6 @@ impl AnalysisResults {
                 field.bit_order
             );
         }
-    }
-
-    fn detailed_print_comparison(&self, comparison: &GroupComparisonResult) {
-        self.concise_print_comparison(comparison);
     }
 
     fn print_concise(&self, schema: &Schema, file_metrics: &FieldMetrics) {
@@ -437,7 +439,7 @@ impl AnalysisResults {
 
         println!("\nGroup Comparisons:");
         for comparison in &self.group_comparisons {
-            self.concise_print_comparison(comparison);
+            concise_print_comparison(comparison);
         }
 
         println!("\nField Value Stats: [as `value: probability %`]");
@@ -476,106 +478,14 @@ impl AnalysisResults {
 
     fn concise_print_field_value_stats(&self, field_path: &str) {
         if let Some(field) = self.per_field.get(field_path) {
-            self.print_field_metrics_value_stats(field);
-        }
-    }
-
-    fn print_field_metrics_value_stats(&self, field: &FieldMetrics) {
-        // Print field name with indent
-        let indent = "  ".repeat(field.depth);
-        println!("{}{} ({} bits)", indent, field.name, field.lenbits);
-
-        // Print value statistics
-        let counts = field.sorted_value_counts();
-        if !counts.is_empty() {
-            let total_values: u64 = counts.iter().map(|(_, &c)| c).sum();
-            for (val, &count) in counts.iter().take(5) {
-                let pct = (count as f32 / total_values as f32) * 100.0;
-                println!("{}    {}: {:.1}%", indent, val, pct);
-            }
+            print_field_metrics_value_stats(field);
         }
     }
 
     fn concise_print_field_bit_stats(&self, field_path: &str) {
         if let Some(field) = self.per_field.get(field_path) {
-            self.print_field_metrics_bit_stats(field);
+            print_field_metrics_bit_stats(field);
         }
-    }
-
-    fn print_field_metrics_bit_stats(&self, field: &FieldMetrics) {
-        let indent = "  ".repeat(field.depth);
-        println!("{}{} ({} bits)", indent, field.name, field.lenbits);
-
-        for i in 0..field.lenbits {
-            let bit_stats = &field.bit_counts[i as usize];
-            let total = bit_stats.zeros + bit_stats.ones;
-            let percentage = if total > 0 {
-                (bit_stats.ones as f64 / total as f64) * 100.0
-            } else {
-                0.0
-            };
-            println!(
-                "{}  Bit {}: ({}/{}) ({:.1}%)",
-                indent, i, bit_stats.zeros, bit_stats.ones, percentage
-            );
-        }
-    }
-
-    fn concise_print_comparison(&self, comparison: &GroupComparisonResult) {
-        let base_lz = comparison.group1_metrics.lz_matches;
-        let size_orig = comparison.group1_metrics.original_size;
-        let base_entropy = comparison.group1_metrics.entropy;
-
-        let base_est = comparison.group1_metrics.estimated_size;
-        let base_zstd = comparison.group1_metrics.zstd_size;
-
-        let comp_lz = comparison.group2_metrics.lz_matches;
-        let comp_entropy = comparison.group2_metrics.entropy;
-
-        let comp_est = comparison.group2_metrics.estimated_size;
-        let comp_zstd = comparison.group2_metrics.zstd_size;
-
-        let ratio_est = calculate_percentage(comp_est as f64, base_est as f64);
-        let ratio_zstd = calculate_percentage(comp_zstd as f64, base_zstd as f64);
-
-        let diff_est = comparison.difference.estimated_size;
-        let diff_zstd = comparison.difference.zstd_size;
-
-        println!("  {}: {}", comparison.name, comparison.description);
-        println!("    Original Size: {}", size_orig);
-        println!("    Base LZ, Entropy: ({}, {:.2}):", base_lz, base_entropy);
-        println!("    Comp LZ, Entropy: ({}, {:.2}):", comp_lz, comp_entropy);
-        println!(
-            "    Base Group LZ, Entropy: ({:?}, {:?})",
-            comparison
-                .group1_field_metrics
-                .iter()
-                .map(|m| m.lz_matches)
-                .collect::<Vec<_>>(),
-            comparison
-                .group1_field_metrics
-                .iter()
-                .map(|m| format!("{:.2}", m.entropy))
-                .collect::<Vec<_>>()
-        );
-        println!(
-            "    Comp Group LZ, Entropy: ({:?}, {:?})",
-            comparison
-                .group2_field_metrics
-                .iter()
-                .map(|m| m.lz_matches)
-                .collect::<Vec<_>>(),
-            comparison
-                .group2_field_metrics
-                .iter()
-                .map(|m| format!("{:.2}", m.entropy))
-                .collect::<Vec<_>>()
-        );
-
-        println!("    Base (est/zstd): ({}/{})", base_est, base_zstd);
-        println!("    Comp (est/zstd): ({}/{})", comp_est, comp_zstd);
-        println!("    Ratio (est/zstd): ({}/{})", ratio_est, ratio_zstd);
-        println!("    Diff (est/zstd): ({}/{})", diff_est, diff_zstd);
     }
 }
 
@@ -654,4 +564,100 @@ fn calculate_percentage(child: f64, parent: f64) -> f64 {
     } else {
         (child / parent) * 100.0
     }
+}
+
+fn detailed_print_comparison(comparison: &GroupComparisonResult) {
+    concise_print_comparison(comparison);
+}
+
+fn print_field_metrics_value_stats(field: &FieldMetrics) {
+    // Print field name with indent
+    let indent = "  ".repeat(field.depth);
+    println!("{}{} ({} bits)", indent, field.name, field.lenbits);
+
+    // Print value statistics
+    let counts = field.sorted_value_counts();
+    if !counts.is_empty() {
+        let total_values: u64 = counts.iter().map(|(_, &c)| c).sum();
+        for (val, &count) in counts.iter().take(5) {
+            let pct = (count as f32 / total_values as f32) * 100.0;
+            println!("{}    {}: {:.1}%", indent, val, pct);
+        }
+    }
+}
+
+fn print_field_metrics_bit_stats(field: &FieldMetrics) {
+    let indent = "  ".repeat(field.depth);
+    println!("{}{} ({} bits)", indent, field.name, field.lenbits);
+
+    for i in 0..field.lenbits {
+        let bit_stats = &field.bit_counts[i as usize];
+        let total = bit_stats.zeros + bit_stats.ones;
+        let percentage = if total > 0 {
+            (bit_stats.ones as f64 / total as f64) * 100.0
+        } else {
+            0.0
+        };
+        println!(
+            "{}  Bit {}: ({}/{}) ({:.1}%)",
+            indent, i, bit_stats.zeros, bit_stats.ones, percentage
+        );
+    }
+}
+
+fn concise_print_comparison(comparison: &GroupComparisonResult) {
+    let base_lz = comparison.group1_metrics.lz_matches;
+    let size_orig = comparison.group1_metrics.original_size;
+    let base_entropy = comparison.group1_metrics.entropy;
+
+    let base_est = comparison.group1_metrics.estimated_size;
+    let base_zstd = comparison.group1_metrics.zstd_size;
+
+    let comp_lz = comparison.group2_metrics.lz_matches;
+    let comp_entropy = comparison.group2_metrics.entropy;
+
+    let comp_est = comparison.group2_metrics.estimated_size;
+    let comp_zstd = comparison.group2_metrics.zstd_size;
+
+    let ratio_est = calculate_percentage(comp_est as f64, base_est as f64);
+    let ratio_zstd = calculate_percentage(comp_zstd as f64, base_zstd as f64);
+
+    let diff_est = comparison.difference.estimated_size;
+    let diff_zstd = comparison.difference.zstd_size;
+
+    println!("  {}: {}", comparison.name, comparison.description);
+    println!("    Original Size: {}", size_orig);
+    println!("    Base LZ, Entropy: ({}, {:.2}):", base_lz, base_entropy);
+    println!("    Comp LZ, Entropy: ({}, {:.2}):", comp_lz, comp_entropy);
+    println!(
+        "    Base Group LZ, Entropy: ({:?}, {:?})",
+        comparison
+            .group1_field_metrics
+            .iter()
+            .map(|m| m.lz_matches)
+            .collect::<Vec<_>>(),
+        comparison
+            .group1_field_metrics
+            .iter()
+            .map(|m| format!("{:.2}", m.entropy))
+            .collect::<Vec<_>>()
+    );
+    println!(
+        "    Comp Group LZ, Entropy: ({:?}, {:?})",
+        comparison
+            .group2_field_metrics
+            .iter()
+            .map(|m| m.lz_matches)
+            .collect::<Vec<_>>(),
+        comparison
+            .group2_field_metrics
+            .iter()
+            .map(|m| format!("{:.2}", m.entropy))
+            .collect::<Vec<_>>()
+    );
+
+    println!("    Base (est/zstd): ({}/{})", base_est, base_zstd);
+    println!("    Comp (est/zstd): ({}/{})", comp_est, comp_zstd);
+    println!("    Ratio (est/zstd): ({}/{})", ratio_est, ratio_zstd);
+    println!("    Diff (est/zstd): ({}/{})", diff_est, diff_zstd);
 }
