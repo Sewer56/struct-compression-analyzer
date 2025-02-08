@@ -273,6 +273,13 @@ impl FieldMetrics {
             .unwrap_or(optb);
         parent_stats
     }
+
+    /// Get sorted value counts descending (value, count)
+    pub fn sorted_value_counts(&self) -> Vec<(&u64, &u64)> {
+        let mut counts: Vec<_> = self.value_counts.iter().collect();
+        counts.sort_by(|a, b| b.1.cmp(a.1));
+        counts
+    }
 }
 
 pub(crate) fn get_parent_path(field_path: &str) -> Option<&str> {
@@ -357,6 +364,16 @@ impl AnalysisResults {
         for comparison in &self.group_comparisons {
             self.detailed_print_comparison(comparison);
         }
+
+        println!("\nField Value Stats: [as `value: probability %`]");
+        for field_path in schema.ordered_field_paths() {
+            self.concise_print_field_value_stats(&field_path);
+        }
+
+        println!("\nField Bit Stats: [as `(zeros/ones) (percentage %)`]");
+        for field_path in schema.ordered_field_paths() {
+            self.concise_print_field_bit_stats(&field_path);
+        }
     }
 
     fn detailed_print_field(&self, file_metrics: &FieldMetrics, field_path: &str) {
@@ -422,6 +439,16 @@ impl AnalysisResults {
         for comparison in &self.group_comparisons {
             self.concise_print_comparison(comparison);
         }
+
+        println!("\nField Value Stats: [as `value: probability %`]");
+        for field_path in schema.ordered_field_paths() {
+            self.concise_print_field_value_stats(&field_path);
+        }
+
+        println!("\nField Bit Stats: [as `(zeros/ones) (percentage %)`]");
+        for field_path in schema.ordered_field_paths() {
+            self.concise_print_field_bit_stats(&field_path);
+        }
     }
 
     fn concise_print_field(&self, file_metrics: &FieldMetrics, field_path: &str) {
@@ -443,6 +470,53 @@ impl AnalysisResults {
                 calculate_percentage(field.zstd_size as f64, parent_stats.zstd_size as f64),
                 calculate_percentage(field.original_size as f64, parent_stats.original_size as f64),
                 field.lenbits
+            );
+        }
+    }
+
+    fn concise_print_field_value_stats(&self, field_path: &str) {
+        if let Some(field) = self.per_field.get(field_path) {
+            self.print_field_metrics_value_stats(field);
+        }
+    }
+
+    fn print_field_metrics_value_stats(&self, field: &FieldMetrics) {
+        // Print field name with indent
+        let indent = "  ".repeat(field.depth);
+        println!("{}{} ({} bits)", indent, field.name, field.lenbits);
+
+        // Print value statistics
+        let counts = field.sorted_value_counts();
+        if !counts.is_empty() {
+            let total_values: u64 = counts.iter().map(|(_, &c)| c).sum();
+            for (val, &count) in counts.iter().take(5) {
+                let pct = (count as f32 / total_values as f32) * 100.0;
+                println!("{}    {}: {:.1}%", indent, val, pct);
+            }
+        }
+    }
+
+    fn concise_print_field_bit_stats(&self, field_path: &str) {
+        if let Some(field) = self.per_field.get(field_path) {
+            self.print_field_metrics_bit_stats(field);
+        }
+    }
+
+    fn print_field_metrics_bit_stats(&self, field: &FieldMetrics) {
+        let indent = "  ".repeat(field.depth);
+        println!("{}{} ({} bits)", indent, field.name, field.lenbits);
+
+        for i in 0..field.lenbits {
+            let bit_stats = &field.bit_counts[i as usize];
+            let total = bit_stats.zeros + bit_stats.ones;
+            let percentage = if total > 0 {
+                (bit_stats.ones as f64 / total as f64) * 100.0
+            } else {
+                0.0
+            };
+            println!(
+                "{}  Bit {}: ({}/{}) ({:.1}%)",
+                indent, i, bit_stats.zeros, bit_stats.ones, percentage
             );
         }
     }
