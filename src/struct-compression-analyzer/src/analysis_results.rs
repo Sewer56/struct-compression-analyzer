@@ -7,6 +7,8 @@ use crate::constants::CHILD_MARKER;
 use crate::schema::BitOrder;
 use crate::schema::Metadata;
 use crate::schema::Schema;
+use ahash::AHashMap;
+use ahash::HashMapExt;
 use derive_more::derive::FromStr;
 use lossless_transform_utils::entropy::code_length_of_histogram32;
 use lossless_transform_utils::histogram::histogram32_from_bytes;
@@ -14,7 +16,7 @@ use lossless_transform_utils::histogram::Histogram32;
 use lossless_transform_utils::match_estimator::estimate_num_lz_matches_fast;
 use rayon::iter::IntoParallelRefMutIterator;
 use rayon::iter::ParallelIterator;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 pub fn compute_analysis_results(analyzer: &mut SchemaAnalyzer) -> AnalysisResults {
     // First calculate file entropy
@@ -22,7 +24,7 @@ pub fn compute_analysis_results(analyzer: &mut SchemaAnalyzer) -> AnalysisResult
     let file_lz_matches = estimate_num_lz_matches_fast(&analyzer.entries);
 
     // Then calculate per-field entropy and lz matches
-    let mut field_metrics: HashMap<String, FieldMetrics> = HashMap::new();
+    let mut field_metrics: AHashMap<String, FieldMetrics> = AHashMap::new();
 
     for stats in &mut analyzer.field_stats.values_mut() {
         let writer_buffer = get_writer_buffer(&mut stats.writer);
@@ -165,7 +167,7 @@ pub struct AnalysisResults {
     /// Field path → computed metrics
     /// This is a map of `full_path` to [`FieldMetrics`], such that we
     /// can easily merge the results of different fields down the road.
-    pub per_field: HashMap<String, FieldMetrics>,
+    pub per_field: AHashMap<String, FieldMetrics>,
 
     /// Group comparison results
     pub group_comparisons: Vec<GroupComparisonResult>,
@@ -194,7 +196,7 @@ pub struct FieldMetrics {
     pub bit_order: BitOrder,
     /// Value → occurrence count
     /// Count of occurrences for each observed value.
-    pub value_counts: HashMap<u64, u64>,
+    pub value_counts: FxHashMap<u64, u64>,
     /// Estimated size of the compressed data from our estimator
     pub estimated_size: usize,
     /// Actual size of the compressed data when compressed with zstandard
@@ -338,7 +340,7 @@ impl AnalysisResults {
             lz_matches: self.file_lz_matches,
             bit_counts: Vec::new(),
             bit_order: BitOrder::Default,
-            value_counts: HashMap::new(),
+            value_counts: FxHashMap::new(),
         }
     }
 

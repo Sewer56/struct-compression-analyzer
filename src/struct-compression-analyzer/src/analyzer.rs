@@ -5,11 +5,10 @@ use crate::{
     analysis_results::{compute_analysis_results, AnalysisResults},
     schema::{BitOrder, Condition, FieldDefinition},
 };
+use ahash::{AHashMap, HashMapExt};
 use bitstream_io::{BigEndian, BitRead, BitReader, BitWrite, BitWriter, LittleEndian};
-use std::{
-    collections::HashMap,
-    io::{Cursor, SeekFrom},
-};
+use rustc_hash::FxHashMap;
+use std::io::{Cursor, SeekFrom};
 
 /// Analyzes binary structures against a schema definition
 ///
@@ -24,7 +23,7 @@ pub struct SchemaAnalyzer<'a> {
     pub entries: Vec<u8>,
     /// Intermediate analysis state (field name → statistics)
     /// This supports both 'groups' and fields.
-    pub field_stats: HashMap<String, FieldStats>,
+    pub field_stats: AHashMap<String, FieldStats>,
 }
 
 /// Intermediate statistics for a single field or group of fields
@@ -46,7 +45,7 @@ pub struct FieldStats {
     /// The order of the bits within the field
     pub bit_order: BitOrder,
     /// Count of occurrences for each observed value
-    pub value_counts: HashMap<u64, u64>,
+    pub value_counts: FxHashMap<u64, u64>,
 }
 
 /// Tracks statistics about individual bits in a field
@@ -242,8 +241,8 @@ fn build_field_stats<'a>(
     group: &'a Group,
     parent_path: &'a str,
     depth: usize,
-) -> HashMap<String, FieldStats> {
-    let mut stats = HashMap::new();
+) -> AHashMap<String, FieldStats> {
+    let mut stats = AHashMap::new();
 
     for (name, field) in &group.fields {
         let path = if parent_path.is_empty() {
@@ -267,7 +266,7 @@ fn build_field_stats<'a>(
                         bit_counts: vec![BitStats::default(); field.bits as usize],
                         name: name.clone(),
                         bit_order: field.bit_order.get_with_default_resolve(),
-                        value_counts: HashMap::new(),
+                        value_counts: FxHashMap::new(),
                     },
                 );
             }
@@ -286,7 +285,7 @@ fn build_field_stats<'a>(
                         bit_counts: vec![BitStats::default(); group.bits as usize],
                         name: name.clone(),
                         bit_order: group.bit_order.get_with_default_resolve(),
-                        value_counts: HashMap::new(),
+                        value_counts: FxHashMap::new(),
                     },
                 );
 
@@ -335,7 +334,6 @@ fn should_skip(reader: &mut BitReader<Cursor<&[u8]>, BigEndian>, conditions: &[C
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
     use crate::schema::Schema;
 
@@ -427,7 +425,8 @@ root:
             }
 
             // Check value counts
-            let expected_counts = HashMap::from([(0b11, 1), (0b00, 1), (0b10, 1), (0b01, 1)]);
+            let expected_counts =
+                FxHashMap::from_iter([(0b11, 1), (0b00, 1), (0b10, 1), (0b01, 1)]);
             assert_eq!(
                 flags_field.value_counts, expected_counts,
                 "Value counts should match"
@@ -456,7 +455,7 @@ root:
             .find(|(k, _)| *k == "flags")
             .map(|(_k, v)| v)
             .unwrap();
-        let expected_counts = HashMap::from([(0b11, 1), (0b00, 1), (0b10, 1), (0b01, 2)]);
+        let expected_counts = FxHashMap::from_iter([(0b11, 1), (0b00, 1), (0b10, 1), (0b01, 2)]);
         assert_eq!(
             flags_field.value_counts, expected_counts,
             "Value counts should match"
@@ -494,7 +493,7 @@ root:
             .find(|(k, _)| *k == "flags")
             .map(|(_k, v)| v)
             .unwrap();
-        let expected_counts = HashMap::from([(0b11, 1), (0b00, 1), (0b10, 1), (0b01, 2)]);
+        let expected_counts = FxHashMap::from_iter([(0b11, 1), (0b00, 1), (0b10, 1), (0b01, 2)]);
         assert_eq!(
             flags_field.value_counts, expected_counts,
             "Value counts should match"
