@@ -170,14 +170,7 @@ fn process_field_or_group(
         // Update the value counts
         if field_stats.bit_order == BitOrder::Lsb {
             // Reverse bits for lsb order
-            // You must you must reverse only bits up to a bit count specified in `max_bits`
-            let mut reversed_bits = 0u64;
-            for i in 0..max_bits {
-                if bits & (1 << i) != 0 {
-                    reversed_bits |= 1 << (max_bits - 1 - i);
-                }
-            }
-
+            let reversed_bits = reverse_bits(max_bits, bits);
             field_stats.value_counts.insert(
                 reversed_bits,
                 field_stats.value_counts.get(&reversed_bits).unwrap_or(&0) + 1,
@@ -214,6 +207,23 @@ fn process_field_or_group(
         BitWriterContainer::Msb(writer) => writer.flush().unwrap(),
         BitWriterContainer::Lsb(writer) => writer.flush().unwrap(),
     }
+}
+
+/// Reverses the bits of a u64 value
+/// # Arguments
+/// * `max_bits` - The number of bits to reverse
+/// * `bits` - The bits to reverse
+///
+/// # Returns
+/// The reversed bits
+fn reverse_bits(max_bits: u32, bits: u64) -> u64 {
+    let mut reversed_bits = 0u64;
+    for x in 0..max_bits {
+        if bits & (1 << x) != 0 {
+            reversed_bits |= 1 << (max_bits - 1 - x);
+        }
+    }
+    reversed_bits
 }
 
 /// Recursively builds field statistics structures from schema definition
@@ -345,51 +355,105 @@ root:
         analyzer.add_entry(&[0b10000000]); // 0b10
         analyzer.add_entry(&[0b01000000]); // 0b01
 
+        // Assert general writing.
+        {
+            let flags_field = analyzer
+                .field_stats
+                .iter_mut()
+                .find(|s| s.name == "flags")
+                .unwrap();
+
+            assert_eq!(flags_field.count, 4, "Should process 4 entries");
+            assert_eq!(
+                flags_field.bit_counts.len(),
+                2,
+                "Should track 2 bits per field"
+            );
+
+            // Check writer accumulated correct bits
+            match &mut flags_field.writer {
+                BitWriterContainer::Msb(writer) => {
+                    // Get a reference to the writer's underlying buffer without moving ownership
+                    writer.byte_align().unwrap();
+                    writer.flush().unwrap();
+                    let inner_writer = writer.writer().unwrap();
+                    let data = inner_writer.get_ref();
+                    assert_eq!(data[0], 0xC9_u8, "Combined bits should form 0xC9");
+                }
+                _ => panic!("Expected MSB bit writer"),
+            }
+
+            // Check value counts
+            let expected_counts = HashMap::from([(0b11, 1), (0b00, 1), (0b10, 1), (0b01, 1)]);
+            assert_eq!(
+                flags_field.value_counts, expected_counts,
+                "Value counts should match"
+            );
+
+            // Check bit counts (each bit position should have 2 zeros and 2 ones)
+            for (x, stats) in flags_field.bit_counts.iter().enumerate() {
+                assert_eq!(
+                    stats.zeros, 2,
+                    "Bit {} should have 2 zeros (actual: {})",
+                    x, stats.zeros
+                );
+                assert_eq!(
+                    stats.ones, 2,
+                    "Bit {} should have 2 ones (actual: {})",
+                    x, stats.ones
+                );
+            }
+        }
+
+        // Add another entry, to specifically test big endian
+        analyzer.add_entry(&[0b01000000]); // 0b01
         let flags_field = analyzer
             .field_stats
             .iter_mut()
             .find(|s| s.name == "flags")
             .unwrap();
-
-        assert_eq!(flags_field.count, 4, "Should process 4 entries");
+        let expected_counts = HashMap::from([(0b11, 1), (0b00, 1), (0b10, 1), (0b01, 2)]);
         assert_eq!(
-            flags_field.bit_counts.len(),
-            2,
-            "Should track 2 bits per field"
+            flags_field.value_counts, expected_counts,
+            "Value counts should match"
         );
+    }
 
-        // Check writer accumulated correct bits
-        match &mut flags_field.writer {
-            BitWriterContainer::Msb(writer) => {
-                // Get a reference to the writer's underlying buffer without moving ownership
-                writer.flush().unwrap();
-                let inner_writer = writer.writer().unwrap();
-                let data = inner_writer.get_ref();
-                assert_eq!(*data, vec![0xC9_u8], "Combined bits should form 0xC9");
+    #[test]
+    fn test_little_endian_bitorder() {
+        let yaml = r###"
+version: '1.0'
+root:
+  type: group
+  fields:
+    flags:
+      type: field
+      bits: 2
+      bit_order: lsb
+"###;
+        let schema = Schema::from_yaml(yaml).expect("Failed to parse test schema");
+        let mut analyzer = SchemaAnalyzer::new(&schema);
 
-                // Check value counts
-                let expected_counts = HashMap::from([(0b11, 1), (0b00, 1), (0b10, 1), (0b01, 1)]);
-                assert_eq!(
-                    flags_field.value_counts, expected_counts,
-                    "Value counts should match"
-                );
-            }
-            _ => panic!("Expected MSB bit writer"),
-        }
+        // Add 4 entries (2 bits each) to make exactly 1 byte (8 bits)
+        // This is a repeat of the logic from the big endian test.
+        analyzer.add_entry(&[0b11000000]); // 0b11 in first 2 bits
+        analyzer.add_entry(&[0b00000000]); // 0b00
+        analyzer.add_entry(&[0b10000000]); // 0b01 (due to endian flip)
+        analyzer.add_entry(&[0b01000000]); // 0b10 (due to endian flip)
 
-        // Check bit counts (each bit position should have 2 zeros and 2 ones)
-        for (x, stats) in flags_field.bit_counts.iter().enumerate() {
-            assert_eq!(
-                stats.zeros, 2,
-                "Bit {} should have 2 zeros (actual: {})",
-                x, stats.zeros
-            );
-            assert_eq!(
-                stats.ones, 2,
-                "Bit {} should have 2 ones (actual: {})",
-                x, stats.ones
-            );
-        }
+        // Asserts for general writing are in the equivalent big endian test.
+        // Add another entry, to specifically test little endian
+        analyzer.add_entry(&[0b10000000]); // 0b01 (due to endian flip)
+        let flags_field = analyzer
+            .field_stats
+            .iter_mut()
+            .find(|s| s.name == "flags")
+            .unwrap();
+        let expected_counts = HashMap::from([(0b11, 1), (0b00, 1), (0b10, 1), (0b01, 2)]);
+        assert_eq!(
+            flags_field.value_counts, expected_counts,
+            "Value counts should match"
+        );
     }
 
     #[test]
