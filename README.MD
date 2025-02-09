@@ -61,8 +61,11 @@ sudo sysctl vm.overcommit_memory=1
 ```
 
 And create a large swapfile on your system.  
-In my case, for 32GB of input, I used 32GiB of RAM + 128GiB of swap with complex schema.  
+In my case, for 32GB of input, I used 32GiB of RAM + 32GiB of swap with complex schema.  
 Otherwise the process may get killed during analysis.  
+
+Memory usage is largely correlated with whether we do frequency analysis for a field or not, therefore
+setting `skip_frequency_analysis` to `true` in the schema might help.
 
 ## Development
 
