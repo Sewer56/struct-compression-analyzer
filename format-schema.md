@@ -323,7 +323,7 @@ root:
           type: group
           fields:
             B0: 4
-        B1: 4
+            B1: 4
             B2: 4
             B3: 4
             B4: 4
