@@ -158,28 +158,31 @@ impl<'a> SchemaAnalyzer<'a> {
 
 fn process_field_or_group(
     reader: &mut BitReader<Cursor<&[u8]>, BigEndian>,
-    mut bits_left: u32,
+    mut bit_count: u32,
     field_stats: &mut FieldStats,
 ) {
     let writer = &mut field_stats.writer;
+    let can_count_values = bit_count <= 64; // we don't support value counting for structs >8 bytes.
 
     // Update statistics
     field_stats.count += 1;
-    while bits_left > 0 {
+    while bit_count > 0 {
         // Read max possible number of bits at once.
-        let max_bits = bits_left.min(64);
+        let max_bits = bit_count.min(64);
         let bits = reader.read::<u64>(max_bits).unwrap();
 
         // Update the value counts
-        if field_stats.bit_order == BitOrder::Lsb {
-            // Reverse bits for lsb order
-            let reversed_bits = reverse_bits(max_bits, bits);
-            field_stats.value_counts.insert(
-                reversed_bits,
-                field_stats.value_counts.get(&reversed_bits).unwrap_or(&0) + 1,
-            );
-        } else {
-            *field_stats.value_counts.entry(bits).or_insert(0) += 1;
+        if can_count_values {
+            if field_stats.bit_order == BitOrder::Lsb {
+                // Reverse bits for lsb order
+                let reversed_bits = reverse_bits(max_bits, bits);
+                field_stats.value_counts.insert(
+                    reversed_bits,
+                    field_stats.value_counts.get(&reversed_bits).unwrap_or(&0) + 1,
+                );
+            } else {
+                *field_stats.value_counts.entry(bits).or_insert(0) += 1;
+            }
         }
 
         // Write the values to the output
@@ -202,7 +205,7 @@ fn process_field_or_group(
             }
         }
 
-        bits_left -= max_bits;
+        bit_count -= max_bits;
     }
 
     // Flush any remaining bits to ensure all data is written
