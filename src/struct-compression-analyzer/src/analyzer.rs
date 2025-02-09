@@ -24,7 +24,7 @@ pub struct SchemaAnalyzer<'a> {
     pub entries: Vec<u8>,
     /// Intermediate analysis state (field name → statistics)
     /// This supports both 'groups' and fields.
-    pub field_stats: Vec<FieldStats>,
+    pub field_stats: HashMap<String, FieldStats>,
 }
 
 /// Intermediate statistics for a single field or group of fields
@@ -129,7 +129,8 @@ impl<'a> SchemaAnalyzer<'a> {
                     let field_stats = self
                         .field_stats
                         .iter_mut()
-                        .find(|s| s.name == *name)
+                        .find(|(k, _)| *k == name)
+                        .map(|(_k, v)| v)
                         .unwrap(); // exists by definition
 
                     process_field_or_group(reader, bits_left, field_stats);
@@ -139,7 +140,8 @@ impl<'a> SchemaAnalyzer<'a> {
                     let field_stats = self
                         .field_stats
                         .iter_mut()
-                        .find(|s| s.name == *name)
+                        .find(|(k, _)| *k == name)
+                        .map(|(_k, v)| v)
                         .unwrap(); // exists by definition
 
                     // Note (processing field/group)
@@ -236,8 +238,12 @@ fn create_bit_writer(bit_order: BitOrder) -> BitWriterContainer {
     }
 }
 
-fn build_field_stats<'a>(group: &'a Group, parent_path: &'a str, depth: usize) -> Vec<FieldStats> {
-    let mut stats = Vec::new();
+fn build_field_stats<'a>(
+    group: &'a Group,
+    parent_path: &'a str,
+    depth: usize,
+) -> HashMap<String, FieldStats> {
+    let mut stats = HashMap::new();
 
     for (name, field) in &group.fields {
         let path = if parent_path.is_empty() {
@@ -250,33 +256,39 @@ fn build_field_stats<'a>(group: &'a Group, parent_path: &'a str, depth: usize) -
             FieldDefinition::Field(field) => {
                 let writer = create_bit_writer(field.bit_order);
 
-                stats.push(FieldStats {
-                    full_path: path,
-                    depth,
-                    lenbits: field.bits,
-                    count: 0,
-                    writer,
-                    bit_counts: vec![BitStats::default(); field.bits as usize],
-                    name: name.clone(),
-                    bit_order: field.bit_order.get_with_default_resolve(),
-                    value_counts: HashMap::new(),
-                });
+                stats.insert(
+                    name.clone(),
+                    FieldStats {
+                        full_path: path,
+                        depth,
+                        lenbits: field.bits,
+                        count: 0,
+                        writer,
+                        bit_counts: vec![BitStats::default(); field.bits as usize],
+                        name: name.clone(),
+                        bit_order: field.bit_order.get_with_default_resolve(),
+                        value_counts: HashMap::new(),
+                    },
+                );
             }
             FieldDefinition::Group(group) => {
                 let writer = create_bit_writer(group.bit_order);
 
                 // Add stats entry for the group itself
-                stats.push(FieldStats {
-                    full_path: path.clone(),
-                    depth,
-                    lenbits: group.bits,
-                    count: 0,
-                    writer,
-                    bit_counts: vec![BitStats::default(); group.bits as usize],
-                    name: name.clone(),
-                    bit_order: group.bit_order.get_with_default_resolve(),
-                    value_counts: HashMap::new(),
-                });
+                stats.insert(
+                    name.clone(),
+                    FieldStats {
+                        full_path: path.clone(),
+                        depth,
+                        lenbits: group.bits,
+                        count: 0,
+                        writer,
+                        bit_counts: vec![BitStats::default(); group.bits as usize],
+                        name: name.clone(),
+                        bit_order: group.bit_order.get_with_default_resolve(),
+                        value_counts: HashMap::new(),
+                    },
+                );
 
                 // Process nested fields
                 stats.extend(build_field_stats(group, &path, depth + 1));
@@ -390,7 +402,8 @@ root:
             let flags_field = analyzer
                 .field_stats
                 .iter_mut()
-                .find(|s| s.name == "flags")
+                .find(|(k, _)| *k == "flags")
+                .map(|(_k, v)| v)
                 .unwrap();
 
             assert_eq!(flags_field.count, 4, "Should process 4 entries");
@@ -440,7 +453,8 @@ root:
         let flags_field = analyzer
             .field_stats
             .iter_mut()
-            .find(|s| s.name == "flags")
+            .find(|(k, _)| *k == "flags")
+            .map(|(_k, v)| v)
             .unwrap();
         let expected_counts = HashMap::from([(0b11, 1), (0b00, 1), (0b10, 1), (0b01, 2)]);
         assert_eq!(
@@ -477,7 +491,8 @@ root:
         let flags_field = analyzer
             .field_stats
             .iter_mut()
-            .find(|s| s.name == "flags")
+            .find(|(k, _)| *k == "flags")
+            .map(|(_k, v)| v)
             .unwrap();
         let expected_counts = HashMap::from([(0b11, 1), (0b00, 1), (0b10, 1), (0b01, 2)]);
         assert_eq!(
@@ -492,7 +507,7 @@ root:
         let analyzer = SchemaAnalyzer::new(&schema);
 
         // Verify field hierarchy and properties
-        let root_group = &analyzer.field_stats[0];
+        let root_group = analyzer.field_stats.get("id").unwrap();
         assert_eq!(root_group.name, "id");
         assert_eq!(root_group.full_path, "id");
         assert_eq!(root_group.depth, 0);
@@ -502,7 +517,7 @@ root:
         assert_eq!(root_group.bit_counts.len(), root_group.lenbits as usize);
         assert_eq!(root_group.bit_order, BitOrder::Msb);
 
-        let id_field = &analyzer.field_stats[1];
+        let id_field = analyzer.field_stats.get("nested").unwrap();
         assert_eq!(id_field.full_path, "nested");
         assert_eq!(id_field.name, "nested");
         assert_eq!(id_field.depth, 0);
@@ -512,7 +527,7 @@ root:
         assert_eq!(id_field.bit_counts.len(), id_field.lenbits as usize);
         assert_eq!(id_field.bit_order, BitOrder::Lsb);
 
-        let nested_value = &analyzer.field_stats[2];
+        let nested_value = analyzer.field_stats.get("value").unwrap();
         assert_eq!(nested_value.full_path, "nested.value");
         assert_eq!(nested_value.name, "value");
         assert_eq!(nested_value.depth, 1);
@@ -542,15 +557,15 @@ root:
 
         // Should process - matching magic
         analyzer.add_entry(&[0x55]);
-        assert_eq!(analyzer.field_stats[0].count, 1);
+        assert_eq!(analyzer.field_stats.get("dummy").unwrap().count, 1);
 
         // Should skip - non-matching magic
         analyzer.add_entry(&[0xAA]);
-        assert_eq!(analyzer.field_stats[0].count, 1);
+        assert_eq!(analyzer.field_stats.get("dummy").unwrap().count, 1);
 
         // Should process - matching magic
         analyzer.add_entry(&[0x55]);
-        assert_eq!(analyzer.field_stats[0].count, 2);
+        assert_eq!(analyzer.field_stats.get("dummy").unwrap().count, 2);
     }
 
     #[test]
@@ -574,10 +589,10 @@ root:
 
         // First bit 1 - processes
         analyzer.add_entry(&[0b10000000]);
-        assert_eq!(analyzer.field_stats[0].count, 1);
+        assert_eq!(analyzer.field_stats.get("header").unwrap().count, 1);
 
         // First bit 0 - skips
         analyzer.add_entry(&[0b00000000]);
-        assert_eq!(analyzer.field_stats[0].count, 1);
+        assert_eq!(analyzer.field_stats.get("header").unwrap().count, 1);
     }
 }

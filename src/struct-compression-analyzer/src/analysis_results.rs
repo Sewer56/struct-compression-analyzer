@@ -24,7 +24,7 @@ pub fn compute_analysis_results(analyzer: &mut SchemaAnalyzer) -> AnalysisResult
     // Then calculate per-field entropy and lz matches
     let mut field_metrics: HashMap<String, FieldMetrics> = HashMap::new();
 
-    for stats in &mut analyzer.field_stats {
+    for stats in &mut analyzer.field_stats.values_mut() {
         let writer_buffer = get_writer_buffer(&mut stats.writer);
         let entropy = calculate_file_entropy(writer_buffer);
         let lz_matches = estimate_num_lz_matches_fast(writer_buffer);
@@ -58,15 +58,15 @@ pub fn compute_analysis_results(analyzer: &mut SchemaAnalyzer) -> AnalysisResult
         let mut group2_bytes: Vec<u8> = Vec::new();
 
         // Sum up bytes for group 1
-        for path in &comparison.group_1 {
-            if let Some(stats) = analyzer.field_stats.iter_mut().find(|k| k.name == *path) {
+        for name in &comparison.group_1 {
+            if let Some(stats) = analyzer.field_stats.get_mut(name) {
                 group1_bytes.extend_from_slice(get_writer_buffer(&mut stats.writer));
             }
         }
 
         // Sum up bytes for group 2
-        for path in &comparison.group_2 {
-            if let Some(stats) = analyzer.field_stats.iter_mut().find(|k| k.name == *path) {
+        for name in &comparison.group_2 {
+            if let Some(stats) = analyzer.field_stats.get_mut(name) {
                 group2_bytes.extend_from_slice(get_writer_buffer(&mut stats.writer));
             }
         }
