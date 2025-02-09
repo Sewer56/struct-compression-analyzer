@@ -616,6 +616,7 @@ fn print_field_metrics_bit_stats(field: &FieldMetrics) {
 fn concise_print_comparison(comparison: &GroupComparisonResult) {
     let base_lz = comparison.group1_metrics.lz_matches;
     let size_orig = comparison.group1_metrics.original_size;
+    let size_comp = comparison.group2_metrics.original_size;
     let base_entropy = comparison.group1_metrics.entropy;
 
     let base_est = comparison.group1_metrics.estimated_size;
@@ -668,4 +669,9 @@ fn concise_print_comparison(comparison: &GroupComparisonResult) {
     println!("    Comp (est/zstd): ({}/{})", comp_est, comp_zstd);
     println!("    Ratio (est/zstd): ({}/{})", ratio_est, ratio_zstd);
     println!("    Diff (est/zstd): ({}/{})", diff_est, diff_zstd);
+
+    if size_orig != size_comp {
+        println!("    [WARNING!!] Sizes of both groups in bytes don't match!! They may vary by a few bytes due to padding.");
+        println!("    [WARNING!!] However if they vary extremely, your groups may be incorrect. group1: {}, group2: {}", size_orig, size_comp);
+    }
 }

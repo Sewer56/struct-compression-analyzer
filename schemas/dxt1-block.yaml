@@ -21,7 +21,6 @@ analysis:
       group_2: [color0, color1]  # Derived group to compare with.
       description: Compare regular interleaved colour format `colors` against their split components `color0` and `color1`.
 
-
 root:
   type: group
   fields:
