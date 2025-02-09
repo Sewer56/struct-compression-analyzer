@@ -23,6 +23,23 @@ pub fn get_zstd_compressed_size(data: &[u8]) -> usize {
         .unwrap()
 }
 
+/// Reverses the bits of a u64 value
+/// # Arguments
+/// * `max_bits` - The number of bits to reverse
+/// * `bits` - The bits to reverse
+///
+/// # Returns
+/// The reversed bits
+pub fn reverse_bits(max_bits: u32, bits: u64) -> u64 {
+    let mut reversed_bits = 0u64;
+    for x in 0..max_bits {
+        if bits & (1 << x) != 0 {
+            reversed_bits |= 1 << (max_bits - 1 - x);
+        }
+    }
+    reversed_bits
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

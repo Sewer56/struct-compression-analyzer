@@ -46,16 +46,6 @@ Contains high-level information about the structure being analyzed.
 
 ```yaml
 analysis:
-  group_by_field:
-    - field: field_name # Name of the field to group by
-      description: text # Optional description of this grouping
-      display:          # Optional display configuration
-        format: text    # How to format the group value
-        labels:         # Optional value labels
-          0: "Label for value 0"
-          1: "Label for value 1"
-    - field: another_field
-      description: text
   compare_groups:
     - name: split_colors
       group_1: [colors]          # Base group to compare against.
@@ -65,17 +55,6 @@ analysis:
 
 The `analysis` section configures how results should be analyzed and presented:
 
-- `group_by_field`: List of fields to use for grouping results
-  - Each entry specifies a field and optional display configuration
-  - Multiple fields allow for different views of the same data
-  - The `display` section can customize how groups are presented:
-    - `format`: Printf-style format string (e.g., "%d", "%02x", "%s")
-    - Common format specifiers:
-      - `%d` - decimal integer
-      - `%x` or `%X` - hexadecimal (lowercase/uppercase)
-      - `%02d` - zero-padded decimal
-      - `%s` - string
-  - `labels` can provide meaningful names for specific values
 - `compare_groups`: Custom group comparisons
   - This feature allows you to compare fields (or groups) against each other.
   - A common use case is to compare a struct, or sub struct against its inner components.
@@ -92,18 +71,21 @@ conditional_offsets:
       - byte_offset: 0x00 # file magic
         bit_offset: 0
         bits: 32
+        bit_order: msb
         value: 0x44445320 # DDS magic
       - byte_offset: 0x54 # ddspf.dourCC
         bit_offset: 0
         bits: 32
+        bit_order: msb
         value: 0x44583130 # DX10 header
       - byte_offset: 0x80 # ds_header_dxt10.dxgiFormat
         bit_offset: 0
         bits: 32
+        bit_order: msb
         value: 0x62000000 # DXGI_FORMAT_BC7_UNORM
 ```
 
-Conditional offsets validate headers in specified order using big-endian comparisons:
+Conditional offsets validate headers in specified order using big-endian (by default) comparisons:
 
 1. First checks for DDS magic number `0x44445320` (DDS) at offset 0
 2. Then verifies DX10 header `0x44583130` (DX10) at offset 0x54
@@ -111,7 +93,8 @@ Conditional offsets validate headers in specified order using big-endian compari
 4. If all three match, sets offset to 148 bytes (0x94)
 
 The hex values are specified in big-endian byte order; i.e. the same order as you would
-see in a hex editor.
+see in a hex editor. This can however be overwritten using the `bit_order` field; same
+way you can with regular fields.
 
 ### Root Section
 
@@ -172,6 +155,23 @@ Groups contain a collection of fields that are written sequentially:
 - Basic fields
 - Mixed hierarchies of fields and groups
 
+#### Endianness
+
+To avoid confusion, endianness is specified in the following way:
+
+```yaml
+bit_order: msb  # Default, values are interpreted with bits left-to-right
+bit_order: lsb  # Values are interpreted with bits right-to-left
+```
+
+To illustrate, consider the bits `10000000`; if we read the first 2 bits:
+
+- `msb`: `10` equals `2` (decimal)
+- `lsb`: `10` equals `1` (decimal)
+
+MSB vs LSB does not change from which end of the byte we start reading bits from, but the order
+of the bits of the individual values we extract. The order of bits read is always highest to lowest.
+
 ## Example Usage
 
 Here's how different types of fields and analysis configurations are represented:
@@ -180,11 +180,6 @@ Here's how different types of fields and analysis configurations are represented
 
 ```yaml
 analysis:
-  group_by_field:
-    - field: partition
-      description: Results grouped by partition value
-      display:
-        format: "Partition %d"
   compare_groups:
     - name: split_colors
       group_1: [colors]          # Base group to compare against.

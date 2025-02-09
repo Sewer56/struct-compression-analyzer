@@ -1,4 +1,5 @@
 use super::schema::{Group, Schema};
+use crate::analyze_utils::reverse_bits;
 use crate::constants::CHILD_MARKER;
 use crate::{
     analysis_results::{compute_analysis_results, AnalysisResults},
@@ -221,23 +222,6 @@ fn process_field_or_group(
     }
 }
 
-/// Reverses the bits of a u64 value
-/// # Arguments
-/// * `max_bits` - The number of bits to reverse
-/// * `bits` - The bits to reverse
-///
-/// # Returns
-/// The reversed bits
-fn reverse_bits(max_bits: u32, bits: u64) -> u64 {
-    let mut reversed_bits = 0u64;
-    for x in 0..max_bits {
-        if bits & (1 << x) != 0 {
-            reversed_bits |= 1 << (max_bits - 1 - x);
-        }
-    }
-    reversed_bits
-}
-
 /// Recursively builds field statistics structures from schema definition
 /// Creates a BitWriterContainer based on the specified bit order
 fn create_bit_writer(bit_order: BitOrder) -> BitWriterContainer {
@@ -316,7 +300,12 @@ fn should_skip(reader: &mut BitReader<Cursor<&[u8]>, BigEndian>, conditions: &[C
         let offset = (condition.byte_offset * 8) + condition.bit_offset as u64;
         let target_pos = original_pos_bits + offset;
         reader.seek_bits(SeekFrom::Start(target_pos)).unwrap();
-        let value = reader.read::<u64>(condition.bits as u32).unwrap();
+        let mut value = reader.read::<u64>(condition.bits as u32).unwrap();
+
+        // Reverse bits if needed
+        if condition.bit_order == BitOrder::Lsb {
+            value = reverse_bits(condition.bits as u32, value);
+        }
 
         if value != condition.value {
             reader

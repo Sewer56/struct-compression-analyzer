@@ -1,7 +1,11 @@
 version: '1.0'
 metadata:
-  name: BC7 Mode0 Blocks
-  description: Analysis schema BC7 block format. This one focuses on 'Mode0' blocks https://learn.microsoft.com/en-us/windows/win32/direct3d11/bc7-format-mode-reference#mode-0
+  name: BC7 Mode0 Blocks (with Partition)
+  description: |
+    Analysis schema BC7 block format. 
+    This one focuses on 'Mode0' blocks https://learn.microsoft.com/en-us/windows/win32/direct3d11/bc7-format-mode-reference#mode-0 .
+    With an additional filter for only a certain partition within Mode0 blocks.
+    Adjust partition in root group using `skip_if_not`
 
 conditional_offsets:
   # BC7 format detection
@@ -44,12 +48,18 @@ root:
   type: group
   # Filter out to only Mode0 blocks, with start with a single '1' bit.
   # https://learn.microsoft.com/en-us/windows/win32/direct3d11/bc7-format-mode-reference#mode-0
-  bit_order: lsb # little endian bit order.
   skip_if_not: 
   - byte_offset: 0
     bit_offset: 0
     bits: 1
     value: 1
+  - byte_offset: 0
+    bit_offset: 1 # partition
+    bits: 4
+    bit_order: lsb
+    value: 13 # change partition number here
+
+  bit_order: lsb # little endian bit order.
 
   # Note: We filter out at root, so `mode0_block` reports the correct size of only Mode0 blocks
   #       in the file.

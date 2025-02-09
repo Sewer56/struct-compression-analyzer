@@ -410,6 +410,9 @@ pub struct Condition {
     pub bits: u8,
     /// Expected value in big-endian byte order
     pub value: u64,
+    /// Bit order of the condition
+    #[serde(default)]
+    pub bit_order: BitOrder,
 }
 
 /// Defines conditional offset selection rules

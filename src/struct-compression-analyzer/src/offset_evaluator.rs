@@ -1,4 +1,7 @@
-use crate::schema::{Condition, ConditionalOffset};
+use crate::{
+    analyze_utils::reverse_bits,
+    schema::{BitOrder, Condition, ConditionalOffset},
+};
 use bitstream_io::{BigEndian, BitRead, BitReader};
 use std::{
     fs::File,
@@ -49,8 +52,14 @@ fn check_condition(condition: &Condition, data: &[u8]) -> bool {
         return false;
     }
 
+    let comp_value = match condition.bit_order {
+        BitOrder::Default => condition.value,
+        BitOrder::Msb => condition.value,
+        BitOrder::Lsb => reverse_bits(condition.bits as u32, condition.value),
+    };
+
     match reader.read::<u64>(condition.bits as u32) {
-        Ok(extracted) => extracted == condition.value,
+        Ok(extracted) => extracted == comp_value,
         Err(_) => false,
     }
 }
@@ -58,7 +67,7 @@ fn check_condition(condition: &Condition, data: &[u8]) -> bool {
 #[cfg(test)]
 mod byte_tests {
     use super::*;
-    use crate::schema::{Condition, ConditionalOffset};
+    use crate::schema::{BitOrder, Condition, ConditionalOffset};
 
     fn create_bc7_conditions() -> Vec<ConditionalOffset> {
         vec![ConditionalOffset {
@@ -69,12 +78,14 @@ mod byte_tests {
                     bit_offset: 0,
                     bits: 32,
                     value: 0x44445320,
+                    bit_order: BitOrder::Msb,
                 },
                 Condition {
                     byte_offset: 0x54,
                     bit_offset: 0,
                     bits: 32,
                     value: 0x44583130,
+                    bit_order: BitOrder::Msb,
                 },
             ],
         }]
@@ -141,7 +152,7 @@ mod byte_tests {
 #[cfg(test)]
 mod bit_tests {
     use super::*;
-    use crate::schema::{Condition, ConditionalOffset};
+    use crate::schema::{BitOrder, Condition, ConditionalOffset};
 
     // New bit-oriented tests will go here
 
@@ -155,12 +166,14 @@ mod bit_tests {
                     bit_offset: 4,
                     bits: 4,
                     value: 0b1110,
+                    bit_order: BitOrder::Msb,
                 },
                 Condition {
                     byte_offset: 1,
                     bit_offset: 0,
                     bits: 8,
                     value: 0xC0,
+                    bit_order: BitOrder::Msb,
                 },
             ],
         }];
@@ -172,5 +185,37 @@ mod bit_tests {
         // Invalid header: bits 4-7 = 0xB
         let invalid_data = [0x0B, 0xC0, 0x00];
         assert!(!matches_all_conditions(&conditions[0], &invalid_data));
+    }
+}
+
+#[cfg(test)]
+mod endian_tests {
+    use super::*;
+    use crate::schema::{BitOrder, Condition};
+
+    #[test]
+    fn big_endian() {
+        let data = [0b0011_0000u8];
+        let condition = Condition {
+            byte_offset: 0,
+            bit_offset: 0,
+            bits: 4,
+            value: 0b0011,
+            bit_order: BitOrder::Msb,
+        };
+        assert!(check_condition(&condition, &data));
+    }
+
+    #[test]
+    fn little_endian() {
+        let data = [0b0011_0000u8];
+        let condition = Condition {
+            byte_offset: 0,
+            bit_offset: 0,
+            bits: 4,
+            value: 0b1100,
+            bit_order: BitOrder::Lsb,
+        };
+        assert!(check_condition(&condition, &data));
     }
 }
