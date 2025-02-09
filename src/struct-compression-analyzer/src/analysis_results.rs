@@ -12,6 +12,8 @@ use lossless_transform_utils::entropy::code_length_of_histogram32;
 use lossless_transform_utils::histogram::histogram32_from_bytes;
 use lossless_transform_utils::histogram::Histogram32;
 use lossless_transform_utils::match_estimator::estimate_num_lz_matches_fast;
+use rayon::iter::IntoParallelRefMutIterator;
+use rayon::iter::ParallelIterator;
 use std::collections::HashMap;
 
 pub fn compute_analysis_results(analyzer: &mut SchemaAnalyzer) -> AnalysisResults {
@@ -298,16 +300,18 @@ impl AnalysisResults {
     /// This is useful when analyzing multiple files or groups of fields.
     pub fn merge_many(&mut self, other: &[AnalysisResults]) {
         // For each field in current item, find equivalent field in multiple others, and merge them
-        for (full_path, field_metrics) in &mut self.per_field {
-            // Get all matching `full_path` from all other elements as vec
-            let matches: Vec<&FieldMetrics> = other
-                .iter()
-                .flat_map(|results| results.per_field.get(full_path))
-                .collect();
+        self.per_field
+            .par_iter_mut()
+            .for_each(|(full_path, field_metrics)| {
+                // Get all matching `full_path` from all other elements as vec
+                let matches: Vec<&FieldMetrics> = other
+                    .iter()
+                    .flat_map(|results| results.per_field.get(full_path))
+                    .collect();
 
-            // Now merge as one operation
-            field_metrics.merge_many(&matches);
-        }
+                // Now merge as one operation
+                field_metrics.merge_many(&matches);
+            });
 
         // Merge the file entropy and LZ matches
         self.file_entropy = (self.file_entropy + other.iter().map(|m| m.file_entropy).sum::<f64>())

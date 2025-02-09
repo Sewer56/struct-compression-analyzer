@@ -46,6 +46,22 @@ Will fix when suitable. I don't need those features for now.
 
 - Structs have to be byte aligned.
 
+## Tips
+
+The program uses a lot of memory.  
+Expect at least twice the size of the input data; or more if the data contains a lot of nested groups.  
+
+When running the tool on a very large data set you might want to set:
+
+```bash
+# on Linux
+sudo sysctl vm.overcommit_memory=1
+```
+
+And create a large swapfile on your system.  
+In my case, for 32GB of input, I used 32GiB of RAM + 128GiB of swap with complex schema.  
+Otherwise the process may get killed during analysis.  
+
 ## Development
 
 For information on how to work with this codebase, see [README-DEV.MD](README-DEV.MD).
