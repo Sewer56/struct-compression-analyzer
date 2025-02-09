@@ -33,6 +33,8 @@ pub fn compute_analysis_results(analyzer: &mut SchemaAnalyzer) -> AnalysisResult
         let estimated_size = size_estimate(writer_buffer, lz_matches, entropy);
         let actual_size = get_zstd_compressed_size(writer_buffer);
 
+        // reduce memory usage from leftover analyzer.
+        stats.value_counts.shrink_to_fit();
         field_metrics.insert(
             stats.full_path.clone(),
             FieldMetrics {
@@ -238,22 +240,26 @@ impl FieldMetrics {
             / (other.len() + 1);
 
         // Sum up arrays from both items
+        self.merge_bit_stats_and_value_counts(other);
+    }
+
+    fn merge_bit_stats_and_value_counts(&mut self, other: &[&FieldMetrics]) {
         let bit_counts = &mut self.bit_counts;
-        for stats in other.iter() {
+        let value_counts = &mut self.value_counts;
+        for other_stats in other {
+            let other_ref = *other_stats;
+
             // Add bit counts from others into self
-            for (bit_offset, bit_stats) in stats.bit_counts.iter().enumerate() {
+            for (bit_offset, bit_stats) in other_ref.bit_counts.iter().enumerate() {
                 let current_counts = bit_counts.get_mut(bit_offset).unwrap();
                 current_counts.ones += bit_stats.ones;
                 current_counts.zeros += bit_stats.zeros;
             }
 
             // Add value counts from others into self
-            for (value, count) in stats.value_counts.iter() {
-                if let Some(existing_count) = self.value_counts.get_mut(value) {
-                    *existing_count += count;
-                } else {
-                    self.value_counts.insert(*value, *count);
-                }
+            let other_value_counts = &other_ref.value_counts;
+            for (value, count) in other_value_counts {
+                *value_counts.entry(*value).or_insert(0) += count;
             }
         }
     }

@@ -133,12 +133,16 @@ fn main() -> anyhow::Result<()> {
             );
         }
         Command::Directory(dir_cmd) => {
-            println!("Analyzing directory: {}", dir_cmd.path.display());
-
             let schema = load_schema(&dir_cmd.schema)?;
             let files = find_directory_files_recursive(&dir_cmd.path)?;
+            println!(
+                "Analyzing directory: {} ({} files)",
+                dir_cmd.path.display(),
+                files.len()
+            );
 
             // Process every file with rayon, collecting individual results
+            let analyze_start_time = Instant::now();
             let individual_results: Vec<AnalysisResults> = files
                 .par_iter()
                 .map(|path| {
@@ -160,11 +164,20 @@ fn main() -> anyhow::Result<()> {
                 .collect();
 
             // Merge all results
+            println!(
+                "{}ms... Merging {} files.",
+                analyze_start_time.elapsed().as_millis(),
+                individual_results.len()
+            );
+            let merge_start_time = Instant::now();
             let mut merged_results = individual_results.first().unwrap().clone();
             merged_results.merge_many(&individual_results[1..]);
 
             // Print final aggregated results
-            println!("Aggregated (Merged) Analysis Results:");
+            println!(
+                "{}ms... Aggregated (Merged) Analysis Results:",
+                merge_start_time.elapsed().as_millis()
+            );
             merged_results.print(
                 &schema,
                 dir_cmd.format.unwrap_or(PrintFormat::default()),
