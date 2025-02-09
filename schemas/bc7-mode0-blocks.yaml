@@ -4,7 +4,7 @@ metadata:
   description: Analysis schema BC7 block format. This one focuses on 'Mode0' blocks https://learn.microsoft.com/en-us/windows/win32/direct3d11/bc7-format-mode-reference#mode-0
 
 conditional_offsets:
-  # BC7 format detection
+  # BC7 format detection (UNORM)
   - offset: 0x94  # BC7 data starts at 148 bytes
     conditions:
       - byte_offset: 0x00 # file magic
@@ -19,6 +19,21 @@ conditional_offsets:
         bit_offset: 0
         bits: 32
         value: 0x62000000 # DXGI_FORMAT_BC7_UNORM
+  # BC7 format detection (UNORM_SRGB)
+  - offset: 0x94  # BC7 data starts at 148 bytes
+    conditions:
+      - byte_offset: 0x00 # file magic
+        bit_offset: 0
+        bits: 32
+        value: 0x44445320 # DDS magic
+      - byte_offset: 0x54 # ddspf.dourCC
+        bit_offset: 0
+        bits: 32
+        value: 0x44583130 # DX10 header
+      - byte_offset: 0x80 # ds_header_dxt10.dxgiFormat
+        bit_offset: 0
+        bits: 32
+        value: 0x63000000 # DXGI_FORMAT_BC7_UNORM_SRGB
 
 analysis:
   compare_groups:
