@@ -253,7 +253,12 @@ fn find_directory_files_recursive(path: &Path) -> anyhow::Result<Vec<PathBuf>> {
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
     {
-        files.push(entry.path().to_path_buf());
+        let metadata = std::fs::metadata(entry.path())?;
+        files.push((entry.path().to_path_buf(), metadata.len()));
     }
-    Ok(files)
+
+    // Sort by file size (descending),
+    // this improves performance when processing files in parallel.
+    files.sort_by(|a, b| b.1.cmp(&a.1));
+    Ok(files.into_iter().map(|(path, _)| path).collect())
 }
