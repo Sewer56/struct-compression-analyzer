@@ -2,7 +2,7 @@ use super::schema::{Group, Schema};
 use crate::constants::CHILD_MARKER;
 use crate::{
     analysis_results::{compute_analysis_results, AnalysisResults},
-    schema::{BitOrder, FieldDefinition},
+    schema::{BitOrder, Condition, FieldDefinition},
 };
 use bitstream_io::{BigEndian, BitRead, BitReader, BitWrite, BitWriter, LittleEndian};
 use std::{
@@ -110,15 +110,27 @@ impl<'a> SchemaAnalyzer<'a> {
     }
 
     fn process_group(&mut self, group: &Group, reader: &mut BitReader<Cursor<&[u8]>, BigEndian>) {
+        // Check self, if the group should be skipped.
+        // Note; this code is here because the 'root' of schema is a group.
+        if should_skip(reader, &group.skip_if_not) {
+            return;
+        }
+
         for (name, field_def) in &group.fields {
             match field_def {
                 FieldDefinition::Field(field) => {
+                    // Check if the child field can be skipped.
+                    if should_skip(reader, &field.skip_if_not) {
+                        continue;
+                    }
+
                     let bits_left = field.bits;
                     let field_stats = self
                         .field_stats
                         .iter_mut()
                         .find(|s| s.name == *name)
                         .unwrap(); // exists by definition
+
                     process_field_or_group(reader, bits_left, field_stats);
                 }
                 FieldDefinition::Group(child_group) => {
@@ -289,6 +301,35 @@ fn build_field_stats<'a>(group: &'a Group, parent_path: &'a str, depth: usize) -
     }
 
     stats
+}
+
+/// Checks if we should skip processing based on conditions
+#[inline]
+fn should_skip(reader: &mut BitReader<Cursor<&[u8]>, BigEndian>, conditions: &[Condition]) -> bool {
+    // Fast return, since there usually are no conditions.
+    if conditions.is_empty() {
+        return false;
+    }
+
+    let original_pos_bits = reader.position_in_bits().unwrap();
+    for condition in conditions {
+        let offset = (condition.byte_offset * 8) + condition.bit_offset as u64;
+        let target_pos = original_pos_bits + offset;
+        reader.seek_bits(SeekFrom::Start(target_pos)).unwrap();
+        let value = reader.read::<u64>(condition.bits as u32).unwrap();
+
+        if value != condition.value {
+            reader
+                .seek_bits(SeekFrom::Start(original_pos_bits))
+                .unwrap();
+            return true;
+        }
+    }
+
+    reader
+        .seek_bits(SeekFrom::Start(original_pos_bits))
+        .unwrap();
+    false
 }
 
 #[cfg(test)]
@@ -491,5 +532,63 @@ root:
         assert!(matches!(nested_value.writer, BitWriterContainer::Lsb(_)));
         assert_eq!(nested_value.bit_counts.len(), nested_value.lenbits as usize);
         assert_eq!(nested_value.bit_order, BitOrder::Lsb); // inherited from parent
+    }
+
+    #[test]
+    fn skips_group_based_on_conditions() {
+        let yaml = r#"
+version: '1.0'
+root:
+  type: group
+  skip_if_not:
+    - byte_offset: 0
+      bit_offset: 0
+      bits: 8
+      value: 0x55
+  fields:
+    dummy: 8
+"#;
+        let schema = Schema::from_yaml(yaml).unwrap();
+        let mut analyzer = SchemaAnalyzer::new(&schema);
+
+        // Should process - matching magic
+        analyzer.add_entry(&[0x55]);
+        assert_eq!(analyzer.field_stats[0].count, 1);
+
+        // Should skip - non-matching magic
+        analyzer.add_entry(&[0xAA]);
+        assert_eq!(analyzer.field_stats[0].count, 1);
+
+        // Should process - matching magic
+        analyzer.add_entry(&[0x55]);
+        assert_eq!(analyzer.field_stats[0].count, 2);
+    }
+
+    #[test]
+    fn skips_field_based_on_conditions() {
+        let yaml = r#"
+version: '1.0'
+root:
+  type: group
+  fields:
+    header:
+      type: field
+      bits: 7
+      skip_if_not:
+        - byte_offset: 0
+          bit_offset: 0
+          bits: 1
+          value: 1
+"#;
+        let schema = Schema::from_yaml(yaml).unwrap();
+        let mut analyzer = SchemaAnalyzer::new(&schema);
+
+        // First bit 1 - processes
+        analyzer.add_entry(&[0b10000000]);
+        assert_eq!(analyzer.field_stats[0].count, 1);
+
+        // First bit 0 - skips
+        analyzer.add_entry(&[0b00000000]);
+        assert_eq!(analyzer.field_stats[0].count, 1);
     }
 }
