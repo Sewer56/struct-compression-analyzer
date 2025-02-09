@@ -23,6 +23,7 @@ const CSV_HEADERS: &[&str] = &[
 
 pub fn write_field_csvs(
     results: &[AnalysisResults],
+    merged_results: &AnalysisResults,
     output_dir: &Path,
     file_paths: &[PathBuf],
 ) -> std::io::Result<()> {
@@ -195,6 +196,70 @@ pub fn write_field_csvs(
         }
     }
 
+    // Write additional stats CSVs
+    write_field_value_stats_csv(merged_results, output_dir)?;
+    write_field_bit_stats_csv(merged_results, output_dir)?;
+
+    Ok(())
+}
+
+fn write_field_value_stats_csv(
+    results: &AnalysisResults,
+    output_dir: &Path,
+) -> std::io::Result<()> {
+    // Get field paths from first result
+    let field_paths = results.per_field.keys();
+    for field_path in field_paths {
+        let mut wtr =
+            Writer::from_path(output_dir.join(sanitize_filename(field_path) + "_value_stats.csv"))?;
+        wtr.write_record(["value", "count", "ratio"])?;
+
+        // Write value counts for each result
+        if let Some(field) = results.per_field.get(field_path) {
+            // Get sorted value counts
+            let value_counts = field.sorted_value_counts();
+
+            // Calculate total count for ratio
+            let total_values: usize = value_counts.iter().map(|(_, count)| **count as usize).sum();
+
+            // Write sorted values with ratios
+            for (value, count) in value_counts {
+                wtr.write_record(&[
+                    value.to_string(),
+                    count.to_string(),
+                    safe_ratio(*count as usize, total_values),
+                ])?;
+            }
+        }
+        wtr.flush()?;
+    }
+    Ok(())
+}
+
+fn write_field_bit_stats_csv(results: &AnalysisResults, output_dir: &Path) -> std::io::Result<()> {
+    // Get field paths from first result
+    let field_paths = results.per_field.keys();
+    for field_path in field_paths {
+        let mut wtr =
+            Writer::from_path(output_dir.join(sanitize_filename(field_path) + "_bit_stats.csv"))?;
+        wtr.write_record(["bit_offset", "zero_count", "one_count", "ratio"])?;
+
+        // Write bit stats for each result
+        if let Some(field) = results.per_field.get(field_path) {
+            for (i, stats) in field.bit_counts.iter().enumerate() {
+                wtr.write_record(&[
+                    i.to_string(),
+                    stats.zeros.to_string(),
+                    stats.ones.to_string(),
+                    safe_ratio(
+                        stats.zeros as usize,
+                        stats.zeros as usize + stats.ones as usize,
+                    ),
+                ])?;
+            }
+        }
+        wtr.flush()?;
+    }
     Ok(())
 }
 
