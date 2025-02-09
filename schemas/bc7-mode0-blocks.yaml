@@ -123,6 +123,7 @@ root:
         index:
           type: group
           description: 45-bit index field divided into 3-bit segments
+          skip_frequency_analysis: true # Super random, basically max entropy, expensive to compute, not worth computing.
           fields:
             index0: 3
             index1: 3

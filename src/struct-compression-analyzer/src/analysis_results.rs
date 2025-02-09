@@ -610,6 +610,11 @@ fn print_field_metrics_bit_stats(field: &FieldMetrics) {
     let indent = "  ".repeat(field.depth);
     println!("{}{} ({} bits)", indent, field.name, field.lenbits);
 
+    // If we didn't collect the bits, skip printing.
+    if field.bit_counts.len() != field.lenbits as usize {
+        return;
+    }
+
     for i in 0..field.lenbits {
         let bit_stats = &field.bit_counts[i as usize];
         let total = bit_stats.zeros + bit_stats.ones;

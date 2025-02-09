@@ -126,7 +126,12 @@ impl<'a> SchemaAnalyzer<'a> {
 
                     let bits_left = field.bits;
                     let field_stats = self.field_stats.get_mut(name).unwrap(); // exists by definition
-                    process_field_or_group(reader, bits_left, field_stats);
+                    process_field_or_group(
+                        reader,
+                        bits_left,
+                        field_stats,
+                        field.skip_frequency_analysis,
+                    );
                 }
                 FieldDefinition::Group(child_group) => {
                     let bits_left = child_group.bits;
@@ -134,7 +139,12 @@ impl<'a> SchemaAnalyzer<'a> {
 
                     // Note (processing field/group)
                     let current_offset = reader.position_in_bits().unwrap();
-                    process_field_or_group(reader, bits_left, field_stats);
+                    process_field_or_group(
+                        reader,
+                        bits_left,
+                        field_stats,
+                        child_group.skip_frequency_analysis,
+                    );
                     reader.seek_bits(SeekFrom::Start(current_offset)).unwrap();
 
                     // Process nested fields
@@ -160,9 +170,12 @@ fn process_field_or_group(
     reader: &mut BitReader<Cursor<&[u8]>, BigEndian>,
     mut bit_count: u32,
     field_stats: &mut FieldStats,
+    skip_frequency_analysis: bool,
 ) {
     let writer = &mut field_stats.writer;
-    let can_count_values = bit_count <= 64; // we don't support value counting for structs >8 bytes.
+    // We don't support value counting for structs >8 bytes.
+    let can_bit_stats = bit_count <= 64;
+    let skip_count_values = bit_count > 64 || skip_frequency_analysis;
 
     // Update statistics
     field_stats.count += 1;
@@ -172,7 +185,7 @@ fn process_field_or_group(
         let bits = reader.read::<u64>(max_bits).unwrap();
 
         // Update the value counts
-        if can_count_values {
+        if !skip_count_values {
             if field_stats.bit_order == BitOrder::Lsb {
                 // Reverse bits for lsb order
                 let reversed_bits = reverse_bits(max_bits, bits);
@@ -196,12 +209,14 @@ fn process_field_or_group(
         }
 
         // Update stats for individual bits.
-        for i in 0..max_bits {
-            let bit_value = (bits >> (max_bits - 1 - i)) & 1;
-            if bit_value == 0 {
-                field_stats.bit_counts[i as usize].zeros += 1;
-            } else {
-                field_stats.bit_counts[i as usize].ones += 1;
+        if can_bit_stats {
+            for i in 0..max_bits {
+                let bit_value = (bits >> (max_bits - 1 - i)) & 1;
+                if bit_value == 0 {
+                    field_stats.bit_counts[i as usize].zeros += 1;
+                } else {
+                    field_stats.bit_counts[i as usize].ones += 1;
+                }
             }
         }
 
@@ -246,7 +261,6 @@ fn build_field_stats<'a>(
         match field {
             FieldDefinition::Field(field) => {
                 let writer = create_bit_writer(field.bit_order);
-
                 stats.insert(
                     name.clone(),
                     FieldStats {
@@ -255,7 +269,7 @@ fn build_field_stats<'a>(
                         lenbits: field.bits,
                         count: 0,
                         writer,
-                        bit_counts: vec![BitStats::default(); field.bits as usize],
+                        bit_counts: vec![BitStats::default(); clamp_bits(field.bits as usize)],
                         name: name.clone(),
                         bit_order: field.bit_order.get_with_default_resolve(),
                         value_counts: FxHashMap::new(),
@@ -274,7 +288,7 @@ fn build_field_stats<'a>(
                         lenbits: group.bits,
                         count: 0,
                         writer,
-                        bit_counts: vec![BitStats::default(); group.bits as usize],
+                        bit_counts: vec![BitStats::default(); clamp_bits(group.bits as usize)],
                         name: name.clone(),
                         bit_order: group.bit_order.get_with_default_resolve(),
                         value_counts: FxHashMap::new(),
@@ -322,6 +336,14 @@ fn should_skip(reader: &mut BitReader<Cursor<&[u8]>, BigEndian>, conditions: &[C
         .seek_bits(SeekFrom::Start(original_pos_bits))
         .unwrap();
     false
+}
+
+fn clamp_bits(bits: usize) -> usize {
+    if bits > 64 {
+        0
+    } else {
+        bits
+    }
 }
 
 #[cfg(test)]

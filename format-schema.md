@@ -117,6 +117,7 @@ field_name:
   bits: 3            # Number of bits for the field. Auto calculated from children if not set.
   description: text  # Optional field description
   bit_order: order   # Optional, either "msb" (default) or "lsb"
+  skip_frequency_analysis: true  # Optional, skips value frequency counting.
   skip_if_not:       # Optional list of validation conditions. This field is skipped if any condition fails
                      # See 'Conditional Offsets' for details on the syntax.
     - byte_offset: 0x00  # File offset to check
@@ -130,6 +131,9 @@ field_name:
 
 Warning: It is assumed each field has a unique name; this includes subfields.
 
+It is recommended to use `skip_frequency_analysis` for any large fields (>24 bits) that are hugely random
+while scanning large amounts of data; otherwise you'll experience significant performance losses.
+
 #### Groups
 
 ```yaml
@@ -139,6 +143,7 @@ group_name:
   bit_order: order    # Optional, either "msb" (default) or "lsb"
                       # If set here, all contained fields will inherit this order.
                       # Unless explicitly overwritten
+  skip_frequency_analysis: true  # Optional, skips value frequency counting.
   skip_if_not:        # Optional list of validation conditions. This group is skipped if any condition fails
                       # See 'Conditional Offsets' for details on the syntax.
     - byte_offset: 0x00  # File offset to check

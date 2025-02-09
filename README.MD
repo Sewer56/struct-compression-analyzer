@@ -45,6 +45,8 @@ Analyzes the bit distribution and compression statistics of arrays of packed str
 Will fix when suitable. I don't need those features for now.
 
 - Structs have to be byte aligned.
+- Frequency counting for fields above 64 bits in size is not supported.
+    - Memory would blow up, and it's also really slow.
 
 ## Tips
 

@@ -164,6 +164,7 @@ pub struct Field {
     pub description: String,
     pub bit_order: BitOrder,
     pub skip_if_not: Vec<Condition>,
+    pub skip_frequency_analysis: bool,
 }
 
 impl<'de> Deserialize<'de> for Field {
@@ -184,6 +185,8 @@ impl<'de> Deserialize<'de> for Field {
                 bit_order: BitOrder,
                 #[serde(default)]
                 skip_if_not: Vec<Condition>,
+                #[serde(default)]
+                skip_frequency_analysis: bool,
             },
         }
 
@@ -194,17 +197,20 @@ impl<'de> Deserialize<'de> for Field {
                 description: String::new(),
                 bit_order: BitOrder::default(),
                 skip_if_not: Vec::new(),
+                skip_frequency_analysis: false,
             }),
             FieldRepr::Extended {
                 bits,
                 description,
                 bit_order,
                 skip_if_not,
+                skip_frequency_analysis,
             } => Ok(Field {
                 bits,
                 description,
                 bit_order,
                 skip_if_not,
+                skip_frequency_analysis,
             }),
         }
     }
@@ -251,6 +257,7 @@ pub struct Group {
     /// Inherited by all the children unless explicitly overwritten.
     pub bit_order: BitOrder,
     pub skip_if_not: Vec<Condition>,
+    pub skip_frequency_analysis: bool,
 }
 
 impl<'de> Deserialize<'de> for Group {
@@ -270,6 +277,8 @@ impl<'de> Deserialize<'de> for Group {
             fields: IndexMap<String, FieldDefinition>,
             #[serde(default)]
             skip_if_not: Vec<Condition>,
+            #[serde(default)]
+            skip_frequency_analysis: bool,
         }
 
         let group = GroupRepr::deserialize(deserializer)?;
@@ -299,6 +308,7 @@ impl<'de> Deserialize<'de> for Group {
             bits,
             bit_order: group.bit_order,
             skip_if_not: group.skip_if_not,
+            skip_frequency_analysis: group.skip_frequency_analysis,
         };
 
         // Propagate bit_order to children if not explicitly set
