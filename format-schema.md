@@ -134,6 +134,12 @@ field_name:
   bits: 3            # Number of bits for the field. Auto calculated from children if not set.
   description: text  # Optional field description
   bit_order: order   # Optional, either "msb" (default) or "lsb"
+  skip_if_not:       # Optional list of validation conditions. This field is skipped if any condition fails
+                     # See 'Conditional Offsets' for details on the syntax.
+    - byte_offset: 0x00  # File offset to check
+      bit_offset: 0      # Bit offset within byte (0-7)
+      bits: 32           # Number of bits to compare (1-64)
+      value: 0x44445320  # Expected big-endian value
 ```
 
 - Shorthand syntax is equivalent to a basic field with default values
@@ -150,6 +156,12 @@ group_name:
   bit_order: order    # Optional, either "msb" (default) or "lsb"
                       # If set here, all contained fields will inherit this order.
                       # Unless explicitly overwritten
+  skip_if_not:        # Optional list of validation conditions. This group is skipped if any condition fails
+                      # See 'Conditional Offsets' for details on the syntax.
+    - byte_offset: 0x00  # File offset to check
+      bit_offset: 0      # Bit offset within byte (0-7)
+      bits: 32           # Number of bits to compare (1-64)
+      value: 0x44445320  # Expected big-endian value
   fields:             # Contained fields and sub-groups
     subfield1: 3      # 3-bit field
     subfield2: 4      # 4-bit field

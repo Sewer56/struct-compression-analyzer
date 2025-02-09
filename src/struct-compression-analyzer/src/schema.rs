@@ -163,6 +163,7 @@ pub struct Field {
     pub bits: u32,
     pub description: String,
     pub bit_order: BitOrder,
+    pub skip_if_not: Vec<Condition>,
 }
 
 impl<'de> Deserialize<'de> for Field {
@@ -181,6 +182,8 @@ impl<'de> Deserialize<'de> for Field {
                 #[serde(default)]
                 #[serde(rename = "bit_order")]
                 bit_order: BitOrder,
+                #[serde(default)]
+                skip_if_not: Vec<Condition>,
             },
         }
 
@@ -190,15 +193,18 @@ impl<'de> Deserialize<'de> for Field {
                 bits: size,
                 description: String::new(),
                 bit_order: BitOrder::default(),
+                skip_if_not: Vec::new(),
             }),
             FieldRepr::Extended {
                 bits,
                 description,
                 bit_order,
+                skip_if_not,
             } => Ok(Field {
                 bits,
                 description,
                 bit_order,
+                skip_if_not,
             }),
         }
     }
@@ -244,6 +250,7 @@ pub struct Group {
     /// The bit order of this group.
     /// Inherited by all the children unless explicitly overwritten.
     pub bit_order: BitOrder,
+    pub skip_if_not: Vec<Condition>,
 }
 
 impl<'de> Deserialize<'de> for Group {
@@ -261,6 +268,8 @@ impl<'de> Deserialize<'de> for Group {
             bit_order: BitOrder,
             #[serde(default)]
             fields: IndexMap<String, FieldDefinition>,
+            #[serde(default)]
+            skip_if_not: Vec<Condition>,
         }
 
         let group = GroupRepr::deserialize(deserializer)?;
@@ -289,6 +298,7 @@ impl<'de> Deserialize<'de> for Group {
             fields: group.fields,
             bits,
             bit_order: group.bit_order,
+            skip_if_not: group.skip_if_not,
         };
 
         // Propagate bit_order to children if not explicitly set
@@ -960,6 +970,54 @@ root:
 
             let schema: Schema = serde_yaml::from_str(yaml).unwrap();
             assert!(schema.conditional_offsets.is_empty());
+        }
+
+        #[test]
+        fn supports_skip_if_not_conditions() {
+            let yaml = r#"
+version: '1.0'
+metadata:
+  name: Minimal Schema
+root:
+  type: group
+  fields:
+    header:
+      type: group
+      skip_if_not:
+        - byte_offset: 0x00
+          bit_offset: 0
+          bits: 32
+          value: 0x44445320
+      fields:
+        magic:
+          type: field
+          bits: 32
+          skip_if_not:
+            - byte_offset: 0x54
+              bit_offset: 0
+              bits: 32  
+              value: 0x44583130
+"#;
+
+            let schema = Schema::from_yaml(yaml).unwrap();
+            let header_group = match &schema.root.fields["header"] {
+                FieldDefinition::Field(_field) => panic!("Expected group, got field"),
+                FieldDefinition::Group(group) => group,
+            };
+            let magic_field = match &header_group.fields["magic"] {
+                FieldDefinition::Field(field) => field,
+                FieldDefinition::Group(_group) => panic!("Expected field, got group"),
+            };
+
+            // Test group-level conditions
+            assert_eq!(header_group.skip_if_not.len(), 1);
+            assert_eq!(header_group.skip_if_not[0].byte_offset, 0x00);
+            assert_eq!(header_group.skip_if_not[0].value, 0x44445320);
+
+            // Test field-level conditions
+            assert_eq!(magic_field.skip_if_not.len(), 1);
+            assert_eq!(magic_field.skip_if_not[0].byte_offset, 0x54);
+            assert_eq!(magic_field.skip_if_not[0].value, 0x44583130);
         }
     }
 
