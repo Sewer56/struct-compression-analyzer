@@ -125,23 +125,12 @@ impl<'a> SchemaAnalyzer<'a> {
                     }
 
                     let bits_left = field.bits;
-                    let field_stats = self
-                        .field_stats
-                        .iter_mut()
-                        .find(|(k, _)| *k == name)
-                        .map(|(_k, v)| v)
-                        .unwrap(); // exists by definition
-
+                    let field_stats = self.field_stats.get_mut(name).unwrap(); // exists by definition
                     process_field_or_group(reader, bits_left, field_stats);
                 }
                 FieldDefinition::Group(child_group) => {
                     let bits_left = child_group.bits;
-                    let field_stats = self
-                        .field_stats
-                        .iter_mut()
-                        .find(|(k, _)| *k == name)
-                        .map(|(_k, v)| v)
-                        .unwrap(); // exists by definition
+                    let field_stats = self.field_stats.get_mut(name).unwrap(); // exists by definition
 
                     // Note (processing field/group)
                     let current_offset = reader.position_in_bits().unwrap();
@@ -397,13 +386,7 @@ root:
 
         // Assert general writing.
         {
-            let flags_field = analyzer
-                .field_stats
-                .iter_mut()
-                .find(|(k, _)| *k == "flags")
-                .map(|(_k, v)| v)
-                .unwrap();
-
+            let flags_field = analyzer.field_stats.get_mut("flags").unwrap();
             assert_eq!(flags_field.count, 4, "Should process 4 entries");
             assert_eq!(
                 flags_field.bit_counts.len(),
@@ -449,12 +432,7 @@ root:
 
         // Add another entry, to specifically test big endian
         analyzer.add_entry(&[0b01000000]); // 0b01
-        let flags_field = analyzer
-            .field_stats
-            .iter_mut()
-            .find(|(k, _)| *k == "flags")
-            .map(|(_k, v)| v)
-            .unwrap();
+        let flags_field = analyzer.field_stats.get_mut("flags").unwrap();
         let expected_counts = FxHashMap::from_iter([(0b11, 1), (0b00, 1), (0b10, 1), (0b01, 2)]);
         assert_eq!(
             flags_field.value_counts, expected_counts,
@@ -487,12 +465,7 @@ root:
         // Asserts for general writing are in the equivalent big endian test.
         // Add another entry, to specifically test little endian
         analyzer.add_entry(&[0b10000000]); // 0b01 (due to endian flip)
-        let flags_field = analyzer
-            .field_stats
-            .iter_mut()
-            .find(|(k, _)| *k == "flags")
-            .map(|(_k, v)| v)
-            .unwrap();
+        let flags_field = analyzer.field_stats.get_mut("flags").unwrap();
         let expected_counts = FxHashMap::from_iter([(0b11, 1), (0b00, 1), (0b10, 1), (0b01, 2)]);
         assert_eq!(
             flags_field.value_counts, expected_counts,
