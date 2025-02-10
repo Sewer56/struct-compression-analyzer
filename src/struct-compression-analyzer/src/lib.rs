@@ -7,3 +7,4 @@ pub mod constants;
 pub mod csv_writer;
 pub mod offset_evaluator;
 pub mod schema;
+pub mod split_comparisons;

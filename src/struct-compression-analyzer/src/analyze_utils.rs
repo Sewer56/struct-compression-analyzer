@@ -1,3 +1,8 @@
+use lossless_transform_utils::{
+    entropy::code_length_of_histogram32,
+    histogram::{histogram32_from_bytes, Histogram32},
+};
+
 /// Estimate size of a compressed data based on precalculated LZ matches and entropy
 ///
 /// Arguments:
@@ -21,6 +26,13 @@ pub fn get_zstd_compressed_size(data: &[u8]) -> usize {
         .ok()
         .map(|compressed| compressed.len())
         .unwrap()
+}
+
+/// Calculates the entropy of a given input
+pub fn calculate_file_entropy(bytes: &[u8]) -> f64 {
+    let mut histogram = Histogram32::default();
+    histogram32_from_bytes(bytes, &mut histogram);
+    code_length_of_histogram32(&histogram, bytes.len() as u64)
 }
 
 /// Reverses the bits of a u64 value
