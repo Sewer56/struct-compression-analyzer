@@ -2,11 +2,13 @@ use crate::analyze_utils::get_zstd_compressed_size;
 use crate::analyze_utils::size_estimate;
 use crate::analyzer::get_writer_buffer;
 use crate::analyzer::BitStats;
+use crate::analyzer::FieldStats;
 use crate::analyzer::SchemaAnalyzer;
 use crate::constants::CHILD_MARKER;
 use crate::schema::BitOrder;
 use crate::schema::Metadata;
 use crate::schema::Schema;
+use crate::schema::SplitComparison;
 use ahash::AHashMap;
 use ahash::HashMapExt;
 use derive_more::derive::FromStr;
@@ -55,22 +57,45 @@ pub fn compute_analysis_results(analyzer: &mut SchemaAnalyzer) -> AnalysisResult
         );
     }
 
-    // Process group comparisons
-    let mut group_comparisons = Vec::new();
-    for comparison in &analyzer.schema.analysis.split_groups {
+    // Process split group comparisons
+    let split_comparisons = calc_split_comparisons(
+        &mut analyzer.field_stats,
+        &analyzer.schema.analysis.split_groups,
+        &field_metrics,
+    );
+
+    AnalysisResults {
+        file_entropy,
+        file_lz_matches,
+        per_field: field_metrics,
+        schema_metadata: analyzer.schema.metadata.clone(),
+        estimated_file_size: size_estimate(&analyzer.entries, file_lz_matches, file_entropy),
+        zstd_file_size: get_zstd_compressed_size(&analyzer.entries),
+        original_size: analyzer.entries.len(),
+        group_comparisons: split_comparisons,
+    }
+}
+
+pub fn calc_split_comparisons(
+    field_stats: &mut AHashMap<String, FieldStats>,
+    comparisons: &[SplitComparison],
+    field_metrics: &AHashMap<String, FieldMetrics>,
+) -> Vec<SplitComparisonResult> {
+    let mut split_comparisons = Vec::new();
+    for comparison in comparisons {
         let mut group1_bytes: Vec<u8> = Vec::new();
         let mut group2_bytes: Vec<u8> = Vec::new();
 
         // Sum up bytes for group 1
         for name in &comparison.group_1 {
-            if let Some(stats) = analyzer.field_stats.get_mut(name) {
+            if let Some(stats) = field_stats.get_mut(name) {
                 group1_bytes.extend_from_slice(get_writer_buffer(&mut stats.writer));
             }
         }
 
         // Sum up bytes for group 2
         for name in &comparison.group_2 {
-            if let Some(stats) = analyzer.field_stats.get_mut(name) {
+            if let Some(stats) = field_stats.get_mut(name) {
                 group2_bytes.extend_from_slice(get_writer_buffer(&mut stats.writer));
             }
         }
@@ -98,7 +123,7 @@ pub fn compute_analysis_results(analyzer: &mut SchemaAnalyzer) -> AnalysisResult
         let actual_size_1 = get_zstd_compressed_size(&group1_bytes);
         let actual_size_2 = get_zstd_compressed_size(&group2_bytes);
 
-        group_comparisons.push(GroupComparisonResult {
+        split_comparisons.push(SplitComparisonResult {
             name: comparison.name.clone(),
             description: comparison.description.clone(),
             group1_metrics: GroupComparisonMetrics {
@@ -126,17 +151,7 @@ pub fn compute_analysis_results(analyzer: &mut SchemaAnalyzer) -> AnalysisResult
             group2_field_metrics,
         });
     }
-
-    AnalysisResults {
-        file_entropy,
-        file_lz_matches,
-        per_field: field_metrics,
-        schema_metadata: analyzer.schema.metadata.clone(),
-        estimated_file_size: size_estimate(&analyzer.entries, file_lz_matches, file_entropy),
-        zstd_file_size: get_zstd_compressed_size(&analyzer.entries),
-        original_size: analyzer.entries.len(),
-        group_comparisons,
-    }
+    split_comparisons
 }
 
 fn calculate_file_entropy(bytes: &[u8]) -> f64 {
@@ -172,7 +187,7 @@ pub struct AnalysisResults {
     pub per_field: AHashMap<String, FieldMetrics>,
 
     /// Group comparison results
-    pub group_comparisons: Vec<GroupComparisonResult>,
+    pub group_comparisons: Vec<SplitComparisonResult>,
 }
 
 /// Complete analysis metrics for a single field
@@ -511,7 +526,7 @@ impl AnalysisResults {
 
 /// The result of comparing 2 arbitrary groups of fields based on the schema.
 #[derive(Clone)]
-pub struct GroupComparisonResult {
+pub struct SplitComparisonResult {
     /// The name of the group comparison. (Copied from schema)
     pub name: String,
     /// A description of the group comparison. (Copied from schema)
@@ -528,7 +543,7 @@ pub struct GroupComparisonResult {
     pub group2_field_metrics: Vec<FieldMetrics>,
 }
 
-impl GroupComparisonResult {
+impl SplitComparisonResult {
     /// Generates a name from all field metrics in group 1
     pub fn group1_name(&self) -> String {
         self.group1_field_metrics
@@ -586,7 +601,7 @@ fn calculate_percentage(child: f64, parent: f64) -> f64 {
     }
 }
 
-fn detailed_print_comparison(comparison: &GroupComparisonResult) {
+fn detailed_print_comparison(comparison: &SplitComparisonResult) {
     concise_print_comparison(comparison);
 }
 
@@ -630,7 +645,7 @@ fn print_field_metrics_bit_stats(field: &FieldMetrics) {
     }
 }
 
-fn concise_print_comparison(comparison: &GroupComparisonResult) {
+fn concise_print_comparison(comparison: &SplitComparisonResult) {
     let base_lz = comparison.group1_metrics.lz_matches;
     let size_orig = comparison.group1_metrics.original_size;
     let size_comp = comparison.group2_metrics.original_size;
