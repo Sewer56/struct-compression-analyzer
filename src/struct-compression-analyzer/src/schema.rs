@@ -57,14 +57,14 @@ pub struct AnalysisConfig {
     ///
     /// # Example
     /// ```yaml
-    /// compare_groups:
+    /// split_groups:
     ///   - name: colors
     ///     group_1: [colors]                       # Original interleaved (structure of array) RGB layout
     ///     group_2: [color_r, color_g, color_b]    # array of structure layout (e.g. RRRGGGBBB)
     ///     description: Compare compression ratio of original interleaved format against grouping of colour components.
     /// ```
     #[serde(default)]
-    pub compare_groups: Vec<GroupComparison>,
+    pub split_groups: Vec<GroupComparison>,
 }
 
 /// Configuration for comparing field groups
@@ -1042,7 +1042,7 @@ root:
             let yaml = r#"
 version: '1.0'
 analysis:
-  compare_groups:
+  split_groups:
     - name: color_layouts
       group_1: [colors]
       group_2: [color_r, color_g, color_b]
@@ -1053,7 +1053,7 @@ root:
 "#;
 
             let schema = Schema::from_yaml(yaml).unwrap();
-            let comparisons = &schema.analysis.compare_groups;
+            let comparisons = &schema.analysis.split_groups;
 
             assert_eq!(comparisons.len(), 1);
             assert_eq!(comparisons[0].name, "color_layouts");
@@ -1073,7 +1073,7 @@ root:
             let yaml = r#"
 version: '1.0'
 analysis:
-  compare_groups:
+  split_groups:
     - name: basic
       group_1: [a]
       group_2: [b]
@@ -1083,7 +1083,7 @@ root:
 "#;
 
             let schema = Schema::from_yaml(yaml).unwrap();
-            let comparisons = &schema.analysis.compare_groups;
+            let comparisons = &schema.analysis.split_groups;
 
             assert_eq!(comparisons.len(), 1);
             assert_eq!(comparisons[0].name, "basic");

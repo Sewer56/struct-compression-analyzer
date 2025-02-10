@@ -57,7 +57,7 @@ pub fn compute_analysis_results(analyzer: &mut SchemaAnalyzer) -> AnalysisResult
 
     // Process group comparisons
     let mut group_comparisons = Vec::new();
-    for comparison in &analyzer.schema.analysis.compare_groups {
+    for comparison in &analyzer.schema.analysis.split_groups {
         let mut group1_bytes: Vec<u8> = Vec::new();
         let mut group2_bytes: Vec<u8> = Vec::new();
 

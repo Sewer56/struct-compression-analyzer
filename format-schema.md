@@ -46,7 +46,7 @@ Contains high-level information about the structure being analyzed.
 
 ```yaml
 analysis:
-  compare_groups:
+  split_groups:
     - name: split_colors
       group_1: [colors]          # Base group to compare against.
       group_2: [color0, color1]  # Derived group to compare with.
@@ -55,11 +55,12 @@ analysis:
 
 The `analysis` section configures how results should be analyzed and presented:
 
-- `compare_groups`: Custom group comparisons
-  - This feature allows you to compare fields (or groups) against each other.
+- `split_groups`: Compare original field vs its split components
+  - This feature allows you to compare a field (or group of fields) against each other.
   - A common use case is to compare a struct, or sub struct against its inner components.
     - This allows you to compare `structure of array` vs `array of structure` very easily.
   - `group_1` is used as baseline, while `group_2` is compared against it.
+
 
 ### Conditional Offsets
 
@@ -185,7 +186,7 @@ Here's how different types of fields and analysis configurations are represented
 
 ```yaml
 analysis:
-  compare_groups:
+  split_groups:
     - name: split_colors
       group_1: [colors]          # Base group to compare against.
       group_2: [color0, color1]  # Derived group to compare with.

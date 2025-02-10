@@ -36,7 +36,7 @@ conditional_offsets:
         value: 0x63000000 # DXGI_FORMAT_BC7_UNORM_SRGB
 
 analysis:
-  compare_groups:
+  split_groups:
     
     # Stuff that never works well. Commented out.
 

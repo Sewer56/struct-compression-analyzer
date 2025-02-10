@@ -15,7 +15,7 @@ conditional_offsets:
         bits: 32
         value: 0x44585431  # 'DXT1' fourCC code
 analysis:
-  compare_groups:
+  split_groups:
     - name: split_colors
       group_1: [colors]          # Base group to compare against.
       group_2: [color0, color1]  # Derived group to compare with.
