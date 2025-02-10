@@ -51,6 +51,11 @@ analysis:
       group_1: [colors]          # Base group to compare against.
       group_2: [color0, color1]  # Derived group to compare with.
       description: Compare regular interleaved colour format `colors` against their split components `color0` and `color1`.
+  compare_groups:
+    - name: interleave_colours
+      group_1: # Base group to compare against.
+      group_2: # Derived group to compare with.
+      description: Interleave colours such that `R0 R1 G0 G1 B0 B1` are now `R0 G0 B0 R1 G1 B1`.
 ```
 
 The `analysis` section configures how results should be analyzed and presented:
@@ -60,7 +65,9 @@ The `analysis` section configures how results should be analyzed and presented:
   - A common use case is to compare a struct, or sub struct against its inner components.
     - This allows you to compare `structure of array` vs `array of structure` very easily.
   - `group_1` is used as baseline, while `group_2` is compared against it.
-
+- `compare_groups`: Compare custom groups of fields against each other.
+  - This allows you to define two structures based on existing fields in the file, and compare them.
+  - Read [Custom Compare Groups](#custom-compare-groups) for more information.
 
 ### Conditional Offsets
 
@@ -233,6 +240,65 @@ p_bits:
     P1: 1
     P2: 1
 ```
+
+### Custom Compare Groups
+
+The `compare_groups` section allows you to define custom field groups for comparison. 
+
+Each group entry allows for one of the following:
+
+- **Array**: Reads all values of a single field until end of input.
+  - i.e. `R0`, `R0`, `R0` etc.. until all R0 values are read.
+  - This is read in a loop until no more bytes are written to output.
+
+- **Struct**: Groups multiple fields sequentially as one. Used to create interleaved elements.
+  - **Field**: Includes a single field/value from the input.
+  - **Padding**: Inserts constant bits to enable alignment or size adjustments in struct.
+  - This is read in a loop until no more (non-padding) bytes are written to output.
+
+The groups read the input data in a 'streaming'-like fashion.
+
+For instance, every time a field `R` is included in a struct, then the next item from the `R` field
+will be read. If there is no more next item for the given field, nothing will be appended.
+
+#### Example 1: Interleaving Colours with Mixed Representations
+
+```yaml
+compare_groups:
+  - name: interleave_colours
+    description: "Rearrange interleaved colour channels from [R0 R1] [G0 G1] [B0 B1] to [R0 G0 B0] [R1 G1 B1]."
+    group_1: # RRR GGG BBB etc.
+      - { type: array, field: R } # reads all 'R' values from input
+      - { type: array, field: G } # reads all 'G' values from input
+      - { type: array, field: B } # reads all 'B' values from input
+    group_2:
+      - type: struct # R0 G0 B0. Repeats until no data written.
+        fields:
+          - { type: field, field: R } # reads 1 'R' value from input
+          - { type: field, field: G } # reads 1 'G' value from input
+          - { type: field, field: B } # reads 1 'B' value from input
+```
+
+In this case, interleaving usually improves ratio.
+
+#### Example 2: Converting 7-bit to 8-bit Colours with Padding
+
+Convert a 7-bit color value to an 8-bit representation by adding a padding bit.
+
+```yaml
+compare_groups:
+  - name: convert_7_to_8_bit
+    description: "Adjust 7-bit color channel to 8-bit by appending a padding bit."
+    group_1: # R, R, R
+      - { type: array, field: color7 } # reads all '7-bit' colours from input
+    group_2:
+      - type: struct # R+0, R+0, R+0
+        fields:
+          - { type: field, field: color7 } # reads 1 '7-bit' colour from input
+          - { type: padding, bits: 1, value: 0 } # appends 1 padding bit
+```
+
+In this case, extending to 8 bits usually improves ratio.
 
 ## Best Practices
 

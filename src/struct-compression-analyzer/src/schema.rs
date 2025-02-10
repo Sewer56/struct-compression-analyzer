@@ -4,7 +4,7 @@
 
 use indexmap::IndexMap;
 use serde::Deserialize;
-use std::{collections::HashMap, path::Path};
+use std::path::Path;
 
 #[derive(Debug, Deserialize, Default)]
 pub struct Schema {
@@ -49,12 +49,33 @@ pub struct AnalysisConfig {
     ///     description: Compare compression ratio of original interleaved format against grouping of colour components.
     /// ```
     #[serde(default)]
-    pub split_groups: Vec<GroupComparison>,
+    pub split_groups: Vec<SplitComparison>,
+
+    /// Compare arbitrary field groups defined through custom transformations.
+    /// Each comparison defines two groups that should be structurally equivalent but may have
+    /// different bit layouts.
+    ///
+    /// # Example: Converting 7-bit colors to 8-bit
+    ///
+    /// ```yaml
+    /// compare_groups:
+    /// - name: convert_7_to_8_bit
+    ///   description: "Adjust 7-bit color channel to 8-bit by appending a padding bit."
+    ///   group_1: # R, R, R
+    ///     - { type: array, field: color7 } # reads all '7-bit' colours from input
+    ///   group_2:
+    ///     - type: struct # R+0, R+0, R+0
+    ///       fields:
+    ///         - { type: field, field: color7 } # reads 1 '7-bit' colour from input
+    ///         - { type: padding, bits: 1, value: 0 } # appends 1 padding bit
+    /// ```
+    #[serde(default)]
+    pub compare_groups: Vec<CustomComparison>,
 }
 
 /// Configuration for comparing field groups
 #[derive(Debug, Deserialize)]
-pub struct GroupComparison {
+pub struct SplitComparison {
     /// Friendly name for this comparison.
     pub name: String,
     /// First group path to compare. This is the 'baseline'.
@@ -64,6 +85,46 @@ pub struct GroupComparison {
     /// Optional description of the comparison
     #[serde(default)]
     pub description: String,
+}
+
+/// Configuration for custom field group comparisons
+#[derive(Debug, Deserialize)]
+pub struct CustomComparison {
+    /// Unique identifier for this comparison
+    pub name: String,
+
+    /// Baseline group definition
+    #[serde(rename = "group_1")]
+    pub baseline_group: Vec<GroupComponent>,
+
+    /// Comparison group definition
+    #[serde(rename = "group_2")]
+    pub comparison_group: Vec<GroupComponent>,
+
+    /// Human-readable description
+    #[serde(default)]
+    pub description: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")] // Use "type" field as variant discriminant
+pub enum GroupComponent {
+    /// Array of field values
+    #[serde(rename = "array")]
+    Array { field: String },
+
+    /// Structured group of components
+    #[serde(rename = "struct")]
+    Struct { fields: Vec<GroupComponent> },
+
+    /// Padding bits  
+    #[serde(rename = "padding")]
+    Padding { bits: u8, value: u8 },
+
+    /// Direct field reference
+    /// This should only be used from within structs.
+    #[serde(rename = "field")]
+    Field { field: String },
 }
 
 /// Allows us to define a nested item as either a field or group
@@ -272,6 +333,7 @@ impl Group {
 /// - `Lsb`: Least significant bit first
 ///
 /// # Examples
+///
 /// ```yaml
 /// bit_order: msb  # Default, bits are read left-to-right
 /// bit_order: lsb  # Bits are read right-to-left
@@ -860,7 +922,7 @@ root:
         }
     }
 
-    mod group_compare_tests {
+    mod split_compare_tests {
         use crate::schema::Schema;
 
         #[test]
@@ -914,6 +976,90 @@ root:
             assert_eq!(comparisons.len(), 1);
             assert_eq!(comparisons[0].name, "basic");
             assert!(comparisons[0].description.is_empty());
+        }
+    }
+
+    mod group_compare_tests {
+        use crate::schema::{GroupComponent, Schema};
+
+        #[test]
+        fn parses_custom_comparison() {
+            let yaml = r#"
+version: '1.0'
+analysis:
+  compare_groups:
+    - name: convert_7_to_8_bit
+      description: "Adjust 7-bit color channel to 8-bit by appending a padding bit."
+      group_1: # R, R, R
+        - { type: array, field: color7 } # reads all '7-bit' colours from input
+      group_2:
+        - type: struct # R+0, R+0, R+0
+          fields:
+            - { type: field, field: color7 } # reads 1 '7-bit' colour from input
+            - { type: padding, bits: 1, value: 0 } # appends 1 padding bit
+root:
+  type: group
+  fields: {}
+"#;
+
+            let schema = Schema::from_yaml(yaml).unwrap();
+            let comparisons = &schema.analysis.compare_groups;
+
+            assert_eq!(comparisons.len(), 1);
+            assert_eq!(comparisons[0].name, "convert_7_to_8_bit");
+
+            // Assert baseline (R,R,R)
+            let baseline_group = &comparisons[0].baseline_group;
+            assert_eq!(baseline_group.len(), 1);
+            match baseline_group.first().unwrap() {
+                GroupComponent::Array { field } => {
+                    assert_eq!(field, "color7");
+                }
+                _ => unreachable!("Expected an array type"),
+            }
+
+            // Assert comparison (R+0, R+0, R+0)
+            let comparison_group = &comparisons[0].comparison_group;
+            assert_eq!(comparison_group.len(), 1);
+            match comparison_group.first().unwrap() {
+                GroupComponent::Struct { fields } => {
+                    assert_eq!(fields.len(), 2);
+
+                    // Assert fields
+                    match &fields[0] {
+                        GroupComponent::Field { field } => {
+                            assert_eq!(field, "color7");
+                        }
+                        _ => unreachable!("Expected a field type"),
+                    }
+                    match &fields[1] {
+                        GroupComponent::Padding { bits, value } => {
+                            assert_eq!(*bits, 1);
+                            assert_eq!(*value, 0);
+                        }
+                        _ => unreachable!("Expected a padding type"),
+                    }
+                }
+                _ => unreachable!("Expected a struct type"),
+            }
+        }
+
+        #[test]
+        fn rejects_invalid_custom_comparison() {
+            let yaml = r#"
+
+version: '1.0'
+root:
+  type: group
+  fields: {}
+analysis:
+  compare_groups:
+    - name: missing_fields
+      group_1: [field_a]
+"#;
+
+            let result = Schema::from_yaml(yaml);
+            assert!(result.is_err());
         }
     }
 }
