@@ -37,21 +37,6 @@ pub struct Metadata {
 /// Configuration for analysis operations and output grouping
 #[derive(Debug, Deserialize, Default)]
 pub struct AnalysisConfig {
-    /// List of field groupings to use when organizing analysis results
-    ///
-    /// # Example
-    /// ```yaml
-    /// analysis:
-    ///   group_by_field:
-    ///     - field: partition
-    ///       description: Results by partition value
-    ///     - field: colors.r.R0
-    ///       display:
-    ///         format: "R Component %02X"
-    /// ```
-    #[serde(default)]
-    pub group_by_field: Vec<GroupByFieldConfig>,
-
     /// Compare structural equivalence between different field groups. Each comparison
     /// verifies that the compared groups have identical total bits and field structure.
     ///
@@ -79,73 +64,6 @@ pub struct GroupComparison {
     /// Optional description of the comparison
     #[serde(default)]
     pub description: String,
-}
-
-/// Configuration for grouping analysis results by field values
-#[derive(Debug, Deserialize)]
-pub struct GroupByFieldConfig {
-    /// Field path to group by (supports nested dot notation)
-    ///
-    /// # Examples
-    /// - `"partition"`: Top-level field
-    /// - `"colors.r.R0"`: Nested group component
-    pub field: String,
-
-    /// Descriptive text for analysis output headers
-    ///
-    /// # Example
-    /// "Results grouped by color component values"
-    #[serde(default)]
-    pub description: String,
-
-    /// Display configuration for group values
-    ///
-    /// Combines format string and labels to present values meaningfully:
-    /// ```yaml
-    /// display:
-    ///   format: "Mode %02d"
-    ///   labels:
-    ///     0: "Disabled"
-    ///     255: "Special"
-    /// ```
-    #[serde(default)]
-    pub display: DisplayConfig,
-}
-
-/// Display configuration for analysis groupings
-#[derive(Debug, Deserialize, Default)]
-pub struct DisplayConfig {
-    /// Format string using printf-style syntax for displaying group values
-    ///
-    /// Common format specifiers:
-    /// - `%d`: Decimal integer (e.g., 42)
-    /// - `%x`: Lowercase hexadecimal (e.g., 2a)
-    /// - `%X`: Uppercase hexadecimal (e.g., 2A)
-    /// - `%02d`: Zero-padded decimal (e.g., 02)
-    /// - `%s`: String representation (requires labels mapping)
-    ///
-    /// # Examples
-    ///
-    /// ```yaml
-    /// display:
-    ///   format: "Version %04X"
-    ///   labels:
-    ///     0: "Legacy"
-    ///     1: "Current"
-    /// ```
-    #[serde(default)]
-    pub format: String,
-
-    /// Value-to-label mappings for human-readable display
-    ///
-    /// ```yaml
-    /// labels:
-    ///   0: "Disabled"
-    ///   1: "Enabled"
-    ///   2: "Partial"
-    /// ```
-    #[serde(default)]
-    pub labels: HashMap<String, String>,
 }
 
 /// Allows us to define a nested item as either a field or group
@@ -556,80 +474,6 @@ root: { type: group, fields: {} }
         }
     }
 
-    // Analysis Section Tests
-    mod analysis_tests {
-        use super::*;
-
-        #[test]
-        fn supports_group_by_field_with_display_config() {
-            let yaml = r#"
-version: '1.0'
-metadata: { name: Test }
-analysis:
-    group_by_field:
-    - field: partition
-      description: Results by partition value
-      display:
-        format: "%02d"
-        labels: { 0: "None", 1: "Two", 255: "Max" }
-    - field: R0
-      description: Red component grouping (nested field)
-      display:
-        format: "%02X"
-root: { type: group, fields: {} }
-"#;
-            test_schema!(yaml, |schema: Schema| {
-                let groups = &schema.analysis.group_by_field;
-                assert_eq!(groups.len(), 2);
-
-                let first = &groups[0];
-                assert_eq!(first.field, "partition");
-                assert_eq!(first.description, "Results by partition value");
-                assert_eq!(first.display.format, "%02d");
-                assert_eq!(first.display.labels.get("0").unwrap(), "None");
-                assert_eq!(first.display.labels.get("1").unwrap(), "Two");
-                assert_eq!(first.display.labels.get("255").unwrap(), "Max");
-
-                let second = &groups[1];
-                assert_eq!(second.field, "R0");
-                assert_eq!(second.description, "Red component grouping (nested field)");
-                assert_eq!(second.display.format, "%02X");
-                assert!(second.display.labels.is_empty());
-            });
-        }
-
-        #[test]
-        fn supports_multiple_format_specifiers() {
-            let yaml = r#"
-version: '1.0'
-metadata: { name: Test }
-analysis:
-    group_by_field:
-    - field: mode
-      display:
-        format: "%d"
-    - field: color
-      display:
-        format: "%02x"
-    - field: version
-      display:
-        format: "%X"
-    - field: name
-      display:
-        format: "%s"
-root: { type: group, fields: {} }
-"#;
-            test_schema!(yaml, |schema: Schema| {
-                let groups = &schema.analysis.group_by_field;
-                assert_eq!(groups.len(), 4);
-                assert_eq!(groups[0].display.format, "%d"); // decimal
-                assert_eq!(groups[1].display.format, "%02x"); // padded hex
-                assert_eq!(groups[2].display.format, "%X"); // uppercase hex
-                assert_eq!(groups[3].display.format, "%s"); // string
-            });
-        }
-    }
-
     // Fields Section Tests
     mod fields_tests {
         use super::*;
@@ -907,25 +751,7 @@ analysis: {}
 root: { type: group, fields: {} }
 "#;
             test_schema!(yaml, |schema: Schema| {
-                assert!(schema.analysis.group_by_field.is_empty());
-            });
-        }
-
-        #[test]
-        fn handles_empty_display_config() {
-            let yaml = r#"
-version: '1.0'
-metadata: { name: Test }
-analysis:
-    group_by_field:
-    - field: test
-      display: {}
-root: { type: group, fields: {} }
-"#;
-            test_schema!(yaml, |schema: Schema| {
-                let group = &schema.analysis.group_by_field[0];
-                assert!(group.display.format.is_empty());
-                assert!(group.display.labels.is_empty());
+                assert!(schema.analysis.split_groups.is_empty());
             });
         }
     }
