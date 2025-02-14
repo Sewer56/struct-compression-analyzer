@@ -13,6 +13,13 @@ pub struct Schema {
     /// Contains user-provided metadata about the schema
     #[serde(default)]
     pub metadata: Metadata,
+    /// Determines whether the bytes are read from the most significant bit (MSB)
+    /// or least significant bit (LSB) first.
+    ///
+    /// - `Msb`: First bit is the high bit (7)
+    /// - `Lsb`: First bit is the low bit (0)
+    #[serde(default)]
+    pub bit_order: BitOrder,
     /// Conditional offsets for the schema
     #[serde(default)]
     pub conditional_offsets: Vec<ConditionalOffset>,
@@ -487,9 +494,11 @@ mod tests {
 version: '1.0'
 metadata: { name: Test }
 root: { type: group, fields: {} }
+bit_order: msb
 "#;
             test_schema!(yaml, |schema: Schema| {
                 assert_eq!(schema.version, "1.0");
+                assert_eq!(schema.bit_order, BitOrder::Msb);
             });
         }
 
@@ -578,7 +587,8 @@ root:
             type: field
             bits: 3
             description: Mode selector
-            bit_order: msb
+            bit_order: lsb
+bit_order: msb
 "#;
             test_schema!(yaml, |schema: Schema| {
                 let field = match schema.root.fields.get("mode") {
@@ -587,7 +597,8 @@ root:
                 };
                 assert_eq!(field.bits, 3);
                 assert_eq!(field.description, "Mode selector");
-                assert_eq!(field.bit_order, BitOrder::Msb);
+                assert_eq!(field.bit_order, BitOrder::Lsb);
+                assert_eq!(schema.bit_order, BitOrder::Msb);
             });
         }
 
@@ -612,6 +623,7 @@ root:
                     fields:
                         R0: 5
                         R1: 5
+bit_order: msb
 "#;
             test_schema!(yaml, |schema: Schema| {
                 let header = match schema.root.fields.get("header") {
@@ -629,6 +641,7 @@ root:
                     _ => panic!("Expected group"),
                 };
                 assert_eq!(r.fields.len(), 2);
+                assert_eq!(schema.bit_order, BitOrder::Msb);
             });
         }
 
@@ -678,6 +691,7 @@ root:
             fields:
                 c: 2
                 d: 2
+bit_order: msb
 "#;
             test_schema!(yaml, |schema: Schema| {
                 // Check root fields
@@ -731,6 +745,7 @@ root:
             fields:
                 c: 2
                 d: 2
+bit_order: msb
 "#;
             test_schema!(yaml, |schema: Schema| {
                 // Check root fields
@@ -898,6 +913,7 @@ root:
               bit_offset: 0
               bits: 32  
               value: 0x44583130
+bit_order: msb
 "#;
 
             let schema = Schema::from_yaml(yaml).unwrap();
@@ -919,6 +935,7 @@ root:
             assert_eq!(magic_field.skip_if_not.len(), 1);
             assert_eq!(magic_field.skip_if_not[0].byte_offset, 0x54);
             assert_eq!(magic_field.skip_if_not[0].value, 0x44583130);
+            assert_eq!(schema.bit_order, BitOrder::Msb);
         }
     }
 
@@ -1000,6 +1017,7 @@ analysis:
 root:
   type: group
   fields: {}
+bit_order: msb
 "#;
 
             let schema = Schema::from_yaml(yaml).unwrap();

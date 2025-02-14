@@ -1,7 +1,10 @@
+use crate::schema::BitOrder;
+use bitstream_io::{BigEndian, BitReader, LittleEndian};
 use lossless_transform_utils::{
     entropy::code_length_of_histogram32,
     histogram::{histogram32_from_bytes, Histogram32},
 };
+use std::io::Cursor;
 
 /// Estimate size of a compressed data based on precalculated LZ matches and entropy
 ///
@@ -50,6 +53,32 @@ pub fn reverse_bits(max_bits: u32, bits: u64) -> u64 {
         }
     }
     reversed_bits
+}
+
+/// Wrapper around the `BitReader` type that allows it to be used with either endian.
+pub enum BitReaderContainer<'a> {
+    Msb(BitReader<Cursor<&'a [u8]>, BigEndian>),
+    Lsb(BitReader<Cursor<&'a [u8]>, LittleEndian>),
+}
+
+/// Creates a [`BitReaderContainer`] instance based on the given [`BitOrder`].
+///
+/// # Arguments
+///
+/// * `data` - The data to create the bit reader from.
+/// * `bit_order` - The endianness of the bit stream.
+///
+/// # Returns
+/// A [`BitReaderContainer`] instance with the specified endianness.
+pub fn create_bit_reader(data: &[u8], bit_order: BitOrder) -> BitReaderContainer<'_> {
+    match bit_order {
+        BitOrder::Default | BitOrder::Msb => {
+            BitReaderContainer::Msb(BitReader::endian(Cursor::new(data), BigEndian))
+        }
+        BitOrder::Lsb => {
+            BitReaderContainer::Lsb(BitReader::endian(Cursor::new(data), LittleEndian))
+        }
+    }
 }
 
 #[cfg(test)]

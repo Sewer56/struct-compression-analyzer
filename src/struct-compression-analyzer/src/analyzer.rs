@@ -1,12 +1,12 @@
 use super::schema::{Group, Schema};
-use crate::analyze_utils::reverse_bits;
+use crate::analyze_utils::{create_bit_reader, reverse_bits, BitReaderContainer};
 use crate::constants::CHILD_MARKER;
 use crate::{
     analysis_results::{compute_analysis_results, AnalysisResults},
     schema::{BitOrder, Condition, FieldDefinition},
 };
 use ahash::{AHashMap, HashMapExt};
-use bitstream_io::{BigEndian, BitRead, BitReader, BitWrite, BitWriter, LittleEndian};
+use bitstream_io::{BigEndian, BitRead, BitReader, BitWrite, BitWriter, Endianness};
 use rustc_hash::FxHashMap;
 use std::io::{Cursor, SeekFrom};
 
@@ -46,15 +46,6 @@ pub struct FieldStats {
     pub bit_order: BitOrder,
     /// Count of occurrences for each observed value
     pub value_counts: FxHashMap<u64, u64>,
-}
-
-/// Tracks statistics about individual bits in a field
-///
-/// Maintains counts of zero and one values observed at each bit position
-/// to support entropy calculations and bit distribution analysis.
-pub enum BitWriterContainer {
-    Msb(BitWriter<Cursor<Vec<u8>>, BigEndian>),
-    Lsb(BitWriter<Cursor<Vec<u8>>, LittleEndian>),
 }
 
 pub fn get_writer_buffer(writer: &mut BitWriter<Cursor<Vec<u8>>, BigEndian>) -> &[u8] {
@@ -97,11 +88,22 @@ impl<'a> SchemaAnalyzer<'a> {
     /// - Partial entries will be handled in future implementations
     pub fn add_entry(&mut self, entry: &[u8]) {
         self.entries.extend_from_slice(entry);
-        let mut reader = BitReader::endian(Cursor::new(entry), BigEndian);
-        self.process_group(&self.schema.root, &mut reader);
+        let reader = create_bit_reader(entry, self.schema.bit_order);
+        match reader {
+            BitReaderContainer::Msb(mut bit_reader) => {
+                self.process_group(&self.schema.root, &mut bit_reader)
+            }
+            BitReaderContainer::Lsb(mut bit_reader) => {
+                self.process_group(&self.schema.root, &mut bit_reader)
+            }
+        }
     }
 
-    fn process_group(&mut self, group: &Group, reader: &mut BitReader<Cursor<&[u8]>, BigEndian>) {
+    fn process_group<TEndian: Endianness>(
+        &mut self,
+        group: &Group,
+        reader: &mut BitReader<Cursor<&[u8]>, TEndian>,
+    ) {
         // Check self, if the group should be skipped.
         // Note; this code is here because the 'root' of schema is a group.
         if should_skip(reader, &group.skip_if_not) {
@@ -158,8 +160,8 @@ impl<'a> SchemaAnalyzer<'a> {
     }
 }
 
-fn process_field_or_group(
-    reader: &mut BitReader<Cursor<&[u8]>, BigEndian>,
+fn process_field_or_group<TEndian: Endianness>(
+    reader: &mut BitReader<Cursor<&[u8]>, TEndian>,
     mut bit_count: u32,
     field_stats: &mut FieldStats,
     skip_frequency_analysis: bool,
@@ -279,7 +281,10 @@ fn build_field_stats<'a>(
 
 /// Checks if we should skip processing based on conditions
 #[inline]
-fn should_skip(reader: &mut BitReader<Cursor<&[u8]>, BigEndian>, conditions: &[Condition]) -> bool {
+fn should_skip<TEndian: Endianness>(
+    reader: &mut BitReader<Cursor<&[u8]>, TEndian>,
+    conditions: &[Condition],
+) -> bool {
     // Fast return, since there usually are no conditions.
     if conditions.is_empty() {
         return false;

@@ -20,6 +20,7 @@ The schema is designed to represent and analyze bit-packed structures with the f
 version: '1.0'
 metadata: ...
 conditional_offsets: ..
+bit_order: msb # Optional, defaults to `Msb`
 analysis: ...
 root: ....
 ```
@@ -104,6 +105,31 @@ The hex values are specified in big-endian byte order; i.e. the same order as yo
 see in a hex editor. This can however be overwritten using the `bit_order` field; same
 way you can with regular fields.
 
+### Endianness
+
+Read order of the bits in each byte is specified using the `bit_order` field of the schema root:
+
+```yaml
+bit_order: msb # Optional, defaults to `msb`
+```
+
+- `msb`: First bit is the high bit (7)
+- `lsb`: First bit is the low bit (0)
+
+Or to give an example...
+
+If the bit order is `lsb`, reads would be as followes:
+
+- r (6 bits) [***low*** 6 bits of ***first byte***]
+- g (5 bits) [***high*** 2 bits of ***first byte***, low 3 bits of ***second byte***]
+- b (5 bits) [***high*** bits (3-7) of ***second byte***]
+
+If the bit order is `msb`, reads would be as followes:
+
+- r (6 bits) [***high*** 6 bits of ***first byte***]
+- g (5 bits) [***low*** 2 bits of ***first byte***, high 3 bits of ***second byte***]
+- b (5 bits) [***low*** bits (0-5) of ***second byte***]
+
 ### Root Section
 
 The `root` section defines the top-level structure containing all fields and groups.
@@ -168,7 +194,7 @@ Groups contain a collection of fields that are written sequentially:
 - Basic fields
 - Mixed hierarchies of fields and groups
 
-#### Endianness
+#### Endianness (of Field)
 
 To avoid confusion, endianness is specified in the following way:
 
@@ -183,7 +209,8 @@ To illustrate, consider the bits `10000000`; if we read the first 2 bits:
 - `lsb`: `10` equals `1` (decimal)
 
 MSB vs LSB does not change from which end of the byte we start reading bits from, but the order
-of the bits of the individual values we extract. The order of bits read is always highest to lowest.
+of the bits of the individual values we extract. The order of bits read is always highest bit to
+lowest bit.
 
 ## Example Usage
 
