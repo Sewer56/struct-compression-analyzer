@@ -39,7 +39,7 @@ pub struct FieldStats {
     /// Length of the field or group in bits.
     pub lenbits: u32,
     /// Bitstream writer for accumulating data in the correct bit order
-    pub writer: BitWriterContainer,
+    pub writer: BitWriter<Cursor<Vec<u8>>, BigEndian>,
     /// Bit-level statistics. Index of tuple is bit offset.
     pub bit_counts: Vec<BitStats>,
     /// The order of the bits within the field
@@ -57,17 +57,9 @@ pub enum BitWriterContainer {
     Lsb(BitWriter<Cursor<Vec<u8>>, LittleEndian>),
 }
 
-pub fn get_writer_buffer(writer: &mut BitWriterContainer) -> &[u8] {
-    match writer {
-        BitWriterContainer::Msb(writer) => {
-            writer.byte_align().unwrap();
-            writer.writer().unwrap().get_ref()
-        }
-        BitWriterContainer::Lsb(writer) => {
-            writer.byte_align().unwrap();
-            writer.writer().unwrap().get_ref()
-        }
-    }
+pub fn get_writer_buffer(writer: &mut BitWriter<Cursor<Vec<u8>>, BigEndian>) -> &[u8] {
+    writer.byte_align().unwrap();
+    writer.writer().unwrap().get_ref()
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -199,14 +191,7 @@ fn process_field_or_group(
         }
 
         // Write the values to the output
-        match writer {
-            BitWriterContainer::Msb(writer) => {
-                writer.write(max_bits, bits).unwrap();
-            }
-            BitWriterContainer::Lsb(writer) => {
-                writer.write(max_bits, bits).unwrap();
-            }
-        }
+        writer.write(max_bits, bits).unwrap();
 
         // Update stats for individual bits.
         if can_bit_stats {
@@ -224,24 +209,12 @@ fn process_field_or_group(
     }
 
     // Flush any remaining bits to ensure all data is written
-    match writer {
-        BitWriterContainer::Msb(writer) => writer.flush().unwrap(),
-        BitWriterContainer::Lsb(writer) => writer.flush().unwrap(),
-    }
+    writer.flush().unwrap();
 }
 
 /// Recursively builds field statistics structures from schema definition
-/// Creates a BitWriterContainer based on the specified bit order
-fn create_bit_writer(bit_order: BitOrder) -> BitWriterContainer {
-    match bit_order.get_with_default_resolve() {
-        BitOrder::Msb => {
-            BitWriterContainer::Msb(BitWriter::endian(Cursor::new(Vec::new()), BigEndian))
-        }
-        BitOrder::Lsb => {
-            BitWriterContainer::Lsb(BitWriter::endian(Cursor::new(Vec::new()), LittleEndian))
-        }
-        _ => unreachable!(),
-    }
+fn create_bit_writer() -> BitWriter<Cursor<Vec<u8>>, BigEndian> {
+    BitWriter::endian(Cursor::new(Vec::new()), BigEndian)
 }
 
 fn build_field_stats<'a>(
@@ -260,7 +233,7 @@ fn build_field_stats<'a>(
 
         match field {
             FieldDefinition::Field(field) => {
-                let writer = create_bit_writer(field.bit_order);
+                let writer = create_bit_writer();
                 stats.insert(
                     name.clone(),
                     FieldStats {
@@ -277,7 +250,7 @@ fn build_field_stats<'a>(
                 );
             }
             FieldDefinition::Group(group) => {
-                let writer = create_bit_writer(group.bit_order);
+                let writer = create_bit_writer();
 
                 // Add stats entry for the group itself
                 stats.insert(
@@ -420,17 +393,11 @@ root:
             );
 
             // Check writer accumulated correct bits
-            match &mut flags_field.writer {
-                BitWriterContainer::Msb(writer) => {
-                    // Get a reference to the writer's underlying buffer without moving ownership
-                    writer.byte_align().unwrap();
-                    writer.flush().unwrap();
-                    let inner_writer = writer.writer().unwrap();
-                    let data = inner_writer.get_ref();
-                    assert_eq!(data[0], 0xC9_u8, "Combined bits should form 0xC9");
-                }
-                _ => panic!("Expected MSB bit writer"),
-            }
+            flags_field.writer.byte_align().unwrap();
+            flags_field.writer.flush().unwrap();
+            let inner_writer = flags_field.writer.writer().unwrap();
+            let data = inner_writer.get_ref();
+            assert_eq!(data[0], 0xC9_u8, "Combined bits should form 0xC9");
 
             // Check value counts
             let expected_counts =
@@ -510,7 +477,6 @@ root:
         assert_eq!(root_group.depth, 0);
         assert_eq!(root_group.count, 0);
         assert_eq!(root_group.lenbits, 32);
-        assert!(matches!(root_group.writer, BitWriterContainer::Msb(_)));
         assert_eq!(root_group.bit_counts.len(), root_group.lenbits as usize);
         assert_eq!(root_group.bit_order, BitOrder::Msb);
 
@@ -520,7 +486,6 @@ root:
         assert_eq!(id_field.depth, 0);
         assert_eq!(id_field.count, 0);
         assert_eq!(id_field.lenbits, 8);
-        assert!(matches!(id_field.writer, BitWriterContainer::Lsb(_)));
         assert_eq!(id_field.bit_counts.len(), id_field.lenbits as usize);
         assert_eq!(id_field.bit_order, BitOrder::Lsb);
 
@@ -530,7 +495,6 @@ root:
         assert_eq!(nested_value.depth, 1);
         assert_eq!(nested_value.count, 0);
         assert_eq!(nested_value.lenbits, 8);
-        assert!(matches!(nested_value.writer, BitWriterContainer::Lsb(_)));
         assert_eq!(nested_value.bit_counts.len(), nested_value.lenbits as usize);
         assert_eq!(nested_value.bit_order, BitOrder::Lsb); // inherited from parent
     }
