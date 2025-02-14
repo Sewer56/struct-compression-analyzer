@@ -1,12 +1,14 @@
 use super::schema::{Group, Schema};
-use crate::analyze_utils::{create_bit_reader, reverse_bits, BitReaderContainer};
+use crate::analyze_utils::{
+    create_bit_reader, reverse_bits, BitReaderContainer, BitWriterContainer,
+};
 use crate::constants::CHILD_MARKER;
 use crate::{
     analysis_results::{compute_analysis_results, AnalysisResults},
     schema::{BitOrder, Condition, FieldDefinition},
 };
 use ahash::{AHashMap, HashMapExt};
-use bitstream_io::{BigEndian, BitRead, BitReader, BitWrite, BitWriter, Endianness};
+use bitstream_io::{BigEndian, BitRead, BitReader, BitWrite, BitWriter, Endianness, LittleEndian};
 use rustc_hash::FxHashMap;
 use std::io::{Cursor, SeekFrom};
 
@@ -38,19 +40,14 @@ pub struct FieldStats {
     pub count: u64,
     /// Length of the field or group in bits.
     pub lenbits: u32,
-    /// Bitstream writer for accumulating data in the correct bit order
-    pub writer: BitWriter<Cursor<Vec<u8>>, BigEndian>,
+    /// Bitstream writer for accumulating data belonging to this field or group.
+    pub writer: BitWriterContainer,
     /// Bit-level statistics. Index of tuple is bit offset.
     pub bit_counts: Vec<BitStats>,
     /// The order of the bits within the field
     pub bit_order: BitOrder,
     /// Count of occurrences for each observed value
     pub value_counts: FxHashMap<u64, u64>,
-}
-
-pub fn get_writer_buffer(writer: &mut BitWriter<Cursor<Vec<u8>>, BigEndian>) -> &[u8] {
-    writer.byte_align().unwrap();
-    writer.writer().unwrap().get_ref()
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -74,7 +71,7 @@ impl<'a> SchemaAnalyzer<'a> {
         Self {
             schema,
             entries: Vec::new(),
-            field_stats: build_field_stats(&schema.root, "", 0),
+            field_stats: build_field_stats(&schema.root, "", 0, schema.bit_order),
         }
     }
 
@@ -193,7 +190,14 @@ fn process_field_or_group<TEndian: Endianness>(
         }
 
         // Write the values to the output
-        writer.write(max_bits, bits).unwrap();
+        match writer {
+            BitWriterContainer::Msb(writer) => {
+                writer.write(max_bits, bits).unwrap();
+            }
+            BitWriterContainer::Lsb(writer) => {
+                writer.write(max_bits, bits).unwrap();
+            }
+        }
 
         // Update stats for individual bits.
         if can_bit_stats {
@@ -211,18 +215,29 @@ fn process_field_or_group<TEndian: Endianness>(
     }
 
     // Flush any remaining bits to ensure all data is written
-    writer.flush().unwrap();
+    match writer {
+        BitWriterContainer::Msb(writer) => writer.flush().unwrap(),
+        BitWriterContainer::Lsb(writer) => writer.flush().unwrap(),
+    }
 }
 
 /// Recursively builds field statistics structures from schema definition
-fn create_bit_writer() -> BitWriter<Cursor<Vec<u8>>, BigEndian> {
-    BitWriter::endian(Cursor::new(Vec::new()), BigEndian)
+fn create_bit_writer(bit_order: BitOrder) -> BitWriterContainer {
+    match bit_order {
+        BitOrder::Default | BitOrder::Msb => {
+            BitWriterContainer::Msb(BitWriter::endian(Cursor::new(Vec::new()), BigEndian))
+        }
+        BitOrder::Lsb => {
+            BitWriterContainer::Lsb(BitWriter::endian(Cursor::new(Vec::new()), LittleEndian))
+        }
+    }
 }
 
 fn build_field_stats<'a>(
     group: &'a Group,
     parent_path: &'a str,
     depth: usize,
+    bit_order: BitOrder,
 ) -> AHashMap<String, FieldStats> {
     let mut stats = AHashMap::new();
 
@@ -235,7 +250,7 @@ fn build_field_stats<'a>(
 
         match field {
             FieldDefinition::Field(field) => {
-                let writer = create_bit_writer();
+                let writer = create_bit_writer(bit_order);
                 stats.insert(
                     name.clone(),
                     FieldStats {
@@ -252,7 +267,7 @@ fn build_field_stats<'a>(
                 );
             }
             FieldDefinition::Group(group) => {
-                let writer = create_bit_writer();
+                let writer = create_bit_writer(bit_order);
 
                 // Add stats entry for the group itself
                 stats.insert(
@@ -271,7 +286,7 @@ fn build_field_stats<'a>(
                 );
 
                 // Process nested fields
-                stats.extend(build_field_stats(group, &path, depth + 1));
+                stats.extend(build_field_stats(group, &path, depth + 1, bit_order));
             }
         }
     }
@@ -398,9 +413,13 @@ root:
             );
 
             // Check writer accumulated correct bits
-            flags_field.writer.byte_align().unwrap();
-            flags_field.writer.flush().unwrap();
-            let inner_writer = flags_field.writer.writer().unwrap();
+            let writer = match &mut flags_field.writer {
+                BitWriterContainer::Msb(value) => value,
+                _ => panic!("Expected MSB variant"),
+            };
+            writer.byte_align().unwrap();
+            writer.flush().unwrap();
+            let inner_writer = writer.writer().unwrap();
             let data = inner_writer.get_ref();
             assert_eq!(data[0], 0xC9_u8, "Combined bits should form 0xC9");
 

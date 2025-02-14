@@ -1,5 +1,5 @@
 use crate::schema::BitOrder;
-use bitstream_io::{BigEndian, BitReader, LittleEndian};
+use bitstream_io::{BigEndian, BitReader, BitWrite, BitWriter, LittleEndian};
 use lossless_transform_utils::{
     entropy::code_length_of_histogram32,
     histogram::{histogram32_from_bytes, Histogram32},
@@ -77,6 +77,36 @@ pub fn create_bit_reader(data: &[u8], bit_order: BitOrder) -> BitReaderContainer
         }
         BitOrder::Lsb => {
             BitReaderContainer::Lsb(BitReader::endian(Cursor::new(data), LittleEndian))
+        }
+    }
+}
+
+/// Tracks statistics about individual bits in a field
+///
+/// Maintains counts of zero and one values observed at each bit position
+/// to support entropy calculations and bit distribution analysis.
+pub enum BitWriterContainer {
+    Msb(BitWriter<Cursor<Vec<u8>>, BigEndian>),
+    Lsb(BitWriter<Cursor<Vec<u8>>, LittleEndian>),
+}
+
+/// Retrieves the buffer behind a [`BitWriterContainer`] instance.
+///
+/// # Arguments
+///
+/// * `writer` - The [`BitWriterContainer`] instance to retrieve the buffer from.
+///
+/// # Returns
+/// A reference to the buffer behind the [`BitWriterContainer`] instance.
+pub fn get_writer_buffer(writer: &mut BitWriterContainer) -> &[u8] {
+    match writer {
+        BitWriterContainer::Msb(writer) => {
+            writer.byte_align().unwrap();
+            writer.writer().unwrap().get_ref()
+        }
+        BitWriterContainer::Lsb(writer) => {
+            writer.byte_align().unwrap();
+            writer.writer().unwrap().get_ref()
         }
     }
 }

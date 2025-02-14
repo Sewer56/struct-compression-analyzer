@@ -1,7 +1,7 @@
 use crate::analyze_utils::calculate_file_entropy;
+use crate::analyze_utils::get_writer_buffer;
 use crate::analyze_utils::get_zstd_compressed_size;
 use crate::analyze_utils::size_estimate;
-use crate::analyzer::get_writer_buffer;
 use crate::analyzer::BitStats;
 use crate::analyzer::SchemaAnalyzer;
 use crate::constants::CHILD_MARKER;

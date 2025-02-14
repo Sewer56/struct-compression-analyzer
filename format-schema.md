@@ -130,6 +130,9 @@ If the bit order is `msb`, reads would be as followes:
 - g (5 bits) [***low*** 2 bits of ***first byte***, high 3 bits of ***second byte***]
 - b (5 bits) [***low*** bits (0-5) of ***second byte***]
 
+If you wish to control the order of bits within an individual field, use the 
+[`bit_order` property on the field](#endianness-of-field), which has a different meaning.
+
 ### Root Section
 
 The `root` section defines the top-level structure containing all fields and groups.
@@ -212,6 +215,11 @@ MSB vs LSB does not change from which end of the byte we start reading bits from
 of the bits of the individual values we extract. The order of bits read is always highest bit to
 lowest bit.
 
+Changing this affects frequency counting stats, and asserts.
+
+If you wish to control which end of the byte we start reading from, use the 
+[`bit_order` property in the schema root](#endianness), which has a different meaning.
+
 ## Example Usage
 
 Here's how different types of fields and analysis configurations are represented:
@@ -270,23 +278,81 @@ p_bits:
 
 ### Custom Compare Groups
 
-The `compare_groups` section allows you to define custom field groups for comparison. 
+The `compare_groups` section allows you to define custom field groups for comparison.  
+This is a more advanced version of `split_groups`; that can be used to rearrange entire structs.  
+
+#### Group Format
 
 Each group entry allows for one of the following:
 
-- **Array**: Reads all values of a single field until end of input.
-  - i.e. `R0`, `R0`, `R0` etc.. until all R0 values are read.
-  - This is read in a loop until no more bytes are written to output.
+Only `Array` and `Struct` (below) are valid top level items.
+Structs do not support nesting.
 
-- **Struct**: Groups multiple fields sequentially as one. Used to create interleaved elements.
-  - **Field**: Includes a single field/value from the input.
-  - **Padding**: Inserts constant bits to enable alignment or size adjustments in struct.
-  - This is read in a loop until no more (non-padding) bytes are written to output.
+##### Array
 
-The groups read the input data in a 'streaming'-like fashion.
+Reads all values of a single field until end of input.
+i.e. `R0`, `R0`, `R0` etc. until all R0 values are read.
 
-For instance, every time a field `R` is included in a struct, then the next item from the `R` field
-will be read. If there is no more next item for the given field, nothing will be appended.
+```yaml
+- { type: array, field: R } # reads all 'R' values from input
+```
+
+This is read in a loop until no more bytes are written to output.  
+Alternatively, you can read only some bits at a time using the `bits` field.  
+
+```yaml
+- { type: array, field: R, offset: 2, bits: 4 } # read slice [2-6] for 'R' values from input
+```
+
+Allowed properties:
+
+- `offset`: Number of bits to skip before reading `bits`.
+- `bits`: Number of bits to read (default: size of field)
+- `field`: Field name
+
+The `offset` and `bits` properties allow you to read a slice of a field. 
+Regardless of the slice read however, after each read is done, the stream will be advanced to the 
+next field.
+
+Note: The `Array` type can be represented as `Struct` technically speaking, this is
+actually a shorthand.
+
+##### Struct
+
+Allows you to read from multiple fields, in any order.
+
+```yaml
+- type: struct # R0 G0 B0. Repeats until no data written.
+  fields:
+    - { type: field, field: R } # reads 1 'R' value from input
+    - { type: field, field: G } # reads 1 'G' value from input
+    - { type: field, field: B } # reads 1 'B' value from input
+```
+
+Allowed field types include:
+
+- `field`: Includes a single field/value from the input.
+  - `bits`: Number of bits to use (default: size of field)
+
+- `padding`: Inserts constant bits to enable alignment or size adjustments in struct.
+  - `bits`: Number of bits to insert
+  - `value`: Value to insert in those bits
+
+- `skip`: Skip N bits from field
+  - `field`: Field name
+  - `bits`: Number of bits to skip
+
+The fields of the struct are read in a loop until no more (non-padding) bytes are written to output.
+
+##### Group Field Endianness
+
+In `compare_groups`, all fields written via `Struct` or `Array` are written in 
+the order specified [on the schema root](#endianness). This means the order of the bits
+is the same as the natural order in the file/struct.
+
+The bits are written 1:1 in the order they appear in the bit stream. This means that if
+[`bit_order: lsb` on field](#endianness-of-field) is set, the first bit written is the low bit
+of the field, not the high bit.
 
 #### Example 1: Interleaving Colours with Mixed Representations
 
@@ -326,6 +392,51 @@ compare_groups:
 ```
 
 In this case, extending to 8 bits usually improves ratio.
+
+#### Example 3: Aligning Color Bits
+
+```yaml
+compare_groups:
+  - name: align_color_bits
+    description: "Rearranges colours to 655 format (from 666)"
+    group_1: # 18-bit 666 colour
+      - { type: array, field: color666 }
+    group_2:
+      - type: struct # 16-bit 655 colour
+        fields:
+          - { type: field, field: color666, bits: 6 } # R (6-bit)
+          - { type: field, field: color666, bits: 5 } # G (5-bit)
+          - { type: skip, field: color666, bits: 1 }  # Discard remaining G bit
+          - { type: field, field: color666, bits: 5 } # B (5-bit)
+          - { type: skip, field: color666, bits: 1 }  # Discard remaining B bit
+      - { type: array, field: color666, skip: , bits: 1 }
+```
+
+This example converts a 666 colour to 655 colour, dropping the '1' bit.  
+For example, in a lossy transform.  
+
+```yaml
+compare_groups:
+  - name: align_color_bits
+    description: "Rearranges colours to 655 format (from 666)"
+    group_1: # 18-bit 666 colour
+      - { type: array, field: color666 }
+    group_2:
+      # All dropped low G bits
+      - { type: array, field: color666, offset: 11, bits: 1 }
+      # All dropped low B bits
+      - { type: array, field: color666, offset: 17, bits: 1 }
+      # 16-bit 655 colour
+      - type: struct 
+        fields:
+          - { type: field, field: color666, bits: 6 } # R (6-bit)
+          - { type: field, field: color666, bits: 5 } # G (5-bit)
+          - { type: skip, field: color666, bits: 1 }  # Discard remaining G bit
+          - { type: field, field: color666, bits: 5 } # B (5-bit)
+          - { type: skip, field: color666, bits: 1 }  # Discard remaining B bit
+```
+
+Or alternatively, put the low bits in separate arrays.
 
 ## Best Practices
 

@@ -1,7 +1,9 @@
 use crate::{
     analysis_results::FieldMetrics,
-    analyze_utils::{calculate_file_entropy, get_zstd_compressed_size, size_estimate},
-    analyzer::{get_writer_buffer, FieldStats},
+    analyze_utils::{
+        calculate_file_entropy, get_writer_buffer, get_zstd_compressed_size, size_estimate,
+    },
+    analyzer::FieldStats,
     schema::SplitComparison,
 };
 use ahash::AHashMap;
