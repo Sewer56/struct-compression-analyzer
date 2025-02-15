@@ -118,20 +118,142 @@ pub struct CustomComparison {
 pub enum GroupComponent {
     /// Array of field values
     #[serde(rename = "array")]
-    Array { field: String },
+    Array(GroupComponentArray),
 
     /// Structured group of components
     #[serde(rename = "struct")]
-    Struct { fields: Vec<GroupComponent> },
+    Struct(GroupComponentStruct),
 
-    /// Padding bits  
+    /// Padding bits.
+    /// This should only be used from within structs.
     #[serde(rename = "padding")]
-    Padding { bits: u8, value: u8 },
+    Padding(GroupComponentPadding),
 
-    /// Direct field reference
+    /// Read the data from a field, once.
     /// This should only be used from within structs.
     #[serde(rename = "field")]
-    Field { field: String },
+    Field(GroupComponentField),
+
+    /// Skip a number of bits from a field.
+    /// This should only be used from within structs.
+    #[serde(rename = "skip")]
+    Skip(GroupComponentSkip),
+}
+
+/// Reads all values of a single field until end of input.
+/// i.e. `R0`, `R0`, `R0` etc. until all R0 values are read.
+///
+/// ```yaml
+/// - { type: array, field: R } # reads all 'R' values from input
+/// ```
+///
+/// This is read in a loop until no more bytes are written to output.  
+/// Alternatively, you can read only some bits at a time using the `bits` field.  
+///
+/// ```yaml
+/// - { type: array, field: R, offset: 2, bits: 4 } # read slice [2-6] for 'R' values from input
+/// ```
+///
+/// Allowed properties:
+///
+/// - `offset`: Number of bits to skip before reading `bits`.
+/// - `bits`: Number of bits to read (default: size of field)
+/// - `field`: Field name
+///
+/// The `offset` and `bits` properties allow you to read a slice of a field.
+/// Regardless of the slice read however, after each read is done, the stream will be advanced to the
+/// next field.
+///
+/// Note: The `Array` type can be represented as `Struct` technically speaking, this is
+/// actually a shorthand.
+#[derive(Debug, Deserialize)]
+pub struct GroupComponentArray {
+    /// Name of the field to pull the data from.
+    pub field: String,
+    /// Offset in the field from which to read.
+    #[serde(default)]
+    pub offset: u32,
+    /// The number of bits to read from the field.
+    #[serde(default)]
+    pub bits: u32,
+}
+
+/// Structured group of components
+///
+/// ```yaml
+/// - type: struct # R0 G0 B0. Repeats until no data written.
+///   fields:
+///     - { type: field, field: R } # reads 1 'R' value from input
+///     - { type: field, field: G } # reads 1 'G' value from input
+///     - { type: field, field: B } # reads 1 'B' value from input
+/// ```
+///
+/// Allowed properties:
+///
+/// - `fields`: Array of field names
+#[derive(Debug, Deserialize)]
+pub struct GroupComponentStruct {
+    /// Array of field names
+    pub fields: Vec<GroupComponent>,
+}
+
+/// Padding bits  
+/// This should only be used from within structs.
+///
+/// ```yaml
+/// - { type: padding, bits: 4, value: 0 } # appends 4 padding bits
+/// ```
+///
+/// Allowed properties:
+///
+/// - `bits`: Number of bits to insert
+/// - `value`: Value to insert in those bits
+#[derive(Debug, Deserialize)]
+pub struct GroupComponentPadding {
+    /// Number of bits to insert
+    pub bits: u8,
+    /// Value to insert in those bits
+    #[serde(default)]
+    pub value: u8,
+}
+
+/// Skip a number of bits from a field.
+/// This should only be used from within structs.
+///
+/// ```yaml
+/// - { type: skip, field: R, bits: 4 } # skips 4 bits from the 'R' field
+/// ```
+///
+/// Allowed properties:
+///
+/// - `field`: Field name
+/// - `bits`: Number of bits to skip
+#[derive(Debug, Deserialize)]
+pub struct GroupComponentSkip {
+    /// Name of the field to skip bits from.
+    pub field: String,
+    /// Number of bits to skip from the field.
+    pub bits: u32,
+}
+
+/// Read the data from a field, once.
+/// This should only be used from within structs.
+///
+/// ```yaml
+/// - { type: field, field: R } # reads 1 'R' value from input
+/// ```
+///
+/// Allowed properties:
+///
+/// - `field`: Field name
+/// - `bits`: Number of bits to read (default: size of field)
+#[derive(Debug, Deserialize)]
+pub struct GroupComponentField {
+    /// Name of the field
+    pub field: String,
+    /// Number of bits to read from the field
+    #[serde(default)]
+    pub bits: u32,
 }
 
 /// Allows us to define a nested item as either a field or group
@@ -1008,12 +1130,13 @@ analysis:
     - name: convert_7_to_8_bit
       description: "Adjust 7-bit color channel to 8-bit by appending a padding bit."
       group_1: # R, R, R
-        - { type: array, field: color7 } # reads all '7-bit' colours from input
+        - { type: array, field: color7, bits: 7 } # reads all '7-bit' colours from input
       group_2:
         - type: struct # R+0, R+0, R+0
           fields:
-            - { type: field, field: color7 } # reads 1 '7-bit' colour from input
+            - { type: field, field: color7, bits: 7 } # reads 1 '7-bit' colour from input
             - { type: padding, bits: 1, value: 0 } # appends 1 padding bit
+            - { type: skip, field: color7, bits: 0 } # skips 0 padding bits (dummy for testing)
 root:
   type: group
   fields: {}
@@ -1030,8 +1153,9 @@ bit_order: msb
             let baseline_group = &comparisons[0].baseline_group;
             assert_eq!(baseline_group.len(), 1);
             match baseline_group.first().unwrap() {
-                GroupComponent::Array { field } => {
-                    assert_eq!(field, "color7");
+                GroupComponent::Array(array) => {
+                    assert_eq!(array.field, "color7");
+                    assert_eq!(array.bits, 7);
                 }
                 _ => unreachable!("Expected an array type"),
             }
@@ -1040,22 +1164,29 @@ bit_order: msb
             let comparison_group = &comparisons[0].comparison_group;
             assert_eq!(comparison_group.len(), 1);
             match comparison_group.first().unwrap() {
-                GroupComponent::Struct { fields } => {
-                    assert_eq!(fields.len(), 2);
+                GroupComponent::Struct(group) => {
+                    assert_eq!(group.fields.len(), 3);
 
                     // Assert fields
-                    match &fields[0] {
-                        GroupComponent::Field { field } => {
-                            assert_eq!(field, "color7");
+                    match &group.fields[0] {
+                        GroupComponent::Field(field) => {
+                            assert_eq!(field.field, "color7");
+                            assert_eq!(field.bits, 7);
                         }
                         _ => unreachable!("Expected a field type"),
                     }
-                    match &fields[1] {
-                        GroupComponent::Padding { bits, value } => {
-                            assert_eq!(*bits, 1);
-                            assert_eq!(*value, 0);
+                    match &group.fields[1] {
+                        GroupComponent::Padding(padding) => {
+                            assert_eq!(padding.bits, 1);
+                            assert_eq!(padding.value, 0);
                         }
                         _ => unreachable!("Expected a padding type"),
+                    }
+                    match &group.fields[2] {
+                        GroupComponent::Skip(skip) => {
+                            assert_eq!(skip.bits, 0);
+                        }
+                        _ => unreachable!("Expected a skip type"),
                     }
                 }
                 _ => unreachable!("Expected a struct type"),
