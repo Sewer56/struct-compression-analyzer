@@ -3,6 +3,7 @@
 pub mod analysis_results;
 pub mod analyze_utils;
 pub mod analyzer;
+pub(crate) mod bitstream_ext;
 pub mod compare_groups;
 pub mod constants;
 pub mod csv_writer;

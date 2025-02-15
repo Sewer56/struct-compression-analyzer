@@ -1,6 +1,6 @@
 use super::schema::{Group, Schema};
 use crate::analyze_utils::{
-    create_bit_reader, reverse_bits, BitReaderContainer, BitWriterContainer,
+    create_bit_reader, create_bit_writer, reverse_bits, BitReaderContainer, BitWriterContainer,
 };
 use crate::constants::CHILD_MARKER;
 use crate::{
@@ -8,7 +8,7 @@ use crate::{
     schema::{BitOrder, Condition, FieldDefinition},
 };
 use ahash::{AHashMap, HashMapExt};
-use bitstream_io::{BigEndian, BitRead, BitReader, BitWrite, BitWriter, Endianness, LittleEndian};
+use bitstream_io::{BitRead, BitReader, BitWrite, Endianness};
 use rustc_hash::FxHashMap;
 use std::io::{Cursor, SeekFrom};
 
@@ -218,18 +218,6 @@ fn process_field_or_group<TEndian: Endianness>(
     match writer {
         BitWriterContainer::Msb(writer) => writer.flush().unwrap(),
         BitWriterContainer::Lsb(writer) => writer.flush().unwrap(),
-    }
-}
-
-/// Recursively builds field statistics structures from schema definition
-fn create_bit_writer(bit_order: BitOrder) -> BitWriterContainer {
-    match bit_order {
-        BitOrder::Default | BitOrder::Msb => {
-            BitWriterContainer::Msb(BitWriter::endian(Cursor::new(Vec::new()), BigEndian))
-        }
-        BitOrder::Lsb => {
-            BitWriterContainer::Lsb(BitWriter::endian(Cursor::new(Vec::new()), LittleEndian))
-        }
     }
 }
 

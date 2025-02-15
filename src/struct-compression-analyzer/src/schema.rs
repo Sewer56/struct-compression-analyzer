@@ -6,6 +6,8 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use std::path::Path;
 
+use crate::analyzer::FieldStats;
+
 #[derive(Debug, Deserialize, Default)]
 pub struct Schema {
     /// Schema version. Currently only `1.0` is supported
@@ -176,6 +178,18 @@ pub struct GroupComponentArray {
     /// The number of bits to read from the field.
     #[serde(default)]
     pub bits: u32,
+}
+
+impl GroupComponentArray {
+    /// Retrieve the number of bits to read from the field.
+    /// Either directly from the [`GroupComponentArray`] or if not specified, from the [`FieldStats`].
+    pub fn get_bits(&self, field: &FieldStats) -> u32 {
+        if self.bits == 0 {
+            field.lenbits
+        } else {
+            self.bits
+        }
+    }
 }
 
 /// Structured group of components

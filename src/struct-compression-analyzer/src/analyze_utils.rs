@@ -90,6 +90,50 @@ pub enum BitWriterContainer {
     Lsb(BitWriter<Cursor<Vec<u8>>, LittleEndian>),
 }
 
+/// Creates a [`BitWriterContainer`] instance based on the given [`BitOrder`].
+///
+/// # Arguments
+///
+/// * `bit_order` - The endianness of the bit stream.
+///
+/// # Returns
+/// A [`BitWriterContainer`] instance with the specified endianness.
+pub fn create_bit_writer(bit_order: BitOrder) -> BitWriterContainer {
+    match bit_order {
+        BitOrder::Default | BitOrder::Msb => {
+            BitWriterContainer::Msb(BitWriter::endian(Cursor::new(Vec::new()), BigEndian))
+        }
+        BitOrder::Lsb => {
+            BitWriterContainer::Lsb(BitWriter::endian(Cursor::new(Vec::new()), LittleEndian))
+        }
+    }
+}
+
+/// Creates a [`BitWriterContainer`] instance based on the given [`BitOrder`].
+/// This copies the supplied data into a new buffer, which is then owned by the container.
+///
+/// # Arguments
+///
+/// * `data` - The data to create the bit reader from.
+/// * `bit_order` - The endianness of the bit stream.
+///
+/// # Returns
+/// A [`BitWriterContainer`] instance with the specified endianness.
+pub fn create_bit_writer_with_owned_data(data: &[u8], bit_order: BitOrder) -> BitWriterContainer {
+    match bit_order {
+        BitOrder::Default | BitOrder::Msb => {
+            let mut cursor = Cursor::new(data.to_vec());
+            cursor.set_position(data.len() as u64);
+            BitWriterContainer::Msb(BitWriter::endian(cursor, BigEndian))
+        }
+        BitOrder::Lsb => {
+            let mut cursor = Cursor::new(data.to_vec());
+            cursor.set_position(data.len() as u64);
+            BitWriterContainer::Lsb(BitWriter::endian(cursor, LittleEndian))
+        }
+    }
+}
+
 /// Retrieves the buffer behind a [`BitWriterContainer`] instance.
 ///
 /// # Arguments
