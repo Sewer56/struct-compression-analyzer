@@ -41,6 +41,7 @@ pub struct FieldStats {
     /// Length of the field or group in bits.
     pub lenbits: u32,
     /// Bitstream writer for accumulating data belonging to this field or group.
+    /// The writer uses the endian inherited from the schema root.
     pub writer: BitWriterContainer,
     /// Bit-level statistics. Index of tuple is bit offset.
     pub bit_counts: Vec<BitStats>,
@@ -225,7 +226,7 @@ fn build_field_stats<'a>(
     group: &'a Group,
     parent_path: &'a str,
     depth: usize,
-    bit_order: BitOrder,
+    file_bit_order: BitOrder,
 ) -> AHashMap<String, FieldStats> {
     let mut stats = AHashMap::new();
 
@@ -238,7 +239,7 @@ fn build_field_stats<'a>(
 
         match field {
             FieldDefinition::Field(field) => {
-                let writer = create_bit_writer(bit_order);
+                let writer = create_bit_writer(file_bit_order);
                 stats.insert(
                     name.clone(),
                     FieldStats {
@@ -255,7 +256,7 @@ fn build_field_stats<'a>(
                 );
             }
             FieldDefinition::Group(group) => {
-                let writer = create_bit_writer(bit_order);
+                let writer = create_bit_writer(file_bit_order);
 
                 // Add stats entry for the group itself
                 stats.insert(
@@ -274,7 +275,7 @@ fn build_field_stats<'a>(
                 );
 
                 // Process nested fields
-                stats.extend(build_field_stats(group, &path, depth + 1, bit_order));
+                stats.extend(build_field_stats(group, &path, depth + 1, file_bit_order));
             }
         }
     }

@@ -1,5 +1,5 @@
 use crate::{
-    analyze_utils::get_writer_buffer,
+    analyze_utils::{bit_writer_to_reader, get_writer_buffer, BitWriterContainer},
     analyzer::FieldStats,
     bitstream_ext::BitReaderExt,
     schema::{BitOrder, GroupComponentArray},
@@ -18,7 +18,6 @@ use std::io::{self, Cursor, SeekFrom};
 /// * `writer` - The bit writer to write the array to.
 /// * `array` - Contains info about the array to write.
 pub fn write_array<TWrite: io::Write, TEndian: Endianness>(
-    bit_order: BitOrder,
     field_stats: &mut AHashMap<String, FieldStats>,
     writer: &mut BitWriter<TWrite, TEndian>,
     array: &GroupComponentArray,
@@ -31,14 +30,18 @@ pub fn write_array<TWrite: io::Write, TEndian: Endianness>(
     let bits: u32 = array.get_bits(field);
     let offset = array.offset;
     let field_len = field.lenbits;
-    let bytes = get_writer_buffer(&mut field.writer);
-    if bit_order == BitOrder::Lsb {
-        let mut reader = BitReader::endian(Cursor::new(bytes), LittleEndian);
-        write_array_inner(&mut reader, bits, offset, field_len, writer);
-    } else {
-        let mut reader = BitReader::endian(Cursor::new(bytes), BigEndian);
-        write_array_inner(&mut reader, bits, offset, field_len, writer);
-    };
+    match &field.writer {
+        BitWriterContainer::Msb(_) => {
+            let bytes = get_writer_buffer(&mut field.writer);
+            let mut reader = BitReader::endian(Cursor::new(bytes), BigEndian);
+            write_array_inner(&mut reader, bits, offset, field_len, writer);
+        }
+        BitWriterContainer::Lsb(_) => {
+            let bytes = get_writer_buffer(&mut field.writer);
+            let mut reader = BitReader::endian(Cursor::new(bytes), LittleEndian);
+            write_array_inner(&mut reader, bits, offset, field_len, writer);
+        }
+    }
 }
 
 fn write_array_inner<
@@ -110,7 +113,6 @@ mod tests {
         // Write using LSB
         let mut writer = BitWriter::endian(Cursor::new(&mut output), LittleEndian);
         write_array(
-            BitOrder::Lsb,
             &mut field_stats,
             &mut writer,
             &test_array_group_component(0, 4), // inherit bit count from field
@@ -139,7 +141,6 @@ mod tests {
         // Write using MSB
         let mut writer = BitWriter::endian(Cursor::new(&mut output), BigEndian);
         write_array(
-            BitOrder::Msb,
             &mut field_stats,
             &mut writer,
             &test_array_group_component(0, 0), // inherit bit count from field
@@ -174,7 +175,6 @@ mod tests {
         // Write using LSB
         let mut writer = BitWriter::endian(Cursor::new(&mut output), LittleEndian);
         write_array(
-            BitOrder::Lsb,
             &mut field_stats,
             &mut writer,
             &test_array_group_component(2, 2), // only upper 2 bits.

@@ -155,6 +155,29 @@ pub fn get_writer_buffer(writer: &mut BitWriterContainer) -> &[u8] {
     }
 }
 
+/// Converts a [`BitWriterContainer`] instance into a [`BitReaderContainer`] instance.
+///
+/// # Arguments
+///
+/// * `writer` - The [`BitWriterContainer`] instance to convert.
+///
+/// # Returns
+/// A [`BitReaderContainer`] instance containing the same data as the input [`BitWriterContainer`].
+pub fn bit_writer_to_reader(writer: &mut BitWriterContainer) -> BitReaderContainer {
+    match writer {
+        BitWriterContainer::Msb(writer) => {
+            writer.byte_align().unwrap();
+            let array = writer.writer().unwrap().get_ref();
+            BitReaderContainer::Msb(BitReader::endian(Cursor::new(array), BigEndian))
+        }
+        BitWriterContainer::Lsb(writer) => {
+            writer.byte_align().unwrap();
+            let array = writer.writer().unwrap().get_ref();
+            BitReaderContainer::Lsb(BitReader::endian(Cursor::new(array), LittleEndian))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
