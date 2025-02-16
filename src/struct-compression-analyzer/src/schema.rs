@@ -61,8 +61,8 @@ pub struct AnalysisConfig {
     pub split_groups: Vec<SplitComparison>,
 
     /// Compare arbitrary field groups defined through custom transformations.
-    /// Each comparison defines two groups that should be structurally equivalent but may have
-    /// different bit layouts.
+    /// Each comparison defines a baseline and one or more comparison groups
+    /// that should be structurally equivalent but may have different bit layouts.
     ///
     /// # Example: Converting 7-bit colors to 8-bit
     ///
@@ -70,13 +70,14 @@ pub struct AnalysisConfig {
     /// compare_groups:
     /// - name: convert_7_to_8_bit
     ///   description: "Adjust 7-bit color channel to 8-bit by appending a padding bit."
-    ///   group_1: # R, R, R
+    ///   baseline: # R, R, R
     ///     - { type: array, field: color7 } # reads all '7-bit' colours from input
-    ///   group_2:
-    ///     - type: struct # R+0, R+0, R+0
-    ///       fields:
-    ///         - { type: field, field: color7 } # reads 1 '7-bit' colour from input
-    ///         - { type: padding, bits: 1, value: 0 } # appends 1 padding bit
+    ///   comparisons:
+    ///     padded_8bit: # R+0, R+0, R+0
+    ///       - type: struct
+    ///         fields:
+    ///           - { type: field, field: color7 } # reads 1 '7-bit' colour from input
+    ///           - { type: padding, bits: 1, value: 0 } # appends 1 padding bit
     /// ```
     #[serde(default)]
     pub compare_groups: Vec<CustomComparison>,
@@ -103,12 +104,10 @@ pub struct CustomComparison {
     pub name: String,
 
     /// Baseline group definition
-    #[serde(rename = "group_1")]
-    pub baseline_group: Vec<GroupComponent>,
+    pub baseline: Vec<GroupComponent>,
 
-    /// Comparison group definition
-    #[serde(rename = "group_2")]
-    pub comparison_group: Vec<GroupComponent>,
+    /// Comparison group definitions with names
+    pub comparisons: IndexMap<String, Vec<GroupComponent>>,
 
     /// Human-readable description
     #[serde(default)]
@@ -1153,18 +1152,18 @@ analysis:
   compare_groups:
     - name: convert_7_to_8_bit
       description: "Adjust 7-bit color channel to 8-bit by appending a padding bit."
-      group_1: # R, R, R
-        - { type: array, field: color7, bits: 7 } # reads all '7-bit' colours from input
-      group_2:
-        - type: struct # R+0, R+0, R+0
-          fields:
-            - { type: field, field: color7, bits: 7 } # reads 1 '7-bit' colour from input
-            - { type: padding, bits: 1, value: 0 } # appends 1 padding bit
-            - { type: skip, field: color7, bits: 0 } # skips 0 padding bits (dummy for testing)
+      baseline: # R, R, R
+        - { type: array, field: color7, bits: 7 } 
+      comparisons:
+        padded_8bit:
+          - type: struct # R+0, R+0, R+0
+            fields:
+              - { type: field, field: color7, bits: 7 } 
+              - { type: padding, bits: 1, value: 0 } 
+              - { type: skip, field: color7, bits: 0 } 
 root:
   type: group
   fields: {}
-bit_order: msb
 "#;
 
             let schema = Schema::from_yaml(yaml).unwrap();
@@ -1173,10 +1172,10 @@ bit_order: msb
             assert_eq!(comparisons.len(), 1);
             assert_eq!(comparisons[0].name, "convert_7_to_8_bit");
 
-            // Assert baseline (R,R,R)
-            let baseline_group = &comparisons[0].baseline_group;
-            assert_eq!(baseline_group.len(), 1);
-            match baseline_group.first().unwrap() {
+            // Verify baseline
+            let baseline = &comparisons[0].baseline;
+            assert_eq!(baseline.len(), 1);
+            match baseline.first().unwrap() {
                 GroupComponent::Array(array) => {
                     assert_eq!(array.field, "color7");
                     assert_eq!(array.bits, 7);
@@ -1184,10 +1183,14 @@ bit_order: msb
                 _ => unreachable!("Expected an array type"),
             }
 
-            // Assert comparison (R+0, R+0, R+0)
-            let comparison_group = &comparisons[0].comparison_group;
-            assert_eq!(comparison_group.len(), 1);
-            match comparison_group.first().unwrap() {
+            // Verify comparisons
+            let comps = &comparisons[0].comparisons;
+            assert_eq!(comps.len(), 1);
+            assert!(comps.contains_key("padded_8bit"));
+
+            let padded = &comps["padded_8bit"];
+            assert_eq!(padded.len(), 1);
+            match padded.first().unwrap() {
                 GroupComponent::Struct(group) => {
                     assert_eq!(group.fields.len(), 3);
 
@@ -1233,6 +1236,41 @@ analysis:
 
             let result = Schema::from_yaml(yaml);
             assert!(result.is_err());
+        }
+
+        #[test]
+        fn preserves_comparison_order() {
+            let yaml = r#"
+version: '1.0'
+analysis:
+  compare_groups:
+    - name: bit_expansion
+      description: "Test multiple comparison order preservation"
+      baseline:
+        - { type: array, field: original }
+      comparisons:
+        comparison_c:
+          - { type: padding, bits: 1 }
+        comparison_a: 
+          - { type: padding, bits: 2 }
+        comparison_b:
+          - { type: padding, bits: 3 }
+root:
+  type: group
+  fields: {}
+"#;
+
+            let schema = Schema::from_yaml(yaml).unwrap();
+            let comparison = &schema.analysis.compare_groups[0];
+            
+            // Verify IndexMap preserves insertion order
+            let keys: Vec<&str> = comparison.comparisons.keys().map(|s| s.as_str()).collect();
+            assert_eq!(keys, vec!["comparison_c", "comparison_a", "comparison_b"]);
+            
+            // Verify basic parsing
+            assert_eq!(comparison.name, "bit_expansion");
+            assert_eq!(comparison.description, "Test multiple comparison order preservation");
+            assert_eq!(comparison.comparisons.len(), 3);
         }
     }
 }

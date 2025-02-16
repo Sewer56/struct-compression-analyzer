@@ -359,21 +359,22 @@ of the field, not the high bit.
 
 ```yaml
 compare_groups:
-  - name: interleave_colours
-    description: "Rearrange interleaved colour channels from [R0 R1] [G0 G1] [B0 B1] to [R0 G0 B0] [R1 G1 B1]."
-    group_1: # RRR GGG BBB etc.
-      - { type: array, field: R } # reads all 'R' values from input
-      - { type: array, field: G } # reads all 'G' values from input
-      - { type: array, field: B } # reads all 'B' values from input
-    group_2:
-      - type: struct # R0 G0 B0. Repeats until no data written.
-        fields:
-          - { type: field, field: R } # reads 1 'R' value from input
-          - { type: field, field: G } # reads 1 'G' value from input
-          - { type: field, field: B } # reads 1 'B' value from input
+  colour_conversion:
+      description: "Rearrange interleaved colour channels from [R0 R1] [G0 G1] [B0 B1] to [R0 G0 B0] [R1 G1 B1]."
+      baseline: # Original colour format
+        - { type: array, field: R } # reads all 'R' values from input
+        - { type: array, field: G } # reads all 'G' values from input
+        - { type: array, field: B } # reads all 'B' values from input
+      comparisons: 
+        split_components: # R0 G0 B0. Repeats until no data written.
+          - type: struct
+            fields:
+              - { type: field, field: R } # reads 1 'R' value from input
+              - { type: field, field: G } # reads 1 'G' value from input
+              - { type: field, field: B } # reads 1 'B' value from input
 ```
 
-In this case, interleaving usually improves ratio.
+In this case, interleaved format is usually better with regards to compression.
 
 #### Example 2: Converting 7-bit to 8-bit Colours with Padding
 
@@ -381,15 +382,16 @@ Convert a 7-bit color value to an 8-bit representation by adding a padding bit.
 
 ```yaml
 compare_groups:
-  - name: convert_7_to_8_bit
+  convert_7_to_8_bit:
     description: "Adjust 7-bit color channel to 8-bit by appending a padding bit."
-    group_1: # R, R, R
+    baseline: # Original 7-bit format (R, R, R)
       - { type: array, field: color7 } # reads all '7-bit' colours from input
-    group_2:
-      - type: struct # R+0, R+0, R+0
-        fields:
-          - { type: field, field: color7 } # reads 1 '7-bit' colour from input
-          - { type: padding, bits: 1, value: 0 } # appends 1 padding bit
+    comparisons:
+      padded_8bit: # 8-bit format with padding (R+0, R+0, R+0)
+        - type: struct
+          fields:
+            - { type: field, field: color7 } # reads 1 '7-bit' colour from input
+            - { type: padding, bits: 1, value: 0 } # appends padding bit
 ```
 
 In this case, extending to 8 bits usually improves ratio.
@@ -398,46 +400,36 @@ In this case, extending to 8 bits usually improves ratio.
 
 ```yaml
 compare_groups:
-  - name: align_color_bits
-    description: "Rearranges colours to 655 format (from 666)"
-    group_1: # 18-bit 666 colour
+  - name: convert_666_to_655
+    description: "Convert colours from 666 to 655 format with lossy and lossless options"
+    baseline: # 18-bit 666 colour
       - { type: array, field: color666 }
-    group_2:
-      - type: struct # 16-bit 655 colour
-        fields:
-          - { type: field, field: color666, bits: 6 } # R (6-bit)
-          - { type: field, field: color666, bits: 5 } # G (5-bit)
-          - { type: skip, field: color666, bits: 1 }  # Discard remaining G bit
-          - { type: field, field: color666, bits: 5 } # B (5-bit)
-          - { type: skip, field: color666, bits: 1 }  # Discard remaining B bit
-      - { type: array, field: color666, skip: , bits: 1 }
+    comparisons:
+      lossy_655: # 16-bit 655 colour (dropping '1' bit)
+        - type: struct
+          fields:
+            - { type: field, field: color666, bits: 6 } # R (6-bit)
+            - { type: field, field: color666, bits: 5 } # G (5-bit)
+            - { type: skip, field: color666, bits: 1 }  # Discard remaining G bit
+            - { type: field, field: color666, bits: 5 } # B (5-bit)
+            - { type: skip, field: color666, bits: 1 }  # Discard remaining B bit
+      lossless_655: # 16-bit 655 colour plus dropped bits stored separately
+        - type: struct # Main 655 colour data
+          fields:
+            - { type: field, field: color666, bits: 6 } # R (6-bit)
+            - { type: field, field: color666, bits: 5 } # G (5-bit)
+            - { type: skip, field: color666, bits: 1 }  # Skip G low bit
+            - { type: field, field: color666, bits: 5 } # B (5-bit)
+            - { type: skip, field: color666, bits: 1 }  # Skip B low bit
+        - { type: array, field: color666, offset: 11, bits: 1 } # All G low bits
+        - { type: array, field: color666, offset: 17, bits: 1 } # All B low bits
 ```
 
-This example converts a 666 colour to 655 colour, dropping the '1' bit.  
-For example, in a lossy transform.  
+This example shows two approaches to converting from 666 to 655 color format:
 
-```yaml
-compare_groups:
-  - name: align_color_bits
-    description: "Rearranges colours to 655 format (from 666)"
-    group_1: # 18-bit 666 colour
-      - { type: array, field: color666 }
-    group_2:
-      # All dropped low G bits
-      - { type: array, field: color666, offset: 11, bits: 1 }
-      # All dropped low B bits
-      - { type: array, field: color666, offset: 17, bits: 1 }
-      # 16-bit 655 colour
-      - type: struct 
-        fields:
-          - { type: field, field: color666, bits: 6 } # R (6-bit)
-          - { type: field, field: color666, bits: 5 } # G (5-bit)
-          - { type: skip, field: color666, bits: 1 }  # Discard remaining G bit
-          - { type: field, field: color666, bits: 5 } # B (5-bit)
-          - { type: skip, field: color666, bits: 1 }  # Discard remaining B bit
-```
-
-Or alternatively, put the low bits in separate arrays.
+1. A lossy conversion that drops two '1' bits.
+2. A lossless conversion that preserves the remaining bits in separate arrays after the array
+   of 655 colour values.
 
 ## Best Practices
 

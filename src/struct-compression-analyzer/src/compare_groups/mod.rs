@@ -13,10 +13,10 @@ pub struct GroupComparisonResult {
     pub name: String,
     /// A description of the group comparison. (Copied from schema)
     pub description: String,
-    /// The metrics for the first group.
-    pub group1_metrics: GroupComparisonMetrics,
-    /// The metrics for the second group.
-    pub group2_metrics: GroupComparisonMetrics,
-    /// Comparison between group 2 and group 1.
-    pub difference: GroupDifference,
+    /// Metrics for the baseline group.
+    pub baseline_metrics: GroupComparisonMetrics,
+    /// Metrics for the other groups.
+    pub group_metrics: Vec<GroupComparisonMetrics>,
+    /// Comparison between other groups and first (baseline) group.
+    pub differences: Vec<GroupDifference>,
 }
