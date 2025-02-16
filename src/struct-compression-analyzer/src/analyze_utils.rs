@@ -1,10 +1,10 @@
 use crate::schema::BitOrder;
-use bitstream_io::{BigEndian, BitReader, BitWrite, BitWriter, LittleEndian};
+use bitstream_io::{BigEndian, BitRead, BitReader, BitWrite, BitWriter, LittleEndian};
 use lossless_transform_utils::{
     entropy::code_length_of_histogram32,
     histogram::{histogram32_from_bytes, Histogram32},
 };
-use std::io::Cursor;
+use std::io::{self, Cursor, SeekFrom};
 
 /// Estimate size of a compressed data based on precalculated LZ matches and entropy
 ///
@@ -59,6 +59,22 @@ pub fn reverse_bits(max_bits: u32, bits: u64) -> u64 {
 pub enum BitReaderContainer<'a> {
     Msb(BitReader<Cursor<&'a [u8]>, BigEndian>),
     Lsb(BitReader<Cursor<&'a [u8]>, LittleEndian>),
+}
+
+impl BitReaderContainer<'_> {
+    pub fn read(&mut self, bits: u32) -> io::Result<u64> {
+        match self {
+            BitReaderContainer::Msb(reader) => reader.read(bits),
+            BitReaderContainer::Lsb(reader) => reader.read(bits),
+        }
+    }
+
+    pub fn seek_bits(&mut self, seekfrom: SeekFrom) -> io::Result<u64> {
+        match self {
+            BitReaderContainer::Msb(reader) => reader.seek_bits(seekfrom),
+            BitReaderContainer::Lsb(reader) => reader.seek_bits(seekfrom),
+        }
+    }
 }
 
 /// Creates a [`BitReaderContainer`] instance based on the given [`BitOrder`].

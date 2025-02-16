@@ -1,5 +1,7 @@
+#[cfg(test)]
 pub(crate) mod test_helpers;
 pub mod write_array;
+pub mod write_struct;
 
 use crate::split_comparisons::GroupComparisonMetrics;
 use crate::split_comparisons::GroupDifference;

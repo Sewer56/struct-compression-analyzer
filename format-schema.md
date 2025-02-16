@@ -343,6 +343,7 @@ Allowed field types include:
   - `bits`: Number of bits to skip
 
 The fields of the struct are read in a loop until no more (non-padding) bytes are written to output.
+Unlike arrays, the stream is not auto advanced to the next field.
 
 ##### Group Field Endianness
 

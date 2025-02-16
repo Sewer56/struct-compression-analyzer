@@ -1,8 +1,8 @@
 use crate::{
-    analyze_utils::{bit_writer_to_reader, get_writer_buffer, BitWriterContainer},
+    analyze_utils::{get_writer_buffer, BitWriterContainer},
     analyzer::FieldStats,
     bitstream_ext::BitReaderExt,
-    schema::{BitOrder, GroupComponentArray},
+    schema::GroupComponentArray,
 };
 use ahash::AHashMap;
 use bitstream_io::{BigEndian, BitRead, BitReader, BitWrite, BitWriter, Endianness, LittleEndian};
@@ -82,7 +82,10 @@ fn write_array_inner<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compare_groups::test_helpers::{create_mock_field_stats, TEST_FIELD_NAME};
+    use crate::{
+        compare_groups::test_helpers::{create_mock_field_stats, TEST_FIELD_NAME},
+        schema::BitOrder,
+    };
     use bitstream_io::BitWriter;
     use std::io::Cursor;
 

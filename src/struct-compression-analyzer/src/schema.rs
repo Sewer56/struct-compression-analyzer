@@ -115,7 +115,7 @@ pub struct CustomComparison {
     pub description: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(tag = "type")] // Use "type" field as variant discriminant
 pub enum GroupComponent {
     /// Array of field values
@@ -168,7 +168,7 @@ pub enum GroupComponent {
 ///
 /// Note: The `Array` type can be represented as `Struct` technically speaking, this is
 /// actually a shorthand.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct GroupComponentArray {
     /// Name of the field to pull the data from.
     pub field: String,
@@ -205,7 +205,7 @@ impl GroupComponentArray {
 /// Allowed properties:
 ///
 /// - `fields`: Array of field names
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct GroupComponentStruct {
     /// Array of field names
     pub fields: Vec<GroupComponent>,
@@ -222,7 +222,7 @@ pub struct GroupComponentStruct {
 ///
 /// - `bits`: Number of bits to insert
 /// - `value`: Value to insert in those bits
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct GroupComponentPadding {
     /// Number of bits to insert
     pub bits: u8,
@@ -242,7 +242,7 @@ pub struct GroupComponentPadding {
 ///
 /// - `field`: Field name
 /// - `bits`: Number of bits to skip
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct GroupComponentSkip {
     /// Name of the field to skip bits from.
     pub field: String,
@@ -261,13 +261,23 @@ pub struct GroupComponentSkip {
 ///
 /// - `field`: Field name
 /// - `bits`: Number of bits to read (default: size of field)
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct GroupComponentField {
     /// Name of the field
     pub field: String,
     /// Number of bits to read from the field
     #[serde(default)]
     pub bits: u32,
+}
+
+impl GroupComponentField {
+    /// Assign the number of bits to read from the field.
+    /// Either keep value from [`GroupComponentField`] if manually specified, or override from the parameter.
+    pub fn set_bits(&mut self, default: u32) {
+        if self.bits == 0 {
+            self.bits = default
+        }
+    }
 }
 
 /// Allows us to define a nested item as either a field or group
