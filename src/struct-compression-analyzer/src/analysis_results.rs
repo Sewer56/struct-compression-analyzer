@@ -70,7 +70,7 @@ pub fn compute_analysis_results(analyzer: &mut SchemaAnalyzer) -> AnalysisResult
         estimated_file_size: size_estimate(&analyzer.entries, file_lz_matches, file_entropy),
         zstd_file_size: get_zstd_compressed_size(&analyzer.entries),
         original_size: analyzer.entries.len(),
-        group_comparisons: split_comparisons,
+        split_comparisons,
     }
 }
 
@@ -100,8 +100,8 @@ pub struct AnalysisResults {
     /// can easily merge the results of different fields down the road.
     pub per_field: AHashMap<String, FieldMetrics>,
 
-    /// Group comparison results
-    pub group_comparisons: Vec<SplitComparisonResult>,
+    /// Split comparison results
+    pub split_comparisons: Vec<SplitComparisonResult>,
 }
 
 /// Complete analysis metrics for a single field
@@ -306,7 +306,7 @@ impl AnalysisResults {
         }
 
         println!("\nGroup Comparisons:");
-        for comparison in &self.group_comparisons {
+        for comparison in &self.split_comparisons {
             detailed_print_comparison(comparison);
         }
 
@@ -385,7 +385,7 @@ impl AnalysisResults {
         }
 
         println!("\nGroup Comparisons:");
-        for comparison in &self.group_comparisons {
+        for comparison in &self.split_comparisons {
             concise_print_comparison(comparison);
         }
 

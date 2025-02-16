@@ -99,7 +99,7 @@ pub fn write_field_csvs(
     }
 
     // It's assumed all results correspond to same data/schema.
-    for (comp_idx, comparison) in results[0].group_comparisons.iter().enumerate() {
+    for (comp_idx, comparison) in results[0].split_comparisons.iter().enumerate() {
         let mut wtr = Writer::from_path(
             output_dir.join(sanitize_filename(&comparison.name) + "_comparison.csv"),
         )?;
@@ -107,7 +107,7 @@ pub fn write_field_csvs(
 
         for (file_idx, result) in results.iter().enumerate() {
             // Get equivalent comparison for this result.
-            let comparison = &result.group_comparisons[comp_idx];
+            let comparison = &result.split_comparisons[comp_idx];
             let base_group_lz: Vec<_> = comparison
                 .group1_field_metrics
                 .iter()
