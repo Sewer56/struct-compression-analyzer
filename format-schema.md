@@ -1,4 +1,4 @@
-# Bit Distribution Schema Documentation
+# Struct Compression Analyzer Format Schema Documentation
 
 This document describes the YAML schema format used for analyzing bit-packed structures.
 
