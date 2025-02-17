@@ -1,6 +1,85 @@
 //! # Bit-Packed Structure Analysis Schema
 //!
-//! Defines the schema for analyzing bit-packed data structures with nested groupings.
+//! This module provides a structured way to define and analyze bit-packed data formats.
+//!
+//! The schema allows specifying:
+//!
+//! - Root structure definition
+//! - Conditional offsets for data alignment
+//! - Analysis configuration for comparing field groupings
+//!
+//! ## Public API
+//!
+//! ### Main Types
+//!
+//! - [Schema]: Main schema definition containing root structure and analysis configuration
+//! - [Group]: Represents a group of fields or nested groups
+//! - [FieldDefinition]: Defines a field or nested group
+//! - [AnalysisConfig]: Configuration for analysis operations
+//!
+//! ### Public Methods
+//!
+//! - [`Schema::from_yaml()`]: Parse schema from YAML string
+//! - [`Schema::load_from_file()`]: Load and parse schema from file path
+//! - [`Schema::ordered_field_paths()`]: Get ordered list of field paths
+//!
+//! ### Group Component Methods
+//!
+//! - [`GroupComponentArray::get_bits()`]: Get number of bits to read from field
+//!
+//! ### Comparison Types
+//!
+//! - [SplitComparison]: Configuration for comparing two field group layouts
+//! - [CustomComparison]: Configuration for comparing custom field group transformations
+//!
+//! ### Group Components
+//!
+//! - [GroupComponent]: Enum representing different types of group components
+//!   - [GroupComponentArray]: Array of field values
+//!   - [GroupComponentStruct]: Structured group of components
+//!   - [GroupComponentPadding]: Padding bits
+//!   - [GroupComponentSkip]: Skip bits
+//!
+//! ### Error Handling
+//!
+//! - [SchemaError]: Error types for schema parsing and validation
+//!
+//! ## Main Components
+//!
+//! - **Schema**: The root configuration containing:
+//!   - Version
+//!   - Metadata
+//!   - Root group definition
+//!   - Bit order configuration
+//!   - Conditional offsets
+//!   - Analysis configuration
+//!
+//! - **Group**: Hierarchical structure representing:
+//!   - Group description
+//!   - Nested fields/components
+//!   - Bit order inheritance
+//!   - Skip conditions
+//!
+//! - **FieldDefinition**: Represents either a:
+//!   - [Field]: Single field with bit properties
+//!   - [Group]: Nested group of fields
+//!
+//! ## Example Usage
+//!
+//! ```rust no_run
+//! use struct_compression_analyzer::schema::*;
+//! use std::path::Path;
+//!
+//! let yaml = r#"
+//! version: '1.0'
+//! metadata: { name: Test }
+//! root: { type: group, fields: {} }
+//! "#;
+//!
+//! // Load schema from YAML
+//! let schema_from_file = Schema::load_from_file(Path::new("schema.yaml")).unwrap();
+//! let schema_from_str = Schema::from_yaml(&yaml).unwrap();
+//! ```
 
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -1262,14 +1341,17 @@ root:
 
             let schema = Schema::from_yaml(yaml).unwrap();
             let comparison = &schema.analysis.compare_groups[0];
-            
+
             // Verify IndexMap preserves insertion order
             let keys: Vec<&str> = comparison.comparisons.keys().map(|s| s.as_str()).collect();
             assert_eq!(keys, vec!["comparison_c", "comparison_a", "comparison_b"]);
-            
+
             // Verify basic parsing
             assert_eq!(comparison.name, "bit_expansion");
-            assert_eq!(comparison.description, "Test multiple comparison order preservation");
+            assert_eq!(
+                comparison.description,
+                "Test multiple comparison order preservation"
+            );
             assert_eq!(comparison.comparisons.len(), 3);
         }
     }

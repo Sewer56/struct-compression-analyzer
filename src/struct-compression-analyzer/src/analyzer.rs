@@ -22,10 +22,11 @@
 //! use struct_compression_analyzer::{schema::Schema, analyzer::SchemaAnalyzer};
 //! use anyhow::Result;
 //! use std::fs::read_to_string;
+//! use std::path::Path;
 //!
 //! async fn schema_analyzer_example() -> Result<()> {
 //!     // Load schema from disk.
-//!     let schema = Schema::from_yaml(&read_to_string("schema.yaml")?)?;
+//!     let schema = Schema::load_from_file(Path::new("schema.yaml"))?;
 //!
 //!     // Create the analyzer from the schema, creating the initial state.
 //!     let mut analyzer = SchemaAnalyzer::new(&schema);
