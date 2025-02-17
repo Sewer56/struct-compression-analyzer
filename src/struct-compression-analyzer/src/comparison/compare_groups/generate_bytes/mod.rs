@@ -13,8 +13,8 @@
 //!
 //! Two primary internal functions handle byte generation:
 //!
-//! - `generate_group_bytes`: Creates a Vec<u8> from group components
-//! - `generate_output_for_compare_groups_entry`: Writes directly to a provided bitstream
+//! - [`generate_group_bytes`]: Creates a [`Vec<u8>`] from group components
+//! - [`generate_output_for_compare_groups_entry`]: Writes directly to a provided bitstream
 //!
 //! # Component Types
 //!

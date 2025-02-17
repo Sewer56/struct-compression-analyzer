@@ -1,18 +1,15 @@
 //! # Bit-Packed Offset Evaluator
 //!
-//! This module provides tools for automatically detecting offsets in bit-packed data formats.
+//! This is the part that automatically determines the offsets (and in the future lengths) of
+//! the data we're processing based on a set of simple rules. This is the magic that allows us
+//! to throw files like `.DDS` without manually stripping the unwanted metadata.
 //!
 //! ## What It Does
 //!
-//! - Automatically detects file offsets to analyze based on bit patterns matching
+//! - Finds data structures based on simple byte checks
 //! - Handles both MSB and LSB bit order formats
 //! - Works with file streams or in-memory byte slices
-//!
-//! ## Why Use It?
-//!
-//! - Automatically find data structures in bit-packed formats
-//! - Handle different bit-endianness formats
-//! - Validate file headers based on bit patterns
+//! - Can be used to validate file headers and exclude unwanted data
 //!
 //! ## Public API
 //!
