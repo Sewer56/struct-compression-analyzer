@@ -1,3 +1,70 @@
+//! # Bit-Packed Offset Evaluator
+//!
+//! This module provides tools for automatically detecting offsets in bit-packed data formats.
+//!
+//! ## What It Does
+//!
+//! - Automatically detects file offsets to analyze based on bit patterns matching
+//! - Handles both MSB and LSB bit order formats
+//! - Works with file streams or in-memory byte slices
+//!
+//! ## Why Use It?
+//!
+//! - Automatically find data structures in bit-packed formats
+//! - Handle different bit-endianness formats
+//! - Validate file headers based on bit patterns
+//!
+//! ## Public API
+//!
+//! ### Main Types
+//!
+//! - [ConditionalOffset]: Defines conditions for offset evaluation
+//! - [Condition]: Individual condition for bit pattern matching
+//!
+//! ### Key Functions
+//!
+//! - [`try_evaluate_file_offset()`]: Find offset in file
+//! - [`try_evaluate_offset()`]: Find offset in byte slice
+//!
+//! ## Example Usage
+//!
+//! Evaluate an offset for sample data.
+//!
+//! ```rust
+//! use struct_compression_analyzer::offset_evaluator::try_evaluate_offset;
+//! use struct_compression_analyzer::schema::{BitOrder, Condition, ConditionalOffset};
+//!
+//! let mut sample_data = vec![0u8; 0x80 + 4];
+//! // Set DDS magic
+//! sample_data[0x00..0x04].copy_from_slice(&[0x44, 0x44, 0x53, 0x20]);
+//! // Set DX10 header
+//! sample_data[0x54..0x58].copy_from_slice(&[0x44, 0x58, 0x31, 0x30]);
+//!
+//! // DDS with DX10 header (BC7, BC6H etc.)
+//! let conditions = vec![ConditionalOffset {
+//!     offset: 0x94, // Offset to jump to (DX10 block data)
+//!     conditions: vec![
+//!         Condition {
+//!             byte_offset: 0, // File Magic
+//!             bit_offset: 0,
+//!             bits: 32,
+//!             value: 0x44445320, // DDS magic
+//!             bit_order: BitOrder::Msb,
+//!         },
+//!         Condition {
+//!             byte_offset: 0x54,
+//!             bit_offset: 0,
+//!             bits: 32,
+//!             value: 0x44583130, // 'DX10' fourCC code
+//!             bit_order: BitOrder::Msb,
+//!         },
+//!     ],
+//! }];
+//!
+//! let result = try_evaluate_offset(&conditions, &sample_data);
+//! assert_eq!(result, Some(0x94));
+//! ```
+
 use crate::{
     analyze_utils::reverse_bits,
     schema::{BitOrder, Condition, ConditionalOffset},

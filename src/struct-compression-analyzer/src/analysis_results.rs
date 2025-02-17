@@ -27,7 +27,7 @@
 //!
 //! - [`AnalysisResults`]: Primary container for analysis output
 //!   - [`AnalysisResults::print()`]: Display results in console
-//!   - [`AnalysisResults::merge_many()`]: Combine multiple analysis results
+//!   - [`AnalysisResults::try_merge_many()`]: Combine multiple analysis results
 //!   - [`AnalysisResults::as_field_metrics()`]: Convert file statistics to field metrics
 //!
 //! - [`FieldMetrics`]: Per-field analysis data
