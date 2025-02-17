@@ -1,3 +1,55 @@
+//! Analyzes binary data structures against schema definitions
+//!
+//! This module implements analysis of binary data structures according to a defined schema.
+//! It handles both field and group analysis, maintaining statistics about the data including:
+//!
+//! - Bit-level statistics for compression analysis
+//! - Value frequency distributions
+//! - Conditional processing based on schema rules
+//!
+//! # Core Types
+//!
+//! - [`SchemaAnalyzer`]: Main analyzer that processes binary data
+//!
+//! # Internal Types
+//!
+//! - [`AnalyzerFieldState`]: Per-field statistics and analysis state (working state)
+//! - [`BitStats`]: Bit-level statistics for individual field positions (part of results)
+//!
+//! # Example
+//!
+//! ```rust no_run
+//! use struct_compression_analyzer::{schema::Schema, analyzer::SchemaAnalyzer};
+//! use anyhow::Result;
+//! use std::fs::read_to_string;
+//!
+//! async fn schema_analyzer_example() -> Result<()> {
+//!     // Load schema from disk.
+//!     let schema = Schema::from_yaml(&read_to_string("schema.yaml")?)?;
+//!
+//!     // Create the analyzer from the schema, creating the initial state.
+//!     let mut analyzer = SchemaAnalyzer::new(&schema);
+//!
+//!     // Process multiple entries
+//!     // From binary file, or wherever they may come from.
+//!     analyzer.add_entry(&[0x01, 0x02, 0x03])?;
+//!     analyzer.add_entry(&[0x04, 0x05, 0x06])?;
+//!
+//!     // Generate final analysis
+//!     let results = analyzer.generate_results()?;
+//!     Ok(())
+//! }
+//! ```
+//!
+//! # Statistics and Metrics
+//!
+//! The analyzer tracks several key metrics:
+//!
+//! - Bit-level statistics (zero/one counts per bit position)
+//! - Value frequency distributions
+//! - Field-level bit order and alignment
+//! - Conditional processing outcomes
+
 use super::schema::{Group, Schema};
 use crate::analysis_results::ComputeAnalysisResultsError;
 use crate::analyze_utils::{

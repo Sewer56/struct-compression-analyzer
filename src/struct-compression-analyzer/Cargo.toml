@@ -26,3 +26,6 @@ sanitize-filename = "0.6"
 rayon = "1.10.0"
 ahash = "0.8.11"
 rustc-hash = "2.1.1"
+
+[dev-dependencies]
+anyhow = "1.0.95"
