@@ -1,4 +1,5 @@
 use super::schema::{Group, Schema};
+use crate::analysis_results::ComputeAnalysisResultsError;
 use crate::analyze_utils::{
     create_bit_reader, create_bit_writer, reverse_bits, BitReaderContainer, BitWriterContainer,
 };
@@ -153,7 +154,7 @@ impl<'a> SchemaAnalyzer<'a> {
     /// - Entropy calculations
     /// - Bit distribution statistics
     /// - Value frequency analysis
-    pub fn generate_results(&mut self) -> AnalysisResults {
+    pub fn generate_results(&mut self) -> Result<AnalysisResults, ComputeAnalysisResultsError> {
         compute_analysis_results(self)
     }
 }

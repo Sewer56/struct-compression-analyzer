@@ -171,7 +171,7 @@ fn main() -> anyhow::Result<()> {
             );
             let merge_start_time = Instant::now();
             let mut merged_results = individual_results.first().unwrap().clone();
-            merged_results.merge_many(&individual_results[1..]);
+            merged_results.try_merge_many(&individual_results[1..])?;
 
             // Print final aggregated results
             println!(
@@ -252,7 +252,7 @@ fn analyze_file(params: &AnalyzeFileParams) -> anyhow::Result<AnalysisResults> {
     }
 
     // Output the analysis results here
-    Ok(analyzer.generate_results())
+    Ok(analyzer.generate_results()?)
 }
 
 fn load_schema(schema_path: &Path) -> anyhow::Result<Schema> {

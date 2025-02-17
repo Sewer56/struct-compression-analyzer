@@ -48,7 +48,7 @@
 //! fn analyze_data(schema: &Schema, data: &[u8]) -> AnalysisResults {
 //!     let mut analyzer = SchemaAnalyzer::new(schema);
 //!     analyzer.add_entry(data);
-//!     analyzer.generate_results()
+//!     analyzer.generate_results().unwrap()
 //! }
 //! ```
 //!
@@ -100,6 +100,7 @@ use crate::analyzer::AnalyzerFieldState;
 use crate::analyzer::BitStats;
 use crate::analyzer::SchemaAnalyzer;
 use crate::comparison::compare_groups::analyze_custom_comparisons;
+use crate::comparison::compare_groups::GroupComparisonError;
 use crate::comparison::compare_groups::GroupComparisonResult;
 use crate::comparison::split_comparison::make_split_comparison_result;
 use crate::comparison::split_comparison::FieldComparisonMetrics;
@@ -109,13 +110,12 @@ use crate::schema::BitOrder;
 use crate::schema::Metadata;
 use crate::schema::Schema;
 use crate::schema::SplitComparison;
-use ahash::AHashMap;
-use ahash::HashMapExt;
+use ahash::{AHashMap, HashMapExt};
 use derive_more::derive::FromStr;
 use lossless_transform_utils::match_estimator::estimate_num_lz_matches_fast;
-use rayon::iter::IntoParallelRefMutIterator;
-use rayon::iter::ParallelIterator;
+use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use rustc_hash::FxHashMap;
+use thiserror::Error;
 
 /// Final computed metrics for output
 #[derive(Clone)]
@@ -182,12 +182,34 @@ pub struct FieldMetrics {
     pub original_size: usize,
 }
 
+/// Error type for when merging analysis results fails.
+#[derive(Debug, Error)]
+pub enum AnalysisMergeError {
+    #[error(
+        "Number of bit counts did not match while merging `bit_counts`.
+This indicates inconsistent input data, or merging of results that were computed differently."
+    )]
+    BitCountsDontMatch,
+
+    #[error("Field length mismatch: {0} != {1}. This indicates inconsistent, different or incorrect input data.")]
+    FieldLengthMismatch(u32, u32),
+}
+
+/// Error type for when something goes wrong when computing the final analysis results.
+#[derive(Debug, Error)]
+pub enum ComputeAnalysisResultsError {
+    #[error(transparent)]
+    GroupComparisonError(#[from] GroupComparisonError),
+}
+
 /// Given a [`SchemaAnalyzer`] which has ingested all of the data to be calculated, via
 /// the [`SchemaAnalyzer::add_entry`] function, compute the analysis results.
 ///
 /// This returns the results for all of the per-field metrics, as well as computing the
 /// various schema defined groups, such as 'split' groups and 'compare' groups.
-pub fn compute_analysis_results(analyzer: &mut SchemaAnalyzer) -> AnalysisResults {
+pub fn compute_analysis_results(
+    analyzer: &mut SchemaAnalyzer,
+) -> Result<AnalysisResults, ComputeAnalysisResultsError> {
     // First calculate file entropy
     let file_entropy = calculate_file_entropy(&analyzer.entries);
     let file_lz_matches = estimate_num_lz_matches_fast(&analyzer.entries);
@@ -232,10 +254,10 @@ pub fn compute_analysis_results(analyzer: &mut SchemaAnalyzer) -> AnalysisResult
     );
 
     // Process custom group comparisons
-    let custom_comparisons = analyze_custom_comparisons(analyzer.schema, &mut analyzer.field_stats)
-        .expect("Failed to process custom group comparisons");
+    let custom_comparisons =
+        analyze_custom_comparisons(analyzer.schema, &mut analyzer.field_stats)?;
 
-    AnalysisResults {
+    Ok(AnalysisResults {
         file_entropy,
         file_lz_matches,
         per_field: field_metrics,
@@ -245,7 +267,7 @@ pub fn compute_analysis_results(analyzer: &mut SchemaAnalyzer) -> AnalysisResult
         original_size: analyzer.entries.len(),
         split_comparisons,
         custom_comparisons,
-    }
+    })
 }
 
 /// Calculates the comparison results between a series of field splits.
@@ -318,16 +340,25 @@ fn calc_split_comparisons(
 }
 
 impl FieldMetrics {
-    /// Merge two [`FieldMetrics`] objects into one.
+    /// Merge multiple [`FieldMetrics`] objects into one.
     /// This gives you an 'aggregate' result over a large data set.
     ///
     /// # Arguments
     ///
     /// * `self` - The object to merge into.
     /// * `other` - The object to merge from.
-    fn merge_many(&mut self, other: &[&FieldMetrics]) {
-        let total_item_count = other.len() + 1;
+    pub fn try_merge_many(&mut self, others: &[&Self]) -> Result<(), AnalysisMergeError> {
+        // Validate compatible field configurations
+        for other in others {
+            if self.lenbits != other.lenbits {
+                return Err(AnalysisMergeError::FieldLengthMismatch(
+                    self.lenbits,
+                    other.lenbits,
+                ));
+            }
+        }
 
+        let total_items = others.len() + 1;
         let mut total_count = self.count;
         let mut total_entropy = self.entropy;
         let mut total_lz_matches = self.lz_matches;
@@ -335,7 +366,7 @@ impl FieldMetrics {
         let mut total_zstd_size = self.zstd_size;
         let mut total_original_size = self.original_size;
 
-        for metrics in other {
+        for metrics in others {
             total_count += metrics.count;
             total_entropy += metrics.entropy;
             total_lz_matches += metrics.lz_matches;
@@ -345,35 +376,43 @@ impl FieldMetrics {
         }
 
         self.count = total_count;
-        self.entropy = total_entropy / total_item_count as f64;
-        self.lz_matches = total_lz_matches / total_item_count;
-        self.estimated_size = total_estimated_size / total_item_count;
-        self.zstd_size = total_zstd_size / total_item_count;
-        self.original_size = total_original_size / total_item_count;
+        self.entropy = total_entropy / total_items as f64;
+        self.lz_matches = total_lz_matches / total_items;
+        self.estimated_size = total_estimated_size / total_items;
+        self.zstd_size = total_zstd_size / total_items;
+        self.original_size = total_original_size / total_items;
 
-        // Sum up arrays from both items
-        self.merge_bit_stats_and_value_counts(other);
+        self.merge_bit_stats_and_value_counts(others)?;
+        Ok(())
     }
 
-    fn merge_bit_stats_and_value_counts(&mut self, other: &[&FieldMetrics]) {
+    fn merge_bit_stats_and_value_counts(
+        &mut self,
+        others: &[&Self],
+    ) -> Result<(), AnalysisMergeError> {
         let bit_counts = &mut self.bit_counts;
         let value_counts = &mut self.value_counts;
-        for other_stats in other {
-            let other_ref = *other_stats;
 
-            // Add bit counts from others into self
-            for (bit_offset, bit_stats) in other_ref.bit_counts.iter().enumerate() {
-                let current_counts = bit_counts.get_mut(bit_offset).unwrap();
-                current_counts.ones += bit_stats.ones;
-                current_counts.zeros += bit_stats.zeros;
+        for other in others {
+            // Validate bit counts length
+            if bit_counts.len() != other.bit_counts.len() {
+                return Err(AnalysisMergeError::BitCountsDontMatch);
+            }
+
+            for (bit_offset, bit_stats) in other.bit_counts.iter().enumerate() {
+                let current = bit_counts
+                    .get_mut(bit_offset)
+                    .ok_or(AnalysisMergeError::BitCountsDontMatch)?;
+                current.ones += bit_stats.ones;
+                current.zeros += bit_stats.zeros;
             }
 
             // Add value counts from others into self
-            let other_value_counts = &other_ref.value_counts;
-            for (value, count) in other_value_counts {
+            for (value, count) in &other.value_counts {
                 *value_counts.entry(*value).or_insert(0) += count;
             }
         }
+        Ok(())
     }
 
     /// Returns the parent path of the current field.
@@ -419,27 +458,28 @@ impl AnalysisResults {
     /// Merge multiple [`AnalysisResults`] objects into one.
     /// This is useful when analyzing multiple files or groups of fields.
     /// With this you can 'aggregate' results over a large data set.
-    pub fn merge_many(&mut self, other: &[AnalysisResults]) {
-        // For each field in current item, find equivalent field in multiple others, and merge them
+    pub fn try_merge_many(&mut self, others: &[Self]) -> Result<(), AnalysisMergeError> {
         self.per_field
             .par_iter_mut()
-            .for_each(|(full_path, field_metrics)| {
+            .try_for_each(|(full_path, field_metrics)| {
                 // Get all matching `full_path` from all other elements as vec
-                let matches: Vec<&FieldMetrics> = other
+                let matches: Vec<&FieldMetrics> = others
                     .iter()
                     .flat_map(|results| results.per_field.get(full_path))
                     .collect();
 
-                // Now merge as one operation
-                field_metrics.merge_many(&matches);
-            });
+                field_metrics.try_merge_many(&matches)
+            })?;
 
         // Merge the file entropy and LZ matches
-        self.file_entropy = (self.file_entropy + other.iter().map(|m| m.file_entropy).sum::<f64>())
-            / (other.len() + 1) as f64;
+        self.file_entropy = (self.file_entropy
+            + others.iter().map(|m| m.file_entropy).sum::<f64>())
+            / (others.len() + 1) as f64;
         self.file_lz_matches = (self.file_lz_matches
-            + other.iter().map(|m| m.file_lz_matches).sum::<usize>())
-            / (other.len() + 1);
+            + others.iter().map(|m| m.file_lz_matches).sum::<usize>())
+            / (others.len() + 1);
+
+        Ok(())
     }
 
     /// Converts the file level statistics into a [`FieldMetrics`] object
