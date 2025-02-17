@@ -99,6 +99,8 @@ use crate::analyze_utils::size_estimate;
 use crate::analyzer::AnalyzerFieldState;
 use crate::analyzer::BitStats;
 use crate::analyzer::SchemaAnalyzer;
+use crate::comparison::compare_groups::analyze_custom_comparisons;
+use crate::comparison::compare_groups::GroupComparisonResult;
 use crate::comparison::split_comparison::make_split_comparison_result;
 use crate::comparison::split_comparison::FieldComparisonMetrics;
 use crate::comparison::split_comparison::SplitComparisonResult;
@@ -143,6 +145,9 @@ pub struct AnalysisResults {
 
     /// Split comparison results
     pub split_comparisons: Vec<SplitComparisonResult>,
+
+    /// Custom group comparison results from schema-defined comparisons
+    pub custom_comparisons: Vec<GroupComparisonResult>,
 }
 
 /// Complete analysis metrics for a single field
@@ -226,6 +231,10 @@ pub fn compute_analysis_results(analyzer: &mut SchemaAnalyzer) -> AnalysisResult
         &field_metrics,
     );
 
+    // Process custom group comparisons
+    let custom_comparisons = analyze_custom_comparisons(analyzer.schema, &mut analyzer.field_stats)
+        .expect("Failed to process custom group comparisons");
+
     AnalysisResults {
         file_entropy,
         file_lz_matches,
@@ -235,6 +244,7 @@ pub fn compute_analysis_results(analyzer: &mut SchemaAnalyzer) -> AnalysisResult
         zstd_file_size: get_zstd_compressed_size(&analyzer.entries),
         original_size: analyzer.entries.len(),
         split_comparisons,
+        custom_comparisons,
     }
 }
 
@@ -479,9 +489,14 @@ impl AnalysisResults {
             self.detailed_print_field(file_metrics, &field_path);
         }
 
-        println!("\nGroup Comparisons:");
+        println!("\nSplit Group Comparisons:");
         for comparison in &self.split_comparisons {
             detailed_print_comparison(comparison);
+        }
+
+        println!("\nCustom Group Comparisons:");
+        for comparison in &self.custom_comparisons {
+            concise_print_custom_comparison(comparison);
         }
 
         if !skip_misc_stats {
@@ -558,9 +573,14 @@ impl AnalysisResults {
             self.concise_print_field(file_metrics, &field_path);
         }
 
-        println!("\nGroup Comparisons:");
+        println!("\nSplit Group Comparisons:");
         for comparison in &self.split_comparisons {
-            concise_print_comparison(comparison);
+            concise_print_split_comparison(comparison);
+        }
+
+        println!("\nCustom Group Comparisons:");
+        for comparison in &self.custom_comparisons {
+            concise_print_custom_comparison(comparison);
         }
 
         if !skip_misc_stats {
@@ -622,7 +642,7 @@ fn calculate_percentage(child: f64, parent: f64) -> f64 {
 }
 
 fn detailed_print_comparison(comparison: &SplitComparisonResult) {
-    concise_print_comparison(comparison);
+    concise_print_split_comparison(comparison);
 }
 
 fn print_field_metrics_value_stats(field: &FieldMetrics) {
@@ -665,7 +685,54 @@ fn print_field_metrics_bit_stats(field: &FieldMetrics) {
     }
 }
 
-fn concise_print_comparison(comparison: &SplitComparisonResult) {
+fn concise_print_custom_comparison(comparison: &GroupComparisonResult) {
+    let base_lz = comparison.baseline_metrics.lz_matches;
+    let base_entropy = comparison.baseline_metrics.entropy;
+    let base_est = comparison.baseline_metrics.estimated_size;
+    let base_zstd = comparison.baseline_metrics.zstd_size;
+    let base_size = comparison.baseline_metrics.original_size;
+
+    println!("  {}: {}", comparison.name, comparison.description);
+    println!("    Base Group:");
+    println!("      Size: {}", base_size);
+    println!("      LZ, Entropy: ({}, {:.2})", base_lz, base_entropy);
+    println!("      Est/Zstd: ({}/{})", base_est, base_zstd);
+
+    for (i, (group_name, metrics)) in comparison
+        .group_names
+        .iter()
+        .zip(&comparison.group_metrics)
+        .enumerate()
+    {
+        let comp_lz = metrics.lz_matches;
+        let comp_entropy = metrics.entropy;
+        let comp_est = metrics.estimated_size;
+        let comp_zstd = metrics.zstd_size;
+        let comp_size = metrics.original_size;
+
+        let ratio_est = calculate_percentage(comp_est as f64, base_est as f64);
+        let ratio_zstd = calculate_percentage(comp_zstd as f64, base_zstd as f64);
+        let diff_est = comparison.differences[i].estimated_size;
+        let diff_zstd = comparison.differences[i].zstd_size;
+
+        println!("\n    {} Group:", group_name);
+        println!("      Size: {}", comp_size);
+        println!("      LZ, Entropy: ({}, {:.2})", comp_lz, comp_entropy);
+        println!("      Est/Zstd: ({}/{})", comp_est, comp_zstd);
+        println!(
+            "      Ratio (est/zstd): ({:.1}%/{:.1}%)",
+            ratio_est, ratio_zstd
+        );
+        println!("      Diff (est/zstd): ({}/{})", diff_est, diff_zstd);
+
+        if base_size != comp_size {
+            println!("      [WARNING!!] Sizes of base and comparison groups don't match!! They may vary by a few bytes due to padding.");
+            println!("      [WARNING!!] However if they vary extremely, your groups may be incorrect. base: {}, {}: {}", base_size, group_name, comp_size);
+        }
+    }
+}
+
+fn concise_print_split_comparison(comparison: &SplitComparisonResult) {
     let base_lz = comparison.group1_metrics.lz_matches;
     let size_orig = comparison.group1_metrics.original_size;
     let size_comp = comparison.group2_metrics.original_size;

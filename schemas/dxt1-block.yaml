@@ -20,6 +20,26 @@ analysis:
       group_1: [colors]          # Base group to compare against.
       group_2: [color0, color1]  # Derived group to compare with.
       description: Compare regular interleaved colour format `colors` against their split components `color0` and `color1`.
+  compare_groups:
+    - name: dxt1_transforms
+      description: Compare different arrangements of DXT1 block data
+      baseline: # Original block format: Each block is [color0, color1, indices]
+        - type: struct
+          fields:
+            - type: field
+              field: color0
+            - type: field
+              field: color1
+            - type: field
+              field: indices
+      comparisons:
+        colors_then_indices: # All colors first, then all indices
+          - { type: array, field: colors }
+          - { type: array, field: indices }
+        color0_color1_indices: # All (split) colors first, then all indices
+          - { type: array, field: color0 }
+          - { type: array, field: color1 }
+          - { type: array, field: indices }
 
 root:
   type: group
