@@ -1,15 +1,112 @@
+//! Analyzes and processes final analysis results for bit-packed data structures.
+//!
+//! This module handles the final stage of analysis, computing metrics and statistics
+//! from processed bit-packed data. It provides comprehensive analysis capabilities
+//! including entropy calculations, LZ compression analysis, and field-level statistics.
+//!
+//! # Core Types
+//!
+//! - [`AnalysisResults`]: Top-level container for all analysis results
+//! - [`FieldMetrics`]: Detailed metrics for individual fields
+//! - [`PrintFormat`]: Output formatting options for result presentation
+//!
+//! # Key Features
+//!
+//! - Field-level and file-level entropy analysis
+//! - LZ compression match detection
+//! - Size estimation and actual compression metrics
+//! - Bit distribution statistics
+//! - Value frequency analysis
+//! - Split comparison results
+//!
+//! # Public APIs
+//!
+//! Key types and functions for users of this module:
+//!
+//! ## Types
+//!
+//! - [`AnalysisResults`]: Primary container for analysis output
+//!   - [`AnalysisResults::print()`]: Display results in console
+//!   - [`AnalysisResults::merge_many()`]: Combine multiple analysis results
+//!   - [`AnalysisResults::as_field_metrics()`]: Convert file statistics to field metrics
+//!
+//! - [`FieldMetrics`]: Per-field analysis data
+//!   - [`FieldMetrics::parent_path()`]: Get path of parent field
+//!   - [`FieldMetrics::parent_metrics_or()`]: Get metrics of parent field
+//!   - [`FieldMetrics::sorted_value_counts()`]: Get sorted value frequencies
+//!
+//! ## Functions
+//!
+//! - [`compute_analysis_results()`]: Generate analysis from [`SchemaAnalyzer`]
+//!
+//! # Example
+//!
+//! ```no_run
+//! use struct_compression_analyzer::{analyzer::SchemaAnalyzer, schema::Schema};
+//! use struct_compression_analyzer::analysis_results::AnalysisResults;
+//!
+//! fn analyze_data(schema: &Schema, data: &[u8]) -> AnalysisResults {
+//!     let mut analyzer = SchemaAnalyzer::new(schema);
+//!     analyzer.add_entry(data);
+//!     analyzer.generate_results()
+//! }
+//! ```
+//!
+//! # Output Formats
+//!
+//! Results can be displayed in two formats (console):
+//!
+//! - [`Detailed`]: Comprehensive analysis with full metrics
+//! - [`Concise`]: Condensed summary of key statistics
+//!
+//! Groups of results (multiple files) can also be displayed via one of the
+//! other modules.
+//!
+//! - [`CSV`]: CSV representation of results. Export to spreadsheets.
+//! - [`Plot`]: Generate plots of results.
+//!
+//! # Field Metrics
+//!
+//! For each field, the analysis computes:
+//!
+//! - Shannon entropy in bits
+//! - LZ compression matches
+//! - Bit-level distribution
+//! - Value frequency counts
+//! - Size estimates (original, compressed, estimated)
+//!
+//! Fields can be analyzed individually or merged for group analysis.
+//!
+//! # Implementation Notes
+//!
+//! - Handles both MSB and LSB bit ordering
+//! - Supports nested field hierarchies
+//! - Provides parent/child relationship tracking
+//! - Implements efficient metric merging for group analysis
+//!
+//! [`AnalysisResults`]: crate::analysis_results::AnalysisResults
+//! [`FieldMetrics`]: crate::analysis_results::FieldMetrics
+//! [`PrintFormat`]: crate::analysis_results::PrintFormat
+//! [`Detailed`]: crate::analysis_results::PrintFormat::Detailed
+//! [`Concise`]: crate::analysis_results::PrintFormat::Concise
+//! [`CSV`]: crate::csv
+//! [`Plot`]: crate::plot
+
 use crate::analyze_utils::calculate_file_entropy;
 use crate::analyze_utils::get_writer_buffer;
 use crate::analyze_utils::get_zstd_compressed_size;
 use crate::analyze_utils::size_estimate;
+use crate::analyzer::AnalyzerFieldState;
 use crate::analyzer::BitStats;
 use crate::analyzer::SchemaAnalyzer;
+use crate::comparison::split_comparison::make_split_comparison_result;
+use crate::comparison::split_comparison::FieldComparisonMetrics;
+use crate::comparison::split_comparison::SplitComparisonResult;
 use crate::constants::CHILD_MARKER;
 use crate::schema::BitOrder;
 use crate::schema::Metadata;
 use crate::schema::Schema;
-use crate::split_comparisons::calc_split_comparisons;
-use crate::split_comparisons::SplitComparisonResult;
+use crate::schema::SplitComparison;
 use ahash::AHashMap;
 use ahash::HashMapExt;
 use derive_more::derive::FromStr;
@@ -17,62 +114,6 @@ use lossless_transform_utils::match_estimator::estimate_num_lz_matches_fast;
 use rayon::iter::IntoParallelRefMutIterator;
 use rayon::iter::ParallelIterator;
 use rustc_hash::FxHashMap;
-
-pub fn compute_analysis_results(analyzer: &mut SchemaAnalyzer) -> AnalysisResults {
-    // First calculate file entropy
-    let file_entropy = calculate_file_entropy(&analyzer.entries);
-    let file_lz_matches = estimate_num_lz_matches_fast(&analyzer.entries);
-
-    // Then calculate per-field entropy and lz matches
-    let mut field_metrics: AHashMap<String, FieldMetrics> = AHashMap::new();
-
-    for stats in &mut analyzer.field_stats.values_mut() {
-        let writer_buffer = get_writer_buffer(&mut stats.writer);
-        let entropy = calculate_file_entropy(writer_buffer);
-        let lz_matches = estimate_num_lz_matches_fast(writer_buffer);
-        let estimated_size = size_estimate(writer_buffer, lz_matches, entropy);
-        let actual_size = get_zstd_compressed_size(writer_buffer);
-
-        // reduce memory usage from leftover analyzer.
-        stats.value_counts.shrink_to_fit();
-        field_metrics.insert(
-            stats.full_path.clone(),
-            FieldMetrics {
-                name: stats.name.clone(),
-                full_path: stats.full_path.clone(),
-                entropy,
-                lz_matches,
-                bit_counts: stats.bit_counts.clone(),
-                value_counts: stats.value_counts.clone(),
-                depth: stats.depth,
-                count: stats.count,
-                lenbits: stats.lenbits,
-                bit_order: stats.bit_order,
-                estimated_size,
-                zstd_size: actual_size,
-                original_size: writer_buffer.len(),
-            },
-        );
-    }
-
-    // Process split group comparisons
-    let split_comparisons = calc_split_comparisons(
-        &mut analyzer.field_stats,
-        &analyzer.schema.analysis.split_groups,
-        &field_metrics,
-    );
-
-    AnalysisResults {
-        file_entropy,
-        file_lz_matches,
-        per_field: field_metrics,
-        schema_metadata: analyzer.schema.metadata.clone(),
-        estimated_file_size: size_estimate(&analyzer.entries, file_lz_matches, file_entropy),
-        zstd_file_size: get_zstd_compressed_size(&analyzer.entries),
-        original_size: analyzer.entries.len(),
-        split_comparisons,
-    }
-}
 
 /// Final computed metrics for output
 #[derive(Clone)]
@@ -136,37 +177,169 @@ pub struct FieldMetrics {
     pub original_size: usize,
 }
 
+/// Given a [`SchemaAnalyzer`] which has ingested all of the data to be calculated, via
+/// the [`SchemaAnalyzer::add_entry`] function, compute the analysis results.
+///
+/// This returns the results for all of the per-field metrics, as well as computing the
+/// various schema defined groups, such as 'split' groups and 'compare' groups.
+pub fn compute_analysis_results(analyzer: &mut SchemaAnalyzer) -> AnalysisResults {
+    // First calculate file entropy
+    let file_entropy = calculate_file_entropy(&analyzer.entries);
+    let file_lz_matches = estimate_num_lz_matches_fast(&analyzer.entries);
+
+    // Then calculate per-field entropy and lz matches
+    let mut field_metrics: AHashMap<String, FieldMetrics> = AHashMap::new();
+
+    for stats in &mut analyzer.field_stats.values_mut() {
+        let writer_buffer = get_writer_buffer(&mut stats.writer);
+        let entropy = calculate_file_entropy(writer_buffer);
+        let lz_matches = estimate_num_lz_matches_fast(writer_buffer);
+        let estimated_size = size_estimate(writer_buffer, lz_matches, entropy);
+        let actual_size = get_zstd_compressed_size(writer_buffer);
+
+        // reduce memory usage from leftover analyzer.
+        stats.value_counts.shrink_to_fit();
+        field_metrics.insert(
+            stats.full_path.clone(),
+            FieldMetrics {
+                name: stats.name.clone(),
+                full_path: stats.full_path.clone(),
+                entropy,
+                lz_matches,
+                bit_counts: stats.bit_counts.clone(),
+                value_counts: stats.value_counts.clone(),
+                depth: stats.depth,
+                count: stats.count,
+                lenbits: stats.lenbits,
+                bit_order: stats.bit_order,
+                estimated_size,
+                zstd_size: actual_size,
+                original_size: writer_buffer.len(),
+            },
+        );
+    }
+
+    // Process split group comparisons
+    let split_comparisons = calc_split_comparisons(
+        &mut analyzer.field_stats,
+        &analyzer.schema.analysis.split_groups,
+        &field_metrics,
+    );
+
+    AnalysisResults {
+        file_entropy,
+        file_lz_matches,
+        per_field: field_metrics,
+        schema_metadata: analyzer.schema.metadata.clone(),
+        estimated_file_size: size_estimate(&analyzer.entries, file_lz_matches, file_entropy),
+        zstd_file_size: get_zstd_compressed_size(&analyzer.entries),
+        original_size: analyzer.entries.len(),
+        split_comparisons,
+    }
+}
+
+/// Calculates the comparison results between a series of field splits.
+///
+/// This function takes the [`SchemaAnalyzer`]'s intermediate state, that is, the
+/// state of each field (containing the data for each field), a list of split comparisons
+/// to make, and the individual metrics (results) for each field.
+///
+/// This then computes the comparison results for each split.
+///
+/// # Remarks
+/// This API is for internal use. It may change without notice.
+///
+/// # Arguments
+/// * `field_stats` - The current field states (analyzer working state)
+/// * `comparisons` - A slice of [`SplitComparison`] objects defining the splits to compare.
+/// * `field_metrics` - A reference to a hash map of field metrics.
+///
+/// # Returns
+/// A vector of [`SplitComparisonResult`] objects containing the comparison results.
+///
+/// [`SchemaAnalyzer`]: crate::analyzer::SchemaAnalyzer
+fn calc_split_comparisons(
+    field_stats: &mut AHashMap<String, AnalyzerFieldState>,
+    comparisons: &[SplitComparison],
+    field_metrics: &AHashMap<String, FieldMetrics>,
+) -> Vec<SplitComparisonResult> {
+    let mut split_comparisons = Vec::new();
+    for comparison in comparisons {
+        let mut group1_bytes: Vec<u8> = Vec::new();
+        let mut group2_bytes: Vec<u8> = Vec::new();
+
+        // Sum up bytes for group 1
+        for name in &comparison.group_1 {
+            if let Some(stats) = field_stats.get_mut(name) {
+                group1_bytes.extend_from_slice(get_writer_buffer(&mut stats.writer));
+            }
+        }
+
+        // Sum up bytes for group 2
+        for name in &comparison.group_2 {
+            if let Some(stats) = field_stats.get_mut(name) {
+                group2_bytes.extend_from_slice(get_writer_buffer(&mut stats.writer));
+            }
+        }
+
+        let mut group1_field_metrics: Vec<FieldComparisonMetrics> = Vec::new();
+        let mut group2_field_metrics: Vec<FieldComparisonMetrics> = Vec::new();
+        for path in &comparison.group_1 {
+            if let Some(metrics) = field_metrics.iter().find(|(_k, v)| v.name == *path) {
+                group1_field_metrics.push(metrics.1.clone().into());
+            }
+        }
+        for path in &comparison.group_2 {
+            if let Some(metrics) = field_metrics.iter().find(|(_k, v)| v.name == *path) {
+                group2_field_metrics.push(metrics.1.clone().into());
+            }
+        }
+
+        split_comparisons.push(make_split_comparison_result(
+            comparison.name.clone(),
+            comparison.description.clone(),
+            &group1_bytes,
+            &group2_bytes,
+            group1_field_metrics,
+            group2_field_metrics,
+        ));
+    }
+    split_comparisons
+}
+
 impl FieldMetrics {
     /// Merge two [`FieldMetrics`] objects into one.
-    /// This is useful when analyzing multiple files or groups of fields.
+    /// This gives you an 'aggregate' result over a large data set.
     ///
     /// # Arguments
     ///
     /// * `self` - The object to merge into.
     /// * `other` - The object to merge from.
     fn merge_many(&mut self, other: &[&FieldMetrics]) {
-        // Add counts from others
-        self.count += other.iter().map(|m| m.count).sum::<u64>();
+        let total_item_count = other.len() + 1;
 
-        // Merge count, entropy
-        let entropy = (self.entropy + other.iter().map(|m| m.entropy).sum::<f64>())
-            / (other.len() + 1) as f64;
-        let lz_matches = (self.lz_matches + other.iter().map(|m| m.lz_matches).sum::<usize>())
-            / (other.len() + 1);
-        self.entropy = entropy;
-        self.lz_matches = lz_matches;
+        let mut total_count = self.count;
+        let mut total_entropy = self.entropy;
+        let mut total_lz_matches = self.lz_matches;
+        let mut total_estimated_size = self.estimated_size;
+        let mut total_zstd_size = self.zstd_size;
+        let mut total_original_size = self.original_size;
 
-        // Merge estimated and actual sizes
-        let estimated_size = (self.estimated_size
-            + other.iter().map(|m| m.estimated_size).sum::<usize>())
-            / (other.len() + 1);
-        let actual_size =
-            (self.zstd_size + other.iter().map(|m| m.zstd_size).sum::<usize>()) / (other.len() + 1);
-        self.estimated_size = estimated_size;
-        self.zstd_size = actual_size;
-        self.original_size = (self.original_size
-            + other.iter().map(|m| m.original_size).sum::<usize>())
-            / (other.len() + 1);
+        for metrics in other {
+            total_count += metrics.count;
+            total_entropy += metrics.entropy;
+            total_lz_matches += metrics.lz_matches;
+            total_estimated_size += metrics.estimated_size;
+            total_zstd_size += metrics.zstd_size;
+            total_original_size += metrics.original_size;
+        }
+
+        self.count = total_count;
+        self.entropy = total_entropy / total_item_count as f64;
+        self.lz_matches = total_lz_matches / total_item_count;
+        self.estimated_size = total_estimated_size / total_item_count;
+        self.zstd_size = total_zstd_size / total_item_count;
+        self.original_size = total_original_size / total_item_count;
 
         // Sum up arrays from both items
         self.merge_bit_stats_and_value_counts(other);
@@ -235,6 +408,7 @@ pub enum PrintFormat {
 impl AnalysisResults {
     /// Merge multiple [`AnalysisResults`] objects into one.
     /// This is useful when analyzing multiple files or groups of fields.
+    /// With this you can 'aggregate' results over a large data set.
     pub fn merge_many(&mut self, other: &[AnalysisResults]) {
         // For each field in current item, find equivalent field in multiple others, and merge them
         self.per_field
@@ -519,12 +693,12 @@ fn concise_print_comparison(comparison: &SplitComparisonResult) {
     println!(
         "    Base Group LZ, Entropy: ({:?}, {:?})",
         comparison
-            .group1_field_metrics
+            .baseline_comparison_metrics
             .iter()
             .map(|m| m.lz_matches)
             .collect::<Vec<_>>(),
         comparison
-            .group1_field_metrics
+            .baseline_comparison_metrics
             .iter()
             .map(|m| format!("{:.2}", m.entropy))
             .collect::<Vec<_>>()
@@ -532,12 +706,12 @@ fn concise_print_comparison(comparison: &SplitComparisonResult) {
     println!(
         "    Comp Group LZ, Entropy: ({:?}, {:?})",
         comparison
-            .group2_field_metrics
+            .split_comparison_metrics
             .iter()
             .map(|m| m.lz_matches)
             .collect::<Vec<_>>(),
         comparison
-            .group2_field_metrics
+            .split_comparison_metrics
             .iter()
             .map(|m| format!("{:.2}", m.entropy))
             .collect::<Vec<_>>()

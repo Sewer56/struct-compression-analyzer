@@ -1,6 +1,7 @@
+use super::{GenerateBytesError, GenerateBytesResult};
 use crate::{
     analyze_utils::{get_writer_buffer, BitWriterContainer},
-    analyzer::FieldStats,
+    analyzer::AnalyzerFieldState,
     bitstream_ext::BitReaderExt,
     schema::GroupComponentArray,
 };
@@ -17,15 +18,14 @@ use std::io::{self, Cursor, SeekFrom};
 /// * `field_stats` - A mutable reference to a map of field stats.
 /// * `writer` - The bit writer to write the array to.
 /// * `array` - Contains info about the array to write.
-pub fn write_array<TWrite: io::Write, TEndian: Endianness>(
-    field_stats: &mut AHashMap<String, FieldStats>,
+pub(crate) fn write_array<TWrite: io::Write, TEndian: Endianness>(
+    field_stats: &mut AHashMap<String, AnalyzerFieldState>,
     writer: &mut BitWriter<TWrite, TEndian>,
     array: &GroupComponentArray,
-) {
-    // Gets the field details for the given field
+) -> GenerateBytesResult<()> {
     let field = field_stats
         .get_mut(&array.field)
-        .expect("Field not found in field stats");
+        .ok_or_else(|| GenerateBytesError::FieldNotFound(array.field.clone()))?;
 
     let bits: u32 = array.get_bits(field);
     let offset = array.offset;
@@ -34,16 +34,21 @@ pub fn write_array<TWrite: io::Write, TEndian: Endianness>(
         BitWriterContainer::Msb(_) => {
             let bytes = get_writer_buffer(&mut field.writer);
             let mut reader = BitReader::endian(Cursor::new(bytes), BigEndian);
-            write_array_inner(&mut reader, bits, offset, field_len, writer);
+            write_array_inner(&mut reader, bits, offset, field_len, writer)
         }
         BitWriterContainer::Lsb(_) => {
             let bytes = get_writer_buffer(&mut field.writer);
             let mut reader = BitReader::endian(Cursor::new(bytes), LittleEndian);
-            write_array_inner(&mut reader, bits, offset, field_len, writer);
+            write_array_inner(&mut reader, bits, offset, field_len, writer)
         }
     }
 }
 
+/// Processes an array component by reading bits from a field's stored data
+/// and writing them to the output writer according to array configuration.
+///
+/// Handles both MSB and LSB bit orders by creating appropriate readers
+/// from the field's stored bitstream data.
 fn write_array_inner<
     TWrite: io::Write,
     TEndian: Endianness,
@@ -55,37 +60,70 @@ fn write_array_inner<
     offset: u32,
     field_len: u32,
     writer: &mut BitWriter<TWrite, TEndian>,
-) {
+) -> GenerateBytesResult<()> {
+    // Loop until we run out of bits in the source field data
     loop {
-        // Position after reading the field.
-        let ending_pos = reader.position_in_bits().unwrap() + field_len as u64;
+        // Calculate ending position before reading to maintain alignment
+        let ending_pos = reader
+            .position_in_bits()
+            .map_err(|e| GenerateBytesError::SeekError {
+                source: e,
+                operation: "getting array position".into(),
+            })?
+            + field_len as u64;
 
-        // Check if there's enough data to read
-        if reader.remaining_bits().unwrap_or(0) < field_len as u64 {
-            return;
+        // Check remaining bits before attempting read
+        let remaining = reader
+            .remaining_bits()
+            .map_err(|e| GenerateBytesError::SeekError {
+                source: e,
+                operation: "checking remaining bits".into(),
+            })?;
+
+        if remaining < field_len as u64 {
+            return Ok(());
         }
 
-        // Seek to offset to read from.
-        reader.seek_bits(SeekFrom::Current(offset as i64)).unwrap();
+        // Seek to the array element offset
+        reader
+            .seek_bits(SeekFrom::Current(offset as i64))
+            .map_err(|e| GenerateBytesError::SeekError {
+                source: e,
+                operation: format!("seeking to array offset {}", offset),
+            })?;
 
-        // Read the bits
-        let value = reader.read::<u64>(bits).unwrap();
+        // Read the actual value from the source bitstream
+        let value = reader
+            .read::<u64>(bits)
+            .map_err(|e| GenerateBytesError::ReadError {
+                source: e,
+                context: format!("reading {bits}-bit array element"),
+            })?;
 
-        // Write the bits
-        writer.write::<u64>(bits, value).unwrap();
+        // Write the value to the output stream
+        writer
+            .write::<u64>(bits, value)
+            .map_err(|e| GenerateBytesError::WriteError {
+                source: e,
+                context: format!("writing {bits}-bit array element"),
+            })?;
 
-        // Seek to loop end
-        reader.seek_bits(SeekFrom::Start(ending_pos)).unwrap();
+        // Return to calculated end position for next iteration
+        reader.seek_bits(SeekFrom::Start(ending_pos)).map_err(|e| {
+            GenerateBytesError::SeekError {
+                source: e,
+                operation: format!("seeking to array end position {}", ending_pos),
+            }
+        })?;
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        compare_groups::test_helpers::{create_mock_field_stats, TEST_FIELD_NAME},
-        schema::BitOrder,
-    };
+    use crate::comparison::compare_groups::test_helpers::create_mock_field_states;
+    use crate::comparison::compare_groups::test_helpers::TEST_FIELD_NAME;
+    use crate::schema::BitOrder;
     use bitstream_io::BitWriter;
     use std::io::Cursor;
 
@@ -104,7 +142,7 @@ mod tests {
             0b0010_0001, // 1, 2
             0b1000_0100, // 4, 8
         ];
-        let mut field_stats = create_mock_field_stats(
+        let mut field_stats = create_mock_field_states(
             TEST_FIELD_NAME,
             &input_data,
             4,
@@ -119,7 +157,8 @@ mod tests {
             &mut field_stats,
             &mut writer,
             &test_array_group_component(0, 4), // inherit bit count from field
-        );
+        )
+        .unwrap();
 
         // Read back written data
         assert_eq!(input_data, output.as_slice());
@@ -132,7 +171,7 @@ mod tests {
             0b0001_0010, // 1, 2
             0b0100_1000, // 4, 8
         ];
-        let mut field_stats = create_mock_field_stats(
+        let mut field_stats = create_mock_field_states(
             TEST_FIELD_NAME,
             &input_data,
             4,
@@ -147,7 +186,8 @@ mod tests {
             &mut field_stats,
             &mut writer,
             &test_array_group_component(0, 0), // inherit bit count from field
-        );
+        )
+        .unwrap();
 
         // Read back written data
         assert_eq!(input_data, output.as_slice());
@@ -166,7 +206,7 @@ mod tests {
             0b00_11_00_11, // 00, 11, 00, 11
         ]; // rest is dropped, because we offset by 2
 
-        let mut field_stats = create_mock_field_stats(
+        let mut field_stats = create_mock_field_states(
             TEST_FIELD_NAME,
             &input_data,
             4,
@@ -181,7 +221,8 @@ mod tests {
             &mut field_stats,
             &mut writer,
             &test_array_group_component(2, 2), // only upper 2 bits.
-        );
+        )
+        .unwrap();
 
         // Read back written data
         assert_eq!(expected_output, output.as_slice());

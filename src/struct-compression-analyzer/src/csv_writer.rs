@@ -109,28 +109,28 @@ pub fn write_field_csvs(
             // Get equivalent comparison for this result.
             let comparison = &result.split_comparisons[comp_idx];
             let base_group_lz: Vec<_> = comparison
-                .group1_field_metrics
+                .baseline_comparison_metrics
                 .iter()
                 .map(|m| m.lz_matches.to_string())
                 .collect();
             let comp_group_lz: Vec<_> = comparison
-                .group2_field_metrics
+                .split_comparison_metrics
                 .iter()
                 .map(|m| m.lz_matches.to_string())
                 .collect();
             let comp_group_entropy: Vec<_> = comparison
-                .group2_field_metrics
+                .split_comparison_metrics
                 .iter()
                 .map(|m| format!("{:.2}", m.entropy))
                 .collect();
             let base_group_entropy: Vec<_> = comparison
-                .group1_field_metrics
+                .baseline_comparison_metrics
                 .iter()
                 .map(|m| format!("{:.2}", m.entropy))
                 .collect();
 
             let group2_lz_values: Vec<usize> = comparison
-                .group2_field_metrics
+                .split_comparison_metrics
                 .iter()
                 .map(|m| m.lz_matches)
                 .collect();
@@ -144,7 +144,7 @@ pub fn write_field_csvs(
             };
 
             let group2_entropy_values: Vec<f64> = comparison
-                .group2_field_metrics
+                .split_comparison_metrics
                 .iter()
                 .map(|m| m.entropy)
                 .collect();

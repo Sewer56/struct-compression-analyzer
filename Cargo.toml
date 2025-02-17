@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "src/struct-compression-analyzer",
+    "src/struct-compression-analyzer", 
     "src/struct-compression-analyzer-cli"
 ]
 resolver = "2"

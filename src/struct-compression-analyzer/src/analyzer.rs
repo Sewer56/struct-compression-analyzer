@@ -25,11 +25,11 @@ pub struct SchemaAnalyzer<'a> {
     pub entries: Vec<u8>,
     /// Intermediate analysis state (field name → statistics)
     /// This supports both 'groups' and fields.
-    pub field_stats: AHashMap<String, FieldStats>,
+    pub field_stats: AHashMap<String, AnalyzerFieldState>,
 }
 
 /// Intermediate statistics for a single field or group of fields
-pub struct FieldStats {
+pub struct AnalyzerFieldState {
     /// Name of the field or group
     pub name: String,
     /// Name of the full path to the field or group
@@ -161,7 +161,7 @@ impl<'a> SchemaAnalyzer<'a> {
 fn process_field_or_group<TEndian: Endianness>(
     reader: &mut BitReader<Cursor<&[u8]>, TEndian>,
     mut bit_count: u32,
-    field_stats: &mut FieldStats,
+    field_stats: &mut AnalyzerFieldState,
     skip_frequency_analysis: bool,
 ) {
     let writer = &mut field_stats.writer;
@@ -227,7 +227,7 @@ fn build_field_stats<'a>(
     parent_path: &'a str,
     depth: usize,
     file_bit_order: BitOrder,
-) -> AHashMap<String, FieldStats> {
+) -> AHashMap<String, AnalyzerFieldState> {
     let mut stats = AHashMap::new();
 
     for (name, field) in &group.fields {
@@ -242,7 +242,7 @@ fn build_field_stats<'a>(
                 let writer = create_bit_writer(file_bit_order);
                 stats.insert(
                     name.clone(),
-                    FieldStats {
+                    AnalyzerFieldState {
                         full_path: path,
                         depth,
                         lenbits: field.bits,
@@ -261,7 +261,7 @@ fn build_field_stats<'a>(
                 // Add stats entry for the group itself
                 stats.insert(
                     name.clone(),
-                    FieldStats {
+                    AnalyzerFieldState {
                         full_path: path.clone(),
                         depth,
                         lenbits: group.bits,

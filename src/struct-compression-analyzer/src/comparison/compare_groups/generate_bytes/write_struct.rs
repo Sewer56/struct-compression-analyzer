@@ -1,6 +1,7 @@
+use super::{GenerateBytesError, GenerateBytesResult};
 use crate::{
     analyze_utils::{bit_writer_to_reader, BitReaderContainer},
-    analyzer::FieldStats,
+    analyzer::AnalyzerFieldState,
     schema::{GroupComponent, GroupComponentStruct},
 };
 use ahash::AHashMap;
@@ -12,87 +13,129 @@ use std::io::{self};
 /// provided [`BitWriter`].
 ///
 /// # Arguments
-/// * `field_stats` - A mutable reference to a map of field stats.
+/// * `field_states` - A mutable reference to a map of field stats.
 /// * `writer` - The bit writer to write the array to.
 /// * `array` - Contains info about the array to write.
-pub fn write_struct<TWrite: io::Write, TEndian: Endianness>(
-    field_stats: &mut AHashMap<String, FieldStats>,
+pub(crate) fn write_struct<TWrite: io::Write, TEndian: Endianness>(
+    field_states: &mut AHashMap<String, AnalyzerFieldState>,
     writer: &mut BitWriter<TWrite, TEndian>,
     strct_ref: &GroupComponentStruct,
-) {
-    // Note: We mutate the struct here, by making number of bits inherited from schema fields,
-    // so we clone as to keep the original `strct_ref` unmodified
+) -> GenerateBytesResult<()> {
+    // Clone the struct definition to avoid mutating the original
     let mut strct = strct_ref.clone();
-    let field_stats_unsafe = UnsafeCell::new(field_stats);
+    let field_states_unsafe = UnsafeCell::new(field_states);
 
-    // The state of each field reader.
+    // Map field names to their bitstream readers
     let mut field_readers = AHashMap::<String, BitReaderContainer>::new();
 
-    // Map only the fields used in the struct, which will reduce the
-    // hashmap size a bit, improving perf.
+    // Initialize readers for all fields used in the struct
     for field in &mut strct.fields {
         let field_name = match field {
             GroupComponent::Array(_) | GroupComponent::Struct(_) => {
-                panic!("Arrays and Structs inside structs are not supported")
+                return Err(GenerateBytesError::UnsupportedNestedComponent)
             }
             GroupComponent::Field(field) => Some(field.field.clone()),
             GroupComponent::Skip(skip) => Some(skip.field.clone()),
             GroupComponent::Padding(_) => None,
         };
 
-        // If we got a key and field_name, process it
         if let Some(field_name) = field_name {
-            // SAFETY: UNDEFINED BEHAVIOUR BELOW.
-            //         WE'RE BYPASSING BORROW CHECKER BECAUSE WE MANUALLY 'KNOW' WE CAN BORROW HERE
-            //         BASED ON LIFETIME OF `field_states` being lower than `field_stats`
-            let field_stats = unsafe { (*field_stats_unsafe.get()).get_mut(&field_name).unwrap() };
-            field_readers.insert(field_name, bit_writer_to_reader(&mut field_stats.writer));
+            let field_states = unsafe { (*field_states_unsafe.get()).get_mut(&field_name) }
+                .ok_or_else(|| GenerateBytesError::FieldNotFound(field_name.clone()))?;
 
-            // Populate the number of bits in the field.
-            // This is ugly, this entire loop is, but it's fairly concise, at least.
+            // Convert field's writer to a reader for reading stored bits
+            field_readers.insert(
+                field_name.clone(),
+                bit_writer_to_reader(&mut field_states.writer),
+            );
+
+            // Set default bits if not specified in schema
             if let GroupComponent::Field(field) = field {
-                field.set_bits(field_stats.lenbits);
+                field.set_bits(field_states.lenbits);
             };
         }
     }
-    field_readers.shrink_to_fit();
 
-    // Run the struct in a loop.
+    // Process struct components in a loop until no more data
     loop {
-        // Note: It is true that we may insert some padding here when other fields are not inserted.
-        //       That is okay. 1 byte is considered within margin of error.
         let mut read_anything = false;
 
         for field in &strct.fields {
             match field {
                 GroupComponent::Array(_) | GroupComponent::Struct(_) => {
-                    panic!("Arrays and Structs inside structs are not supported")
+                    return Err(GenerateBytesError::UnsupportedNestedComponent)
                 }
-                GroupComponent::Padding(_padding) => {
-                    writer.write(_padding.bits as u32, _padding.value).unwrap()
-                } // no-op
+                GroupComponent::Padding(padding) => {
+                    writer
+                        .write(padding.bits as u32, padding.value)
+                        .map_err(|e| GenerateBytesError::WriteError {
+                            source: e,
+                            context: "writing padding bits".into(),
+                        })?;
+                }
                 GroupComponent::Field(field) => {
-                    let reader = field_readers.get_mut(&field.field).unwrap();
-                    let value = reader.read(field.bits);
-                    if value.is_ok() {
-                        writer.write(field.bits, value.unwrap()).unwrap();
-                        read_anything = true;
-                    }
+                    let reader = field_readers
+                        .get_mut(&field.field)
+                        .ok_or_else(|| GenerateBytesError::FieldNotFound(field.field.clone()))?;
 
-                    // If read failed, then we reached end of stream, most likely.
+                    // Attempt read from source field
+                    let read_result = reader.read(field.bits);
+                    match read_result {
+                        Ok(value) => {
+                            // Only write if we successfully read the value
+                            writer.write(field.bits, value).map_err(|e| {
+                                GenerateBytesError::WriteError {
+                                    source: e,
+                                    context: format!(
+                                        "writing {}-bit field '{}'",
+                                        field.bits, field.field
+                                    ),
+                                }
+                            })?;
+                            read_anything = true;
+                        }
+                        Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
+                            // Field is exhausted, continue processing other components
+                        }
+                        Err(e) => {
+                            return Err(GenerateBytesError::ReadError {
+                                source: e,
+                                context: format!(
+                                    "reading {}-bit field '{}'",
+                                    field.bits, field.field
+                                ),
+                            })
+                        }
+                    }
                 }
                 GroupComponent::Skip(skip) => {
-                    let reader = field_readers.get_mut(&skip.field).unwrap();
+                    let reader = field_readers
+                        .get_mut(&skip.field)
+                        .ok_or_else(|| GenerateBytesError::FieldNotFound(skip.field.clone()))?;
+
+                    // Attempt seek operation
                     let seek_result = reader.seek_bits(io::SeekFrom::Current(skip.bits as i64));
-                    if seek_result.is_ok() {
-                        read_anything = true;
+                    match seek_result {
+                        Ok(_) => read_anything = true,
+                        Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
+                            // Field is exhausted, continue processing other components
+                        }
+                        Err(e) => {
+                            return Err(GenerateBytesError::SeekError {
+                                source: e,
+                                operation: format!(
+                                    "skipping {} bits in field '{}'",
+                                    skip.bits, skip.field
+                                ),
+                            })
+                        }
                     }
                 }
             }
         }
 
         if !read_anything {
-            break;
+            return Ok(());
         }
     }
 }
@@ -100,10 +143,12 @@ pub fn write_struct<TWrite: io::Write, TEndian: Endianness>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        compare_groups::test_helpers::{create_mock_field_stats, TEST_FIELD_NAME},
-        schema::{BitOrder, GroupComponentField, GroupComponentPadding, GroupComponentSkip},
-    };
+    use crate::comparison::compare_groups::test_helpers::create_mock_field_states;
+    use crate::comparison::compare_groups::test_helpers::TEST_FIELD_NAME;
+    use crate::schema::BitOrder;
+    use crate::schema::GroupComponentField;
+    use crate::schema::GroupComponentPadding;
+    use crate::schema::GroupComponentSkip;
     use bitstream_io::{BigEndian, BitWriter, LittleEndian};
     use std::io::Cursor;
 
@@ -122,7 +167,7 @@ mod tests {
             0b0010_0001, // 1, 2
             0b1000_0100, // 4, 8
         ];
-        let mut field_stats = create_mock_field_stats(
+        let mut field_states = create_mock_field_states(
             TEST_FIELD_NAME,
             &input_data,
             4,
@@ -133,10 +178,11 @@ mod tests {
 
         let mut writer = BitWriter::endian(Cursor::new(&mut output), LittleEndian);
         write_struct(
-            &mut field_stats,
+            &mut field_states,
             &mut writer,
             &single_field_struct_group_component(0), // inherit from field
-        );
+        )
+        .unwrap();
 
         assert_eq!(input_data, output.as_slice());
     }
@@ -147,7 +193,7 @@ mod tests {
             0b0001_0010, // 1, 2
             0b0100_1000, // 4, 8
         ];
-        let mut field_stats = create_mock_field_stats(
+        let mut field_states = create_mock_field_states(
             TEST_FIELD_NAME,
             &input_data,
             4,
@@ -158,10 +204,11 @@ mod tests {
 
         let mut writer = BitWriter::endian(Cursor::new(&mut output), BigEndian);
         write_struct(
-            &mut field_stats,
+            &mut field_states,
             &mut writer,
             &single_field_struct_group_component(0), // inherit from field
-        );
+        )
+        .unwrap();
 
         assert_eq!(input_data, output.as_slice());
     }
@@ -175,7 +222,7 @@ mod tests {
 
         let expected_output = [0b00_11_00_11];
 
-        let mut field_stats = create_mock_field_stats(
+        let mut field_states = create_mock_field_states(
             TEST_FIELD_NAME,
             &input_data,
             4,
@@ -186,7 +233,7 @@ mod tests {
 
         let mut writer = BitWriter::endian(Cursor::new(&mut output), LittleEndian);
         write_struct(
-            &mut field_stats,
+            &mut field_states,
             &mut writer,
             &GroupComponentStruct {
                 fields: vec![
@@ -200,19 +247,20 @@ mod tests {
                     }),
                 ],
             },
-        );
+        )
+        .unwrap();
 
         assert_eq!(expected_output, output.as_slice());
     }
 
     #[test]
     fn padding_writes_correct_bits_lsb() {
-        let mut field_stats =
-            create_mock_field_stats(TEST_FIELD_NAME, &[], 0, BitOrder::Lsb, BitOrder::Lsb);
+        let mut field_states =
+            create_mock_field_states(TEST_FIELD_NAME, &[], 0, BitOrder::Lsb, BitOrder::Lsb);
         let mut output = Vec::new();
         let mut writer = BitWriter::endian(Cursor::new(&mut output), LittleEndian);
         write_struct(
-            &mut field_stats,
+            &mut field_states,
             &mut writer,
             &GroupComponentStruct {
                 fields: vec![GroupComponent::Padding(GroupComponentPadding {
@@ -220,7 +268,8 @@ mod tests {
                     value: 0b1010,
                 })],
             },
-        );
+        )
+        .unwrap();
         writer.byte_align().unwrap();
         writer.flush().unwrap();
         assert_eq!(output, [0b0000_1010]);
@@ -228,12 +277,12 @@ mod tests {
 
     #[test]
     fn padding_writes_correct_bits_msb() {
-        let mut field_stats =
-            create_mock_field_stats(TEST_FIELD_NAME, &[], 0, BitOrder::Msb, BitOrder::Msb);
+        let mut field_states =
+            create_mock_field_states(TEST_FIELD_NAME, &[], 0, BitOrder::Msb, BitOrder::Msb);
         let mut output = Vec::new();
         let mut writer = BitWriter::endian(Cursor::new(&mut output), BigEndian);
         write_struct(
-            &mut field_stats,
+            &mut field_states,
             &mut writer,
             &GroupComponentStruct {
                 fields: vec![GroupComponent::Padding(GroupComponentPadding {
@@ -241,7 +290,8 @@ mod tests {
                     value: 0b1010,
                 })],
             },
-        );
+        )
+        .unwrap();
         writer.byte_align().unwrap();
         writer.flush().unwrap();
         assert_eq!(output, [0b1010_0000]);

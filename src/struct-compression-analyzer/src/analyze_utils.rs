@@ -1,3 +1,30 @@
+//! Utility functions for analyzing and processing bit-packed data.
+//!
+//! This module provides low-level utilities for:
+//! - Size estimation and compression
+//! - Bit manipulation and ordering
+//! - Bitstream reader/writer creation and management
+//!
+//! # Core Functions
+//!
+//! - [`size_estimate`]: Estimates compressed data size based on LZ matches and entropy
+//! - [`get_zstd_compressed_size`]: Calculates actual compressed size using zstandard
+//! - [`calculate_file_entropy`]: Computes Shannon entropy of input data
+//! - [`reverse_bits`]: Reverses bits in a u64 value
+//!
+//! # Bitstream Utilities
+//!
+//! - [`create_bit_reader`]: Creates a [`BitReaderContainer`] with specified endianness
+//! - [`create_bit_writer`]: Creates a [`BitWriterContainer`] with specified endianness
+//! - [`create_bit_writer_with_owned_data`]: Creates writer containing copied data
+//! - [`get_writer_buffer`]: Retrieves underlying buffer from a writer
+//! - [`bit_writer_to_reader`]: Converts a writer into a reader
+//!
+//! # Types
+//!
+//! - [`BitReaderContainer`]: Wrapper around bit readers supporting both endians
+//! - [`BitWriterContainer`]: Wrapper around bit writers supporting both endians
+
 use crate::schema::BitOrder;
 use bitstream_io::{BigEndian, BitRead, BitReader, BitWrite, BitWriter, LittleEndian};
 use lossless_transform_utils::{
