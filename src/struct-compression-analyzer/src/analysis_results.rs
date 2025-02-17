@@ -217,7 +217,7 @@ pub fn compute_analysis_results(
     // Then calculate per-field entropy and lz matches
     let mut field_metrics: AHashMap<String, FieldMetrics> = AHashMap::new();
 
-    for stats in &mut analyzer.field_stats.values_mut() {
+    for stats in &mut analyzer.field_states.values_mut() {
         let writer_buffer = get_writer_buffer(&mut stats.writer);
         let entropy = calculate_file_entropy(writer_buffer);
         let lz_matches = estimate_num_lz_matches_fast(writer_buffer);
@@ -248,14 +248,14 @@ pub fn compute_analysis_results(
 
     // Process split group comparisons
     let split_comparisons = calc_split_comparisons(
-        &mut analyzer.field_stats,
+        &mut analyzer.field_states,
         &analyzer.schema.analysis.split_groups,
         &field_metrics,
     );
 
     // Process custom group comparisons
     let custom_comparisons =
-        analyze_custom_comparisons(analyzer.schema, &mut analyzer.field_stats)?;
+        analyze_custom_comparisons(analyzer.schema, &mut analyzer.field_states)?;
 
     Ok(AnalysisResults {
         file_entropy,

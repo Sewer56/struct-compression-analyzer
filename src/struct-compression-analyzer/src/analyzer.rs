@@ -12,6 +12,7 @@ use ahash::{AHashMap, HashMapExt};
 use bitstream_io::{BitRead, BitReader, BitWrite, Endianness};
 use rustc_hash::FxHashMap;
 use std::io::{Cursor, SeekFrom};
+use thiserror::Error;
 
 /// Analyzes binary structures against a schema definition
 ///
@@ -26,7 +27,7 @@ pub struct SchemaAnalyzer<'a> {
     pub entries: Vec<u8>,
     /// Intermediate analysis state (field name → statistics)
     /// This supports both 'groups' and fields.
-    pub field_stats: AHashMap<String, AnalyzerFieldState>,
+    pub field_states: AHashMap<String, AnalyzerFieldState>,
 }
 
 /// Intermediate statistics for a single field or group of fields
@@ -60,6 +61,21 @@ pub struct BitStats {
     pub ones: u64,
 }
 
+/// Errors that can occur during schema analysis.
+#[derive(Debug, Error)]
+pub enum AnalysisError {
+    #[error("I/O error in add_entry reader during analysis. This is indicative of a bug in schema parsing or sanitization; and should normally not happen. Details: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error(
+        "Field '{0}' not found in Analyzer. This is indicative of a bug and should not happen."
+    )]
+    FieldNotFound(String),
+
+    #[error("Invalid entry length: expected {expected}, got {found}")]
+    InvalidEntryLength { expected: usize, found: usize },
+}
+
 impl<'a> SchemaAnalyzer<'a> {
     /// Creates a new analyzer bound to a specific schema
     ///
@@ -73,7 +89,7 @@ impl<'a> SchemaAnalyzer<'a> {
         Self {
             schema,
             entries: Vec::new(),
-            field_stats: build_field_stats(&schema.root, "", 0, schema.bit_order),
+            field_states: build_field_stats(&schema.root, "", 0, schema.bit_order),
         }
     }
 
@@ -83,10 +99,19 @@ impl<'a> SchemaAnalyzer<'a> {
     /// * `entry` - Byte slice representing one instance of the schema structure
     ///
     /// # Notes
-    /// - Byte order is assumed to be big-endian
     /// - Partial entries will be handled in future implementations
-    pub fn add_entry(&mut self, entry: &[u8]) {
+    /// - This only reads up to the number of bits specified in the schema.
+    pub fn add_entry(&mut self, entry: &[u8]) -> Result<(), AnalysisError> {
         self.entries.extend_from_slice(entry);
+
+        // Throw error if the entry length is less than the schema.
+        if entry.len() * 8 < self.schema.root.bits as usize {
+            return Err(AnalysisError::InvalidEntryLength {
+                expected: self.schema.root.bits as usize,
+                found: self.entries.len() * 8,
+            });
+        }
+
         let reader = create_bit_reader(entry, self.schema.bit_order);
         match reader {
             BitReaderContainer::Msb(mut bit_reader) => {
@@ -102,49 +127,57 @@ impl<'a> SchemaAnalyzer<'a> {
         &mut self,
         group: &Group,
         reader: &mut BitReader<Cursor<&[u8]>, TEndian>,
-    ) {
+    ) -> Result<(), AnalysisError> {
         // Check self, if the group should be skipped.
         // Note; this code is here because the 'root' of schema is a group.
-        if should_skip(reader, &group.skip_if_not) {
-            return;
+        if should_skip(reader, &group.skip_if_not)? {
+            return Ok(());
         }
 
         for (name, field_def) in &group.fields {
             match field_def {
                 FieldDefinition::Field(field) => {
                     // Check if the child field can be skipped.
-                    if should_skip(reader, &field.skip_if_not) {
+                    if should_skip(reader, &field.skip_if_not)? {
                         continue;
                     }
 
                     let bits_left = field.bits;
-                    let field_stats = self.field_stats.get_mut(name).unwrap(); // exists by definition
+                    let field_stats = self
+                        .field_states
+                        .get_mut(name)
+                        .ok_or_else(|| AnalysisError::FieldNotFound(name.clone()))?;
+
                     process_field_or_group(
                         reader,
                         bits_left,
                         field_stats,
                         field.skip_frequency_analysis,
-                    );
+                    )?;
                 }
                 FieldDefinition::Group(child_group) => {
                     let bits_left = child_group.bits;
-                    let field_stats = self.field_stats.get_mut(name).unwrap(); // exists by definition
+                    let field_stats = self
+                        .field_states
+                        .get_mut(name)
+                        .ok_or_else(|| AnalysisError::FieldNotFound(name.clone()))?;
 
                     // Note (processing field/group)
-                    let current_offset = reader.position_in_bits().unwrap();
+                    let current_offset = reader.position_in_bits()?;
                     process_field_or_group(
                         reader,
                         bits_left,
                         field_stats,
                         child_group.skip_frequency_analysis,
-                    );
-                    reader.seek_bits(SeekFrom::Start(current_offset)).unwrap();
+                    )?;
+                    reader.seek_bits(SeekFrom::Start(current_offset))?;
 
                     // Process nested fields
-                    self.process_group(child_group, reader);
+                    self.process_group(child_group, reader)?;
                 }
             }
         }
+        Ok(())
     }
 
     /// Generates final analysis results
@@ -164,28 +197,23 @@ fn process_field_or_group<TEndian: Endianness>(
     mut bit_count: u32,
     field_stats: &mut AnalyzerFieldState,
     skip_frequency_analysis: bool,
-) {
+) -> Result<(), AnalysisError> {
     let writer = &mut field_stats.writer;
     // We don't support value counting for structs >8 bytes.
     let can_bit_stats = bit_count <= 64;
     let skip_count_values = bit_count > 64 || skip_frequency_analysis;
 
-    // Update statistics
     field_stats.count += 1;
     while bit_count > 0 {
         // Read max possible number of bits at once.
         let max_bits = bit_count.min(64);
-        let bits = reader.read::<u64>(max_bits).unwrap();
+        let bits = reader.read::<u64>(max_bits)?;
 
         // Update the value counts
         if !skip_count_values {
             if field_stats.bit_order == BitOrder::Lsb {
-                // Reverse bits for lsb order
                 let reversed_bits = reverse_bits(max_bits, bits);
-                field_stats.value_counts.insert(
-                    reversed_bits,
-                    field_stats.value_counts.get(&reversed_bits).unwrap_or(&0) + 1,
-                );
+                *field_stats.value_counts.entry(reversed_bits).or_insert(0) += 1;
             } else {
                 *field_stats.value_counts.entry(bits).or_insert(0) += 1;
             }
@@ -193,22 +221,19 @@ fn process_field_or_group<TEndian: Endianness>(
 
         // Write the values to the output
         match writer {
-            BitWriterContainer::Msb(writer) => {
-                writer.write(max_bits, bits).unwrap();
-            }
-            BitWriterContainer::Lsb(writer) => {
-                writer.write(max_bits, bits).unwrap();
-            }
+            BitWriterContainer::Msb(w) => w.write(max_bits, bits)?,
+            BitWriterContainer::Lsb(w) => w.write(max_bits, bits)?,
         }
 
         // Update stats for individual bits.
         if can_bit_stats {
             for i in 0..max_bits {
+                let idx = i as usize;
                 let bit_value = (bits >> (max_bits - 1 - i)) & 1;
                 if bit_value == 0 {
-                    field_stats.bit_counts[i as usize].zeros += 1;
+                    field_stats.bit_counts[idx].zeros += 1;
                 } else {
-                    field_stats.bit_counts[i as usize].ones += 1;
+                    field_stats.bit_counts[idx].ones += 1;
                 }
             }
         }
@@ -218,9 +243,11 @@ fn process_field_or_group<TEndian: Endianness>(
 
     // Flush any remaining bits to ensure all data is written
     match writer {
-        BitWriterContainer::Msb(writer) => writer.flush().unwrap(),
-        BitWriterContainer::Lsb(writer) => writer.flush().unwrap(),
+        BitWriterContainer::Msb(w) => w.flush()?,
+        BitWriterContainer::Lsb(w) => w.flush()?,
     }
+
+    Ok(())
 }
 
 fn build_field_stats<'a>(
@@ -289,36 +316,32 @@ fn build_field_stats<'a>(
 fn should_skip<TEndian: Endianness>(
     reader: &mut BitReader<Cursor<&[u8]>, TEndian>,
     conditions: &[Condition],
-) -> bool {
+) -> Result<bool, AnalysisError> {
     // Fast return, since there usually are no conditions.
     if conditions.is_empty() {
-        return false;
+        return Ok(false);
     }
 
-    let original_pos_bits = reader.position_in_bits().unwrap();
+    let original_pos_bits = reader.position_in_bits()?;
     for condition in conditions {
         let offset = (condition.byte_offset * 8) + condition.bit_offset as u64;
-        let target_pos = original_pos_bits + offset;
-        reader.seek_bits(SeekFrom::Start(target_pos)).unwrap();
-        let mut value = reader.read::<u64>(condition.bits as u32).unwrap();
+        let target_pos = original_pos_bits.wrapping_add(offset);
 
-        // Reverse bits if needed
+        reader.seek_bits(SeekFrom::Start(target_pos))?;
+        let mut value = reader.read::<u64>(condition.bits as u32)?;
+
         if condition.bit_order == BitOrder::Lsb {
             value = reverse_bits(condition.bits as u32, value);
         }
 
         if value != condition.value {
-            reader
-                .seek_bits(SeekFrom::Start(original_pos_bits))
-                .unwrap();
-            return true;
+            reader.seek_bits(SeekFrom::Start(original_pos_bits))?;
+            return Ok(true);
         }
     }
 
-    reader
-        .seek_bits(SeekFrom::Start(original_pos_bits))
-        .unwrap();
-    false
+    reader.seek_bits(SeekFrom::Start(original_pos_bits))?;
+    Ok(false)
 }
 
 fn clamp_bits(bits: usize) -> usize {
@@ -364,14 +387,14 @@ root:
 
         // Should collect stats for all fields and groups
         assert_eq!(
-            analyzer.field_stats.len(),
+            analyzer.field_states.len(),
             3,
             "Should have stats for root group + 2 fields"
         );
     }
 
     #[test]
-    fn test_big_endian_bitorder() {
+    fn test_big_endian_bitorder() -> Result<(), AnalysisError> {
         let yaml = r###"
 version: '1.0'
 root:
@@ -387,14 +410,17 @@ root:
 
         // Add 4 entries (2 bits each) to make exactly 1 byte (8 bits)
         // Values: 0b11, 0b00, 0b10, 0b01 → combined as 0b11001001 (0xC9)
-        analyzer.add_entry(&[0b11000000]); // 0b11 in first 2 bits
-        analyzer.add_entry(&[0b00000000]); // 0b00
-        analyzer.add_entry(&[0b10000000]); // 0b10
-        analyzer.add_entry(&[0b01000000]); // 0b01
+        analyzer.add_entry(&[0b11000000])?; // 0b11 in first 2 bits
+        analyzer.add_entry(&[0b00000000])?; // 0b00
+        analyzer.add_entry(&[0b10000000])?; // 0b10
+        analyzer.add_entry(&[0b01000000])?; // 0b01
 
         // Assert general writing.
         {
-            let flags_field = analyzer.field_stats.get_mut("flags").unwrap();
+            let flags_field = analyzer
+                .field_states
+                .get_mut("flags")
+                .ok_or(AnalysisError::FieldNotFound("flags".to_string()))?;
             assert_eq!(flags_field.count, 4, "Should process 4 entries");
             assert_eq!(
                 flags_field.bit_counts.len(),
@@ -407,8 +433,8 @@ root:
                 BitWriterContainer::Msb(value) => value,
                 _ => panic!("Expected MSB variant"),
             };
-            writer.byte_align().unwrap();
-            writer.flush().unwrap();
+            writer.byte_align()?;
+            writer.flush()?;
             let inner_writer = writer.writer().unwrap();
             let data = inner_writer.get_ref();
             assert_eq!(data[0], 0xC9_u8, "Combined bits should form 0xC9");
@@ -437,13 +463,17 @@ root:
         }
 
         // Add another entry, to specifically test big endian
-        analyzer.add_entry(&[0b01000000]); // 0b01
-        let flags_field = analyzer.field_stats.get_mut("flags").unwrap();
+        analyzer.add_entry(&[0b01000000])?; // 0b01
+        let flags_field = analyzer
+            .field_states
+            .get_mut("flags")
+            .ok_or(AnalysisError::FieldNotFound("flags".to_string()))?;
         let expected_counts = FxHashMap::from_iter([(0b11, 1), (0b00, 1), (0b10, 1), (0b01, 2)]);
         assert_eq!(
             flags_field.value_counts, expected_counts,
             "Value counts should match"
         );
+        Ok(())
     }
 
     #[test]
@@ -463,15 +493,15 @@ root:
 
         // Add 4 entries (2 bits each) to make exactly 1 byte (8 bits)
         // This is a repeat of the logic from the big endian test.
-        analyzer.add_entry(&[0b11000000]); // 0b11 in first 2 bits
-        analyzer.add_entry(&[0b00000000]); // 0b00
-        analyzer.add_entry(&[0b10000000]); // 0b01 (due to endian flip)
-        analyzer.add_entry(&[0b01000000]); // 0b10 (due to endian flip)
+        analyzer.add_entry(&[0b11000000]).unwrap(); // 0b11 in first 2 bits
+        analyzer.add_entry(&[0b00000000]).unwrap(); // 0b00
+        analyzer.add_entry(&[0b10000000]).unwrap(); // 0b01 (due to endian flip)
+        analyzer.add_entry(&[0b01000000]).unwrap(); // 0b10 (due to endian flip)
 
         // Asserts for general writing are in the equivalent big endian test.
         // Add another entry, to specifically test little endian
-        analyzer.add_entry(&[0b10000000]); // 0b01 (due to endian flip)
-        let flags_field = analyzer.field_stats.get_mut("flags").unwrap();
+        analyzer.add_entry(&[0b10000000]).unwrap(); // 0b01 (due to endian flip)
+        let flags_field = analyzer.field_states.get_mut("flags").unwrap();
         let expected_counts = FxHashMap::from_iter([(0b11, 1), (0b00, 1), (0b10, 1), (0b01, 2)]);
         assert_eq!(
             flags_field.value_counts, expected_counts,
@@ -485,7 +515,7 @@ root:
         let analyzer = SchemaAnalyzer::new(&schema);
 
         // Verify field hierarchy and properties
-        let root_group = analyzer.field_stats.get("id").unwrap();
+        let root_group = analyzer.field_states.get("id").unwrap();
         assert_eq!(root_group.name, "id");
         assert_eq!(root_group.full_path, "id");
         assert_eq!(root_group.depth, 0);
@@ -494,7 +524,7 @@ root:
         assert_eq!(root_group.bit_counts.len(), root_group.lenbits as usize);
         assert_eq!(root_group.bit_order, BitOrder::Msb);
 
-        let id_field = analyzer.field_stats.get("nested").unwrap();
+        let id_field = analyzer.field_states.get("nested").unwrap();
         assert_eq!(id_field.full_path, "nested");
         assert_eq!(id_field.name, "nested");
         assert_eq!(id_field.depth, 0);
@@ -503,7 +533,7 @@ root:
         assert_eq!(id_field.bit_counts.len(), id_field.lenbits as usize);
         assert_eq!(id_field.bit_order, BitOrder::Lsb);
 
-        let nested_value = analyzer.field_stats.get("value").unwrap();
+        let nested_value = analyzer.field_states.get("value").unwrap();
         assert_eq!(nested_value.full_path, "nested.value");
         assert_eq!(nested_value.name, "value");
         assert_eq!(nested_value.depth, 1);
@@ -531,16 +561,16 @@ root:
         let mut analyzer = SchemaAnalyzer::new(&schema);
 
         // Should process - matching magic
-        analyzer.add_entry(&[0x55]);
-        assert_eq!(analyzer.field_stats.get("dummy").unwrap().count, 1);
+        analyzer.add_entry(&[0x55]).unwrap();
+        assert_eq!(analyzer.field_states.get("dummy").unwrap().count, 1);
 
         // Should skip - non-matching magic
-        analyzer.add_entry(&[0xAA]);
-        assert_eq!(analyzer.field_stats.get("dummy").unwrap().count, 1);
+        analyzer.add_entry(&[0xAA]).unwrap();
+        assert_eq!(analyzer.field_states.get("dummy").unwrap().count, 1);
 
         // Should process - matching magic
-        analyzer.add_entry(&[0x55]);
-        assert_eq!(analyzer.field_stats.get("dummy").unwrap().count, 2);
+        analyzer.add_entry(&[0x55]).unwrap();
+        assert_eq!(analyzer.field_states.get("dummy").unwrap().count, 2);
     }
 
     #[test]
@@ -563,11 +593,11 @@ root:
         let mut analyzer = SchemaAnalyzer::new(&schema);
 
         // First bit 1 - processes
-        analyzer.add_entry(&[0b10000000]);
-        assert_eq!(analyzer.field_stats.get("header").unwrap().count, 1);
+        analyzer.add_entry(&[0b10000000]).unwrap();
+        assert_eq!(analyzer.field_states.get("header").unwrap().count, 1);
 
         // First bit 0 - skips
-        analyzer.add_entry(&[0b00000000]);
-        assert_eq!(analyzer.field_stats.get("header").unwrap().count, 1);
+        analyzer.add_entry(&[0b00000000]).unwrap();
+        assert_eq!(analyzer.field_states.get("header").unwrap().count, 1);
     }
 }

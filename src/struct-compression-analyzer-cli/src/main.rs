@@ -247,7 +247,7 @@ fn analyze_file(params: &AnalyzeFileParams) -> anyhow::Result<AnalysisResults> {
         let start_offset = length - bytes_left;
         let slice =
             &data[start_offset as usize..start_offset as usize + params.bytes_per_element as usize];
-        analyzer.add_entry(slice);
+        analyzer.add_entry(slice)?;
         bytes_left -= params.bytes_per_element;
     }
 
