@@ -525,7 +525,7 @@ impl AnalysisResults {
         println!("\nPer-field Metrics (in schema order):");
 
         // Iterate through schema-defined fields in order
-        for field_path in schema.ordered_field_paths() {
+        for field_path in schema.ordered_field_and_group_paths() {
             self.detailed_print_field(file_metrics, &field_path);
         }
 
@@ -541,12 +541,12 @@ impl AnalysisResults {
 
         if !skip_misc_stats {
             println!("\nField Value Stats: [as `value: probability %`]");
-            for field_path in schema.ordered_field_paths() {
+            for field_path in schema.ordered_field_and_group_paths() {
                 self.concise_print_field_value_stats(&field_path);
             }
 
             println!("\nField Bit Stats: [as `(zeros/ones) (percentage %)`]");
-            for field_path in schema.ordered_field_paths() {
+            for field_path in schema.ordered_field_and_group_paths() {
                 self.concise_print_field_bit_stats(&field_path);
             }
         }
@@ -609,7 +609,7 @@ impl AnalysisResults {
         );
 
         println!("\nField Metrics:");
-        for field_path in schema.ordered_field_paths() {
+        for field_path in schema.ordered_field_and_group_paths() {
             self.concise_print_field(file_metrics, &field_path);
         }
 
@@ -625,12 +625,12 @@ impl AnalysisResults {
 
         if !skip_misc_stats {
             println!("\nField Value Stats: [as `value: probability %`]");
-            for field_path in schema.ordered_field_paths() {
+            for field_path in schema.ordered_field_and_group_paths() {
                 self.concise_print_field_value_stats(&field_path);
             }
 
             println!("\nField Bit Stats: [as `(zeros/ones) (percentage %)`]");
-            for field_path in schema.ordered_field_paths() {
+            for field_path in schema.ordered_field_and_group_paths() {
                 self.concise_print_field_bit_stats(&field_path);
             }
         }

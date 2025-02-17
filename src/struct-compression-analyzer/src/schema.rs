@@ -87,6 +87,19 @@ use std::path::Path;
 
 use crate::analyzer::AnalyzerFieldState;
 
+/// Represents the complete schema configuration for a bit-packed structure to analyze.
+///
+/// The schema defines the layout and structure of the bit-packed data format.
+/// It includes versioning, metadata, bit order configuration, and the root group definition.
+///
+/// # Examples
+///
+/// ```rust no_run
+/// use struct_compression_analyzer::schema::Schema;
+/// use std::path::Path;
+///
+/// let schema = Schema::load_from_file(Path::new("schema.yaml")).unwrap();
+/// ```
 #[derive(Debug, Deserialize, Default)]
 pub struct Schema {
     /// Schema version. Currently only `1.0` is supported
@@ -111,7 +124,9 @@ pub struct Schema {
     pub root: Group,
 }
 
-/// Contains user-provided metadata about the schema
+/// Metadata about the schema
+///
+/// Contains user-provided information about the schema's purpose and structure.
 #[derive(Clone, Debug, Deserialize, Default)]
 pub struct Metadata {
     /// Name of the schema
@@ -122,7 +137,10 @@ pub struct Metadata {
     pub description: String,
 }
 
-/// Configuration for analysis operations and output grouping
+/// Configuration for analysis operations and output grouping.
+///
+/// Defines how field groups should be compared and analyzed between each other,
+/// to find the most optimal bit layout to use for the data.
 #[derive(Debug, Deserialize, Default)]
 pub struct AnalysisConfig {
     /// Compare structural equivalence between different field groups. Each comparison
@@ -673,6 +691,13 @@ pub enum SchemaError {
 }
 
 impl Schema {
+    /// Creates a new Schema from a YAML string.
+    ///
+    /// # Arguments
+    /// * `content` - YAML string containing the schema definition
+    ///
+    /// # Returns
+    /// * `Result<Self, SchemaError>` - Resulting schema or error
     pub fn from_yaml(content: &str) -> Result<Self, SchemaError> {
         let schema: Schema = serde_yaml::from_str(content)?;
 
@@ -683,14 +708,57 @@ impl Schema {
         Ok(schema)
     }
 
+    /// Loads and parses a schema from a YAML file.
+    ///
+    /// # Arguments
+    /// * `path` - Path to the schema YAML file
+    ///
+    /// # Returns
+    /// * `Result<Self, SchemaError>` - Resulting schema or error
     pub fn load_from_file(path: &Path) -> Result<Self, SchemaError> {
         let content = std::fs::read_to_string(path)?;
         Self::from_yaml(&content)
     }
 
-    /// Returns a list of field paths in schema order
-    /// This includes both fields and groups
-    pub fn ordered_field_paths(&self) -> Vec<String> {
+    /// Collects a list of field (and group) paths in schema order.
+    ///
+    /// # Examples
+    ///
+    /// Given the following schema:
+    ///
+    /// ```yaml
+    /// root:
+    ///   type: group
+    ///   fields:
+    ///     header:
+    ///       type: group
+    ///       fields:
+    ///         mode: 2
+    ///         partition: 4
+    ///     colors:
+    ///       type: group
+    ///       fields:
+    ///         r:
+    ///           type: array
+    ///           field: R
+    ///         g:
+    ///           type: array
+    ///           field: G
+    ///         b:
+    ///           type: array
+    ///           field: B
+    /// ```
+    ///
+    /// The resulting field paths would be:
+    /// - "header"
+    /// - "colors"
+    /// - "colors.r"
+    /// - "colors.g"
+    /// - "colors.b"
+    ///
+    /// # Returns
+    /// * `Vec<String>` - List of field paths in schema order
+    pub fn ordered_field_and_group_paths(&self) -> Vec<String> {
         let mut paths = Vec::new();
         self.root.collect_field_paths(&mut paths, "");
         paths
