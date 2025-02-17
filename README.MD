@@ -1,4 +1,4 @@
-# bit-distribution-analyzer
+# struct-compression-analyzer
 
 [![Crates.io](https://img.shields.io/crates/v/bit-distribution-analyzer.svg)](https://crates.io/crates/bit-distribution-analyzer)
 [![Docs.rs](https://docs.rs/bit-distribution-analyzer/badge.svg)](https://docs.rs/bit-distribution-analyzer)
