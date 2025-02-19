@@ -258,7 +258,8 @@ fn main() -> anyhow::Result<()> {
 }
 ```
 
-For more detailed API documentation, see the [rustdocs](https://docs.rs/struct-compression-analyzer).
+For more detailed API documentation, see the [rustdocs](https://docs.rs/struct-compression-analyzer).  
+Each module has its own documentation, so use the sidebar 😉.
 
 No API stability is guaranteed whatsoever, this is a one-off three-weekend project; and is primarily
 a CLI tool.
