@@ -200,7 +200,8 @@ fn main() -> anyhow::Result<()> {
 
             // Write CSV reports
             if let Some(output_dir) = &dir_cmd.csv_output {
-                csv_writer::write_field_csvs(
+                std::fs::create_dir_all(output_dir)?;
+                csv_writer::write_all_csvs(
                     &individual_results,
                     &merged_results,
                     output_dir,

@@ -2,33 +2,76 @@ use crate::analysis_results::AnalysisResults;
 use csv::Writer;
 use std::path::{Path, PathBuf};
 
-const CSV_HEADERS: &[&str] = &[
-    "name",
-    "full_path",
-    "depth",
-    "entropy",
-    "lz_matches",
-    "lz_matches_pct",
-    "estimated_size",
-    "zstd_size",
-    "original_size",
-    "estimated_size_pct",
-    "zstd_size_pct",
-    "original_size_pct",
-    "zstd_ratio",
-    "lenbits",
-    "unique_values",
-    "bit_order",
-    "file_name",
-];
-
-pub fn write_field_csvs(
+/// Writes all CSVs related to analysis results.
+///
+/// This function orchestrates the writing of multiple CSV files:
+/// - Per-field statistics.
+/// - Group comparison statistics.
+/// - Per-field value statistics.
+/// - Per-field bit statistics.
+///
+/// # Arguments
+///
+/// * `results` - A slice of [`AnalysisResults`], one for each analyzed file.
+/// * `merged_results` -  An [`AnalysisResults`] object representing the merged results of all files.
+/// * `output_dir` - The directory where the CSV files will be written.
+/// * `file_paths` - A slice of [`PathBuf`]s representing the original file paths for each result.
+///
+/// # Returns
+///
+/// * `std::io::Result<()>` -  Ok if successful, otherwise an error.
+pub fn write_all_csvs(
     results: &[AnalysisResults],
     merged_results: &AnalysisResults,
     output_dir: &Path,
     file_paths: &[PathBuf],
 ) -> std::io::Result<()> {
-    std::fs::create_dir_all(output_dir)?;
+    write_field_csvs(results, output_dir, file_paths)?;
+    write_group_comparison_csv(results, output_dir, file_paths)?;
+    write_field_value_stats_csv(merged_results, output_dir)?;
+    write_field_bit_stats_csv(merged_results, output_dir)?;
+    Ok(())
+}
+
+/// Writes individual CSV files for each field, containing statistics across all input files.
+///
+/// Creates one CSV file per field. Each row in a field's CSV represents the
+/// field's metrics from one of the input files.
+///
+/// # Arguments
+///
+/// * `results` - A slice of [`AnalysisResults`], one for each analyzed file.
+/// * `merged_results` - An [`AnalysisResults`] object representing the merged results.
+/// * `output_dir` - The directory where the CSV files will be written.
+/// * `file_paths` - A slice of [`PathBuf`]s representing the original file paths for each result.
+///
+/// # Returns
+///
+/// * `std::io::Result<()>` - Ok if successful, otherwise an error.
+pub fn write_field_csvs(
+    results: &[AnalysisResults],
+    output_dir: &Path,
+    file_paths: &[PathBuf],
+) -> std::io::Result<()> {
+    const CSV_HEADERS: &[&str] = &[
+        "name",
+        "full_path",
+        "depth",
+        "entropy",
+        "lz_matches",
+        "lz_matches_pct",
+        "estimated_size",
+        "zstd_size",
+        "original_size",
+        "estimated_size_pct",
+        "zstd_size_pct",
+        "original_size_pct",
+        "zstd_ratio",
+        "lenbits",
+        "unique_values",
+        "bit_order",
+        "file_name",
+    ];
 
     // Get field paths from first result (all results have same fields)
     let field_paths = results[0].per_field.keys();
@@ -71,8 +114,32 @@ pub fn write_field_csvs(
         wtr.flush()?;
     }
 
+    Ok(())
+}
+
+/// Writes CSV files comparing groups of fields within each file.
+///
+/// This function generates CSV files that compare two groups of fields
+/// (defined in the schema) within each analyzed file.  It reports on
+/// differences in size, LZ77 matches, estimated size, and Zstd compression.
+///
+/// # Arguments
+///
+/// * `results` - A slice of [`AnalysisResults`], one for each analyzed file.
+/// * `merged_results` - An [`AnalysisResults`] object representing the merged results of all files.
+/// * `output_dir` - The directory where the CSV files will be written.
+/// * `file_paths` - A slice of `PathBuf`s representing the original file paths for each result.
+///
+/// # Returns
+///
+/// * `std::io::Result<()>` - Ok if successful, otherwise an error.
+pub fn write_group_comparison_csv(
+    results: &[AnalysisResults],
+    output_dir: &Path,
+    file_paths: &[PathBuf],
+) -> std::io::Result<()> {
     // Add group comparison CSVs
-    let group_headers = &[
+    const GROUP_HEADERS: &[&str] = &[
         "name",
         "file_name",
         "size",
@@ -94,16 +161,11 @@ pub fn write_field_csvs(
         "max comp entropy diff",
     ];
 
-    if results.is_empty() {
-        return Ok(());
-    }
-
-    // It's assumed all results correspond to same data/schema.
     for (comp_idx, comparison) in results[0].split_comparisons.iter().enumerate() {
         let mut wtr = Writer::from_path(
             output_dir.join(sanitize_filename(&comparison.name) + "_comparison.csv"),
         )?;
-        wtr.write_record(group_headers)?;
+        wtr.write_record(GROUP_HEADERS)?;
 
         for (file_idx, result) in results.iter().enumerate() {
             // Get equivalent comparison for this result.
@@ -198,14 +260,23 @@ pub fn write_field_csvs(
         }
     }
 
-    // Write additional stats CSVs
-    write_field_value_stats_csv(merged_results, output_dir)?;
-    write_field_bit_stats_csv(merged_results, output_dir)?;
-
     Ok(())
 }
 
-fn write_field_value_stats_csv(
+/// Writes CSV files containing value statistics for each field.
+///
+/// This function generates a CSV file for each field, listing the unique values
+/// encountered in the merged data, along with their counts and ratios.
+///
+/// # Arguments
+///
+/// * `results` - The merged `AnalysisResults` object.
+/// * `output_dir` - The directory where the CSV files will be written.
+///
+/// # Returns
+///
+/// * `std::io::Result<()>` - Ok if successful, otherwise an error.
+pub fn write_field_value_stats_csv(
     results: &AnalysisResults,
     output_dir: &Path,
 ) -> std::io::Result<()> {
@@ -238,7 +309,24 @@ fn write_field_value_stats_csv(
     Ok(())
 }
 
-fn write_field_bit_stats_csv(results: &AnalysisResults, output_dir: &Path) -> std::io::Result<()> {
+/// Writes CSV files containing bit-level statistics for each field.
+///
+/// This function generates a CSV file for each field, showing the counts of 0s
+/// and 1s at each bit offset within the field, along with the ratio of 0s to
+/// the total number of bits at that offset.
+///
+/// # Arguments
+///
+/// * `results` - The merged `AnalysisResults` object.
+/// * `output_dir` - The directory where the CSV files will be written.
+///
+/// # Returns
+///
+/// * `std::io::Result<()>` - Ok if successful, otherwise an error.
+pub fn write_field_bit_stats_csv(
+    results: &AnalysisResults,
+    output_dir: &Path,
+) -> std::io::Result<()> {
     // Get field paths from first result
     let field_paths = results.per_field.keys();
     for field_path in field_paths {
@@ -265,6 +353,16 @@ fn write_field_bit_stats_csv(results: &AnalysisResults, output_dir: &Path) -> st
     Ok(())
 }
 
+/// Calculates a safe ratio between two numbers, handling division by zero.
+///
+/// # Arguments
+///
+/// * `child` - The numerator.
+/// * `parent` - The denominator.
+///
+/// # Returns
+///
+/// A string representing the ratio, or "0.0" if the denominator is zero.
 fn safe_ratio(child: usize, parent: usize) -> String {
     if parent == 0 {
         "0.0".into()
@@ -273,6 +371,13 @@ fn safe_ratio(child: usize, parent: usize) -> String {
     }
 }
 
+/// Sanitizes a string to be used as a filename by replacing non-alphanumeric characters with underscores.
+/// # Arguments
+///
+/// * `name` - The input string.
+///
+/// # Returns
+/// A sanitized version of the string suitable for use as a filename.
 fn sanitize_filename(name: &str) -> String {
     name.replace(|c: char| !c.is_alphanumeric(), "_")
 }
