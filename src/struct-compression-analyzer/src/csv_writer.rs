@@ -1,5 +1,6 @@
 use crate::analysis_results::AnalysisResults;
 use csv::Writer;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 /// Writes all CSVs related to analysis results.
@@ -26,10 +27,21 @@ pub fn write_all_csvs(
     output_dir: &Path,
     file_paths: &[PathBuf],
 ) -> std::io::Result<()> {
-    write_field_csvs(results, output_dir, file_paths)?;
-    write_group_comparison_csv(results, output_dir, file_paths)?;
-    write_field_value_stats_csv(merged_results, output_dir)?;
-    write_field_bit_stats_csv(merged_results, output_dir)?;
+    // Create subdirectories for each stat type
+    let field_stats_dir = output_dir.join("field_stats");
+    let group_comparison_dir = output_dir.join("group_comparison");
+    let value_stats_dir = output_dir.join("value_stats");
+    let bit_stats_dir = output_dir.join("bit_stats");
+
+    fs::create_dir_all(&field_stats_dir)?;
+    fs::create_dir_all(&group_comparison_dir)?;
+    fs::create_dir_all(&value_stats_dir)?;
+    fs::create_dir_all(&bit_stats_dir)?;
+
+    write_field_csvs(results, &field_stats_dir, file_paths)?;
+    write_group_comparison_csv(results, &group_comparison_dir, file_paths)?;
+    write_field_value_stats_csv(merged_results, &value_stats_dir)?;
+    write_field_bit_stats_csv(merged_results, &bit_stats_dir)?;
     Ok(())
 }
 
@@ -41,7 +53,6 @@ pub fn write_all_csvs(
 /// # Arguments
 ///
 /// * `results` - A slice of [`AnalysisResults`], one for each analyzed file.
-/// * `merged_results` - An [`AnalysisResults`] object representing the merged results.
 /// * `output_dir` - The directory where the CSV files will be written.
 /// * `file_paths` - A slice of [`PathBuf`]s representing the original file paths for each result.
 ///
@@ -126,7 +137,6 @@ pub fn write_field_csvs(
 /// # Arguments
 ///
 /// * `results` - A slice of [`AnalysisResults`], one for each analyzed file.
-/// * `merged_results` - An [`AnalysisResults`] object representing the merged results of all files.
 /// * `output_dir` - The directory where the CSV files will be written.
 /// * `file_paths` - A slice of `PathBuf`s representing the original file paths for each result.
 ///
