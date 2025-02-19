@@ -1,10 +1,9 @@
 use super::{GenerateBytesError, GenerateBytesResult};
-use crate::{
+use crate::utils::{
     analyze_utils::{get_writer_buffer, BitWriterContainer},
-    analyzer::AnalyzerFieldState,
     bitstream_ext::BitReaderExt,
-    schema::GroupComponentArray,
 };
+use crate::{analyzer::AnalyzerFieldState, schema::GroupComponentArray};
 use ahash::AHashMap;
 use bitstream_io::{BigEndian, BitRead, BitReader, BitWrite, BitWriter, Endianness, LittleEndian};
 use std::io::{self, Cursor, SeekFrom};

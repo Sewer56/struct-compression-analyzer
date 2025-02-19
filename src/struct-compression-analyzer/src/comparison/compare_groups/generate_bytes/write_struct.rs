@@ -1,8 +1,8 @@
 use super::{GenerateBytesError, GenerateBytesResult};
 use crate::{
-    analyze_utils::{bit_writer_to_reader, BitReaderContainer},
     analyzer::AnalyzerFieldState,
     schema::{GroupComponent, GroupComponentStruct},
+    utils::analyze_utils::{bit_writer_to_reader, BitReaderContainer},
 };
 use ahash::AHashMap;
 use bitstream_io::{BitWrite, BitWriter, Endianness};

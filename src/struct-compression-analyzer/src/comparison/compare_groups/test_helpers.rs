@@ -1,6 +1,6 @@
 use crate::{
-    analyze_utils::create_bit_writer_with_owned_data, analyzer::AnalyzerFieldState,
-    schema::BitOrder,
+    analyzer::AnalyzerFieldState, schema::BitOrder,
+    utils::analyze_utils::create_bit_writer_with_owned_data,
 };
 use ahash::{AHashMap, HashMapExt};
 use rustc_hash::FxHashMap;

@@ -53,10 +53,10 @@
 
 use super::schema::{Group, Schema};
 use crate::analysis_results::ComputeAnalysisResultsError;
-use crate::analyze_utils::{
+use crate::utils::analyze_utils::{
     create_bit_reader, create_bit_writer, reverse_bits, BitReaderContainer, BitWriterContainer,
 };
-use crate::constants::CHILD_MARKER;
+use crate::utils::constants::CHILD_MARKER;
 use crate::{
     analysis_results::{compute_analysis_results, AnalysisResults},
     schema::{BitOrder, Condition, FieldDefinition},

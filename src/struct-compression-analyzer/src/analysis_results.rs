@@ -92,10 +92,6 @@
 //! [`CSV`]: crate::csv
 //! [`Plot`]: crate::plot
 
-use crate::analyze_utils::calculate_file_entropy;
-use crate::analyze_utils::get_writer_buffer;
-use crate::analyze_utils::get_zstd_compressed_size;
-use crate::analyze_utils::size_estimate;
 use crate::analyzer::AnalyzerFieldState;
 use crate::analyzer::BitStats;
 use crate::analyzer::SchemaAnalyzer;
@@ -105,11 +101,15 @@ use crate::comparison::compare_groups::GroupComparisonResult;
 use crate::comparison::split_comparison::make_split_comparison_result;
 use crate::comparison::split_comparison::FieldComparisonMetrics;
 use crate::comparison::split_comparison::SplitComparisonResult;
-use crate::constants::CHILD_MARKER;
 use crate::schema::BitOrder;
 use crate::schema::Metadata;
 use crate::schema::Schema;
 use crate::schema::SplitComparison;
+use crate::utils::analyze_utils::calculate_file_entropy;
+use crate::utils::analyze_utils::get_writer_buffer;
+use crate::utils::analyze_utils::get_zstd_compressed_size;
+use crate::utils::analyze_utils::size_estimate;
+use crate::utils::constants::CHILD_MARKER;
 use ahash::{AHashMap, HashMapExt};
 use derive_more::derive::FromStr;
 use lossless_transform_utils::match_estimator::estimate_num_lz_matches_fast;

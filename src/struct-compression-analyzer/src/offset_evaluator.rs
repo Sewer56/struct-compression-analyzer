@@ -63,8 +63,8 @@
 //! ```
 
 use crate::{
-    analyze_utils::reverse_bits,
     schema::{BitOrder, Condition, ConditionalOffset},
+    utils::analyze_utils::reverse_bits,
 };
 use bitstream_io::{BigEndian, BitRead, BitReader};
 use std::{

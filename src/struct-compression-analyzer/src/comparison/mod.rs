@@ -30,7 +30,9 @@
 //! [`GroupComparisonMetrics`]: GroupComparisonMetrics
 //! [`GroupDifference`]: GroupDifference
 
-use crate::analyze_utils::{calculate_file_entropy, get_zstd_compressed_size, size_estimate};
+use crate::utils::analyze_utils::{
+    calculate_file_entropy, get_zstd_compressed_size, size_estimate,
+};
 use lossless_transform_utils::match_estimator::estimate_num_lz_matches_fast;
 
 pub mod compare_groups;

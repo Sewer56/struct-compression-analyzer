@@ -36,7 +36,7 @@
 use super::{GroupComparisonMetrics, GroupDifference};
 use crate::{
     analysis_results::FieldMetrics,
-    analyze_utils::{calculate_file_entropy, get_zstd_compressed_size, size_estimate},
+    utils::analyze_utils::{calculate_file_entropy, get_zstd_compressed_size, size_estimate},
 };
 use lossless_transform_utils::match_estimator::estimate_num_lz_matches_fast;
 
