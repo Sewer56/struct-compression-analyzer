@@ -1,4 +1,5 @@
 use argh::FromArgs;
+use mimalloc::MiMalloc;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::{
     fs::File,
@@ -14,6 +15,9 @@ use struct_compression_analyzer::{
     schema::Schema,
 };
 use walkdir::WalkDir;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 #[derive(Debug, FromArgs)]
 /// CLI for analyzing struct compression

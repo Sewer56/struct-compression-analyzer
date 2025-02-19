@@ -66,6 +66,7 @@ root:
     indices:
       type: group
       description: 2-bit indices for each texel (4x4 block = 16 texels)
+      skip_frequency_analysis: true
       fields:
         index0: 2
         index1: 2

@@ -268,16 +268,45 @@ a CLI tool.
 
 The program uses a lot of memory.  
 
-***Expect around 3.2-4x the size of the input data***; exact memory usage depends on complexity of the schema.
+### Expected Usage
 
-Memory usage is largely correlated on the amount of nested fields/groups, and whether you're doing
-frequency analysis for a field or not. Setting `skip_frequency_analysis` to `true` in the schema
-might help alleviate memory usage problems if that is a bottleneck.
+***Expect up to ~2.5x the size of the input data in RAM usage for a 'typical' schema***.
+
+Exact memory usage depends on complexity of the schema.
+To improve memory usage and perf, I've replaced the standard memory allocator with [mi-malloc]; 
+not something you do often, but it was useful here.
+
+Peak memory usage is primarily correlated with:
+
+#### The amount of nested fields/groups
+
+This affects peak memory usage/spikes.
+
+When you have a field `colours` with components `r`, `g`, `b`,
+then you'll be storing the amount of data used by `colours` twice over, once for the
+whole struct, and once for each component.
+
+This is true all the way down, recursively.
+More nesting means more memory usage.
+
+#### Frequency Analysis on Fields
+
+This is the main contributor to memory usage.
+
+For performance and RAM reasons, the the max size of field for frequency analysis 
+is capped at 16 bits. You may increase this via settings, if you want to analyze larger fields,
+at expense of potentially *a lot* of memory.
+
+If you extend to 32-bits for example, expect ~4x the memory usage of input data in terms of RAM.
+
+If you want to analyze bigger fields, but want to avoid certain ones,
+you can set `skip_frequency_analysis` to `true` on a field in schema to always skip that field.
+
+### Running on Large Datasets on Linux
 
 If you are running on Linux, you might want to:
 
 ```bash
-# on Linux
 sudo sysctl vm.overcommit_memory=1
 ```
 
@@ -305,3 +334,4 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for det
 [schemas directory]: https://github.com/Sewer56/struct-compression-analyzer/tree/main/schemas
 [dxt1-block.yaml]: https://github.com/Sewer56/struct-compression-analyzer/tree/main/schemas/dxt1-block.yaml
 [Texture Compression in Nx2.0]: https://sewer56.dev/blog/category/texture-compression-in-nx20.html
+[mi-malloc]: https://github.com/microsoft/mimalloc

@@ -254,7 +254,7 @@ fn process_field_or_group<TEndian: Endianness>(
     let writer = &mut field_stats.writer;
     // We don't support value counting for structs >8 bytes.
     let can_bit_stats = bit_count <= 64;
-    let skip_count_values = bit_count > 64 || skip_frequency_analysis;
+    let skip_count_values = bit_count > 16 || skip_frequency_analysis;
 
     field_stats.count += 1;
     while bit_count > 0 {
