@@ -29,17 +29,17 @@ pub fn write_all_csvs(
 ) -> std::io::Result<()> {
     // Create subdirectories for each stat type
     let field_stats_dir = output_dir.join("field_stats");
-    let group_comparison_dir = output_dir.join("group_comparison");
+    let split_comparison_dir = output_dir.join("split_comparison");
     let value_stats_dir = output_dir.join("value_stats");
     let bit_stats_dir = output_dir.join("bit_stats");
 
     fs::create_dir_all(&field_stats_dir)?;
-    fs::create_dir_all(&group_comparison_dir)?;
+    fs::create_dir_all(&split_comparison_dir)?;
     fs::create_dir_all(&value_stats_dir)?;
     fs::create_dir_all(&bit_stats_dir)?;
 
     write_field_csvs(results, &field_stats_dir, file_paths)?;
-    write_group_comparison_csv(results, &group_comparison_dir, file_paths)?;
+    write_split_comparison_csv(results, &split_comparison_dir, file_paths)?;
     write_field_value_stats_csv(merged_results, &value_stats_dir)?;
     write_field_bit_stats_csv(merged_results, &bit_stats_dir)?;
     Ok(())
@@ -143,7 +143,7 @@ pub fn write_field_csvs(
 /// # Returns
 ///
 /// * `std::io::Result<()>` - Ok if successful, otherwise an error.
-pub fn write_group_comparison_csv(
+pub fn write_split_comparison_csv(
     results: &[AnalysisResults],
     output_dir: &Path,
     file_paths: &[PathBuf],
