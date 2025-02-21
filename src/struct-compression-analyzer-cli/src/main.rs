@@ -91,9 +91,9 @@ struct DirectoryCommand {
     #[argh(switch, short = 'a')]
     all_files: bool,
 
-    /// output directory for CSV reports
+    /// output directory for CSV and plot reports
     #[argh(option)]
-    csv_output: Option<PathBuf>,
+    output: Option<PathBuf>,
 
     /// show extra stats
     #[argh(switch, long = "show-extra-stats")]
@@ -203,7 +203,7 @@ fn main() -> anyhow::Result<()> {
             }
 
             // Write CSV reports
-            if let Some(output_dir) = &dir_cmd.csv_output {
+            if let Some(output_dir) = &dir_cmd.output {
                 std::fs::create_dir_all(output_dir)?;
                 csv::write_all_csvs(&individual_results, &merged_results, output_dir, &files)?;
                 println!("Generated field CSV reports in: {}", output_dir.display());

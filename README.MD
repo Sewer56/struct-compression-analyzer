@@ -71,12 +71,12 @@ This should give you access to `cargo` in your terminal.
    struct-compression-analyzer-cli analyze-directory --schema schemas/dxt1-block.yaml path/to/files/
    ```
 
-5. **Generate CSV reports**:
+5. **Generate reports**:
 
-   Use the `--csv-output` flag to generate CSV reports:
+   Use the `--output` flag to generate reports (CSV, Plot):
 
    ```bash
-   struct-compression-analyzer-cli analyze-directory --schema schemas/dxt1-block.yaml path/to/files/ --csv-output reports/
+   struct-compression-analyzer-cli analyze-directory --schema schemas/dxt1-block.yaml path/to/files/ --output reports/
    ```
 
 If you want to build from source, replace `struct-compression-analyzer-cli` with `cargo run --release --`.
