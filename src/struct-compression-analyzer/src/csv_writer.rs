@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 ///
 /// This function orchestrates the writing of multiple CSV files:
 /// - Per-field statistics.
-/// - Group comparison statistics.
+/// - Split comparison statistics.
+/// - Custom comparison statistics.
 /// - Per-field value statistics.
 /// - Per-field bit statistics.
 ///
@@ -30,16 +31,19 @@ pub fn write_all_csvs(
     // Create subdirectories for each stat type
     let field_stats_dir = output_dir.join("field_stats");
     let split_comparison_dir = output_dir.join("split_comparison");
+    let custom_comparison_dir = output_dir.join("custom_comparison");
     let value_stats_dir = output_dir.join("value_stats");
     let bit_stats_dir = output_dir.join("bit_stats");
 
     fs::create_dir_all(&field_stats_dir)?;
     fs::create_dir_all(&split_comparison_dir)?;
+    fs::create_dir_all(&custom_comparison_dir)?;
     fs::create_dir_all(&value_stats_dir)?;
     fs::create_dir_all(&bit_stats_dir)?;
 
     write_field_csvs(results, &field_stats_dir, file_paths)?;
     write_split_comparison_csv(results, &split_comparison_dir, file_paths)?;
+    write_custom_comparison_csv(results, &custom_comparison_dir, file_paths)?;
     write_field_value_stats_csv(merged_results, &value_stats_dir)?;
     write_field_bit_stats_csv(merged_results, &bit_stats_dir)?;
     Ok(())
@@ -128,7 +132,7 @@ pub fn write_field_csvs(
     Ok(())
 }
 
-/// Writes CSV files comparing groups of fields within each file.
+/// Writes CSV files comparing groups of fields within each file, for split comparisons.
 ///
 /// This function generates CSV files that compare two groups of fields
 /// (defined in the schema) within each analyzed file.  It reports on
@@ -268,6 +272,99 @@ pub fn write_split_comparison_csv(
 
             wtr.flush()?;
         }
+    }
+
+    Ok(())
+}
+
+/// Writes CSV files comparing groups of fields within each file, for custom comparisons.
+///
+/// This function is analogous to `write_split_comparison_csv`, but handles
+/// `custom_comparisons` instead.  It includes multiple comparison groups.
+///
+/// # Arguments
+///
+/// * `results` - A slice of [`AnalysisResults`], one for each analyzed file.
+/// * `output_dir` - The directory where the CSV files will be written.
+/// * `file_paths` - A slice of `PathBuf`s representing the original file paths for each result.
+///
+/// # Returns
+///
+/// * `std::io::Result<()>` - Ok if successful, otherwise an error.
+pub fn write_custom_comparison_csv(
+    results: &[AnalysisResults],
+    output_dir: &Path,
+    file_paths: &[PathBuf],
+) -> std::io::Result<()> {
+    for (comp_idx, comparison) in results[0].custom_comparisons.iter().enumerate() {
+        let mut wtr = Writer::from_path(
+            output_dir.join(sanitize_filename(&comparison.name) + "_comparison.csv"),
+        )?;
+
+        // Dynamically build headers based on the number of comparison groups
+        let mut headers = vec![
+            "name".to_string(),
+            "file_name".to_string(),
+            "base_size".to_string(),
+            "base_lz".to_string(),
+            "base_est".to_string(),
+            "base_zstd".to_string(),
+        ];
+        for group_name in &comparison.group_names {
+            headers.extend(vec![
+                format!("{}_lz", group_name),
+                format!("{}_est", group_name),
+                format!("{}_zstd", group_name),
+                format!("{}_ratio_est", group_name),
+                format!("{}_ratio_zstd", group_name),
+                format!("{}_diff_est", group_name),
+                format!("{}_diff_zstd", group_name),
+            ]);
+        }
+
+        wtr.write_record(&headers)?;
+
+        for (file_idx, result) in results.iter().enumerate() {
+            // Get equivalent comparison for this result.
+            let comparison = &result.custom_comparisons[comp_idx];
+
+            // Write reference, baseline metrics.
+            let mut record = vec![
+                comparison.name.clone(),
+                file_paths[file_idx]
+                    .file_name()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap(),
+                comparison.baseline_metrics.original_size.to_string(),
+                comparison.baseline_metrics.lz_matches.to_string(),
+                comparison.baseline_metrics.estimated_size.to_string(),
+                comparison.baseline_metrics.zstd_size.to_string(),
+            ];
+
+            // Write the metrics for the comparison groups.
+            for (group_metrics, difference) in
+                comparison.group_metrics.iter().zip(&comparison.differences)
+            {
+                record.extend([
+                    group_metrics.lz_matches.to_string(),
+                    group_metrics.estimated_size.to_string(),
+                    group_metrics.zstd_size.to_string(),
+                    safe_ratio(
+                        group_metrics.estimated_size as usize,
+                        comparison.baseline_metrics.estimated_size as usize,
+                    ),
+                    safe_ratio(
+                        group_metrics.zstd_size as usize,
+                        comparison.baseline_metrics.zstd_size as usize,
+                    ),
+                    difference.estimated_size.to_string(),
+                    difference.zstd_size.to_string(),
+                ]);
+            }
+
+            wtr.write_record(&record)?;
+        }
+        wtr.flush()?;
     }
 
     Ok(())
