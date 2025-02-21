@@ -10,7 +10,7 @@ use std::{
 use struct_compression_analyzer::{
     analysis_results::{AnalysisResults, PrintFormat},
     analyzer::SchemaAnalyzer,
-    csv_writer,
+    csv,
     offset_evaluator::try_evaluate_file_offset,
     schema::Schema,
 };
@@ -205,12 +205,7 @@ fn main() -> anyhow::Result<()> {
             // Write CSV reports
             if let Some(output_dir) = &dir_cmd.csv_output {
                 std::fs::create_dir_all(output_dir)?;
-                csv_writer::write_all_csvs(
-                    &individual_results,
-                    &merged_results,
-                    output_dir,
-                    &files,
-                )?;
+                csv::write_all_csvs(&individual_results, &merged_results, output_dir, &files)?;
                 println!("Generated field CSV reports in: {}", output_dir.display());
             }
         }
