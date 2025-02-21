@@ -306,20 +306,44 @@ pub fn write_custom_comparison_csv(
             "name".to_string(),
             "file_name".to_string(),
             "base_size".to_string(),
-            "base_lz".to_string(),
-            "base_est".to_string(),
-            "base_zstd".to_string(),
         ];
+
+        // LZ stats
+        headers.push("base_lz".to_string());
         for group_name in &comparison.group_names {
-            headers.extend(vec![
-                format!("{}_lz", group_name),
-                format!("{}_est", group_name),
-                format!("{}_zstd", group_name),
-                format!("{}_ratio_est", group_name),
-                format!("{}_ratio_zstd", group_name),
-                format!("{}_diff_est", group_name),
-                format!("{}_diff_zstd", group_name),
-            ]);
+            headers.push(format!("{}_lz", group_name));
+        }
+
+        // Estimated Size stats
+        headers.push("base_est".to_string());
+        for group_name in &comparison.group_names {
+            headers.push(format!("{}_est", group_name));
+        }
+
+        // Estimated Ratio stats
+        for group_name in &comparison.group_names {
+            headers.push(format!("{}_ratio_est", group_name));
+        }
+
+        // Estimated Diff stats
+        for group_name in &comparison.group_names {
+            headers.push(format!("{}_diff_est", group_name));
+        }
+
+        // Zstd Size stats
+        headers.push("base_zstd".to_string());
+        for group_name in &comparison.group_names {
+            headers.push(format!("{}_zstd", group_name));
+        }
+
+        // Zstd Ratio stats
+        for group_name in &comparison.group_names {
+            headers.push(format!("{}_ratio_zstd", group_name));
+        }
+
+        // Zstd Diff stats
+        for group_name in &comparison.group_names {
+            headers.push(format!("{}_diff_zstd", group_name));
         }
 
         wtr.write_record(&headers)?;
@@ -336,30 +360,50 @@ pub fn write_custom_comparison_csv(
                     .map(|s| s.to_string_lossy().into_owned())
                     .unwrap(),
                 comparison.baseline_metrics.original_size.to_string(),
-                comparison.baseline_metrics.lz_matches.to_string(),
-                comparison.baseline_metrics.estimated_size.to_string(),
-                comparison.baseline_metrics.zstd_size.to_string(),
             ];
 
-            // Write the metrics for the comparison groups.
-            for (group_metrics, difference) in
-                comparison.group_metrics.iter().zip(&comparison.differences)
-            {
-                record.extend([
-                    group_metrics.lz_matches.to_string(),
-                    group_metrics.estimated_size.to_string(),
-                    group_metrics.zstd_size.to_string(),
-                    safe_ratio(
-                        group_metrics.estimated_size as usize,
-                        comparison.baseline_metrics.estimated_size as usize,
-                    ),
-                    safe_ratio(
-                        group_metrics.zstd_size as usize,
-                        comparison.baseline_metrics.zstd_size as usize,
-                    ),
-                    difference.estimated_size.to_string(),
-                    difference.zstd_size.to_string(),
-                ]);
+            // Write LZ values
+            record.push(comparison.baseline_metrics.lz_matches.to_string());
+            for group_metrics in comparison.group_metrics.iter() {
+                record.push(group_metrics.lz_matches.to_string());
+            }
+
+            // Write Estimated Size values
+            record.push(comparison.baseline_metrics.estimated_size.to_string());
+            for group_metrics in comparison.group_metrics.iter() {
+                record.push(group_metrics.estimated_size.to_string());
+            }
+
+            // Write Estimated Ratio values
+            for group_metrics in comparison.group_metrics.iter() {
+                record.push(safe_ratio(
+                    group_metrics.estimated_size as usize,
+                    comparison.baseline_metrics.estimated_size as usize,
+                ));
+            }
+
+            // Write Estimated Diff values
+            for difference in &comparison.differences {
+                record.push(difference.estimated_size.to_string());
+            }
+
+            // Write Zstd Size values
+            record.push(comparison.baseline_metrics.zstd_size.to_string());
+            for group_metrics in comparison.group_metrics.iter() {
+                record.push(group_metrics.zstd_size.to_string());
+            }
+
+            // Write Zstd Ratio values
+            for group_metrics in comparison.group_metrics.iter() {
+                record.push(safe_ratio(
+                    group_metrics.zstd_size as usize,
+                    comparison.baseline_metrics.zstd_size as usize,
+                ));
+            }
+
+            // Write Zstd Diff values
+            for difference in &comparison.differences {
+                record.extend([difference.zstd_size.to_string()]);
             }
 
             wtr.write_record(&record)?;
