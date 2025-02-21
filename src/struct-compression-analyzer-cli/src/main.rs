@@ -12,6 +12,7 @@ use struct_compression_analyzer::{
     analyzer::SchemaAnalyzer,
     csv,
     offset_evaluator::try_evaluate_file_offset,
+    plot::generate_split_comparison_zstd_ratio_plot,
     schema::Schema,
 };
 use walkdir::WalkDir;
@@ -206,6 +207,7 @@ fn main() -> anyhow::Result<()> {
             if let Some(output_dir) = &dir_cmd.output {
                 std::fs::create_dir_all(output_dir)?;
                 csv::write_all_csvs(&individual_results, &merged_results, output_dir, &files)?;
+                generate_split_comparison_zstd_ratio_plot(&individual_results, output_dir)?;
                 println!("Generated field CSV reports in: {}", output_dir.display());
             }
         }

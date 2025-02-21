@@ -107,14 +107,14 @@ pub fn write_field_csvs(
                     field.depth.to_string(),
                     field.entropy.to_string(),
                     field.lz_matches.to_string(),
-                    safe_ratio(field.lz_matches, parent_stats.lz_matches),
+                    calc_ratio(field.lz_matches, parent_stats.lz_matches),
                     field.estimated_size.to_string(),
                     field.zstd_size.to_string(),
                     field.original_size.to_string(),
-                    safe_ratio(field.estimated_size, parent_stats.estimated_size),
-                    safe_ratio(field.zstd_size, parent_stats.zstd_size),
-                    safe_ratio(field.original_size, parent_stats.original_size),
-                    safe_ratio(field.zstd_size, field.original_size),
+                    calc_ratio(field.estimated_size, parent_stats.estimated_size),
+                    calc_ratio(field.zstd_size, parent_stats.zstd_size),
+                    calc_ratio(field.original_size, parent_stats.original_size),
+                    calc_ratio(field.zstd_size, field.original_size),
                     field.lenbits.to_string(),
                     field.value_counts.len().to_string(),
                     format!("{:?}", field.bit_order),
@@ -252,11 +252,11 @@ pub fn write_split_comparison_csv(
                 comparison.group1_metrics.zstd_size.to_string(), // base zstd
                 comparison.group2_metrics.estimated_size.to_string(), // comp est
                 comparison.group2_metrics.zstd_size.to_string(), // comp zstd
-                safe_ratio(
+                calc_ratio(
                     comparison.group2_metrics.estimated_size as usize,
                     comparison.group1_metrics.estimated_size as usize,
                 ), // ratio est
-                safe_ratio(
+                calc_ratio(
                     comparison.group2_metrics.zstd_size as usize,
                     comparison.group1_metrics.zstd_size as usize,
                 ), // ratio zstd
@@ -376,7 +376,7 @@ pub fn write_custom_comparison_csv(
 
             // Write Estimated Ratio values
             for group_metrics in comparison.group_metrics.iter() {
-                record.push(safe_ratio(
+                record.push(calc_ratio(
                     group_metrics.estimated_size as usize,
                     comparison.baseline_metrics.estimated_size as usize,
                 ));
@@ -395,7 +395,7 @@ pub fn write_custom_comparison_csv(
 
             // Write Zstd Ratio values
             for group_metrics in comparison.group_metrics.iter() {
-                record.push(safe_ratio(
+                record.push(calc_ratio(
                     group_metrics.zstd_size as usize,
                     comparison.baseline_metrics.zstd_size as usize,
                 ));
@@ -451,7 +451,7 @@ pub fn write_field_value_stats_csv(
                 wtr.write_record(&[
                     value.to_string(),
                     count.to_string(),
-                    safe_ratio(*count as usize, total_values),
+                    calc_ratio(*count as usize, total_values),
                 ])?;
             }
         }
@@ -492,7 +492,7 @@ pub fn write_field_bit_stats_csv(
                     i.to_string(),
                     stats.zeros.to_string(),
                     stats.ones.to_string(),
-                    safe_ratio(
+                    calc_ratio(
                         stats.zeros as usize,
                         stats.zeros as usize + stats.ones as usize,
                     ),
@@ -504,17 +504,17 @@ pub fn write_field_bit_stats_csv(
     Ok(())
 }
 
-/// Calculates a safe ratio between two numbers, handling division by zero.
+/// Calculates a ratio between two numbers, handling division by zero.
 ///
 /// # Arguments
 ///
-/// * `child` - The numerator.
-/// * `parent` - The denominator.
+/// * `child` - The numerator. (comparison)
+/// * `parent` - The denominator. (base)
 ///
 /// # Returns
 ///
 /// A string representing the ratio, or "0.0" if the denominator is zero.
-fn safe_ratio(child: usize, parent: usize) -> String {
+pub fn calc_ratio(child: usize, parent: usize) -> String {
     if parent == 0 {
         "0.0".into()
     } else {
