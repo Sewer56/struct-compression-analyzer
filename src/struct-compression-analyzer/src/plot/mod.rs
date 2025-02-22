@@ -32,7 +32,6 @@ pub enum PlotError<'a> {
 ///
 /// * `results` - A slice of [`AnalysisResults`], one for each analyzed file.
 /// * `output_dir` - The directory where the plot file will be written.
-/// * `files` - A slice of [`PathBuf`]s representing the original file paths for each result.
 ///
 /// # Returns
 ///
