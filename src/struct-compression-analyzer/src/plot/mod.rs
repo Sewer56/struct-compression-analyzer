@@ -52,7 +52,7 @@ pub fn generate_split_comparison_zstd_ratio_plot<'a>(
     // Add labels (file indices).
     draw_ratio_grid(results.len(), &mut chart)?;
 
-    // Draw the lines
+    // Draw zstd ratio
     let line_style = ShapeStyle::from(BLUE).stroke_width(5);
     let coord_style = ShapeStyle::from(BLACK).filled();
     for comp_idx in 0..results[0].split_comparisons.len() {
@@ -71,6 +71,34 @@ pub fn generate_split_comparison_zstd_ratio_plot<'a>(
                 PathElement::new(
                     vec![(x, y), (x + 20, y)],
                     ShapeStyle::from(&BLUE).stroke_width(5),
+                )
+            });
+        chart.draw_series(PointSeries::<_, _, Circle<_, _>, _>::new(
+            data_points,
+            7.5,
+            coord_style,
+        ))?;
+    }
+
+    // Draw lz ratio
+    let line_style = ShapeStyle::from(RED).stroke_width(5);
+    let coord_style = ShapeStyle::from(BLACK).filled();
+    for comp_idx in 0..results[0].split_comparisons.len() {
+        let mut data_points: Vec<(f64, f64)> = Vec::new();
+        for (file_idx, result) in results.iter().enumerate() {
+            let comparison_result = &result.split_comparisons[comp_idx];
+            let base_lz = comparison_result.group1_metrics.lz_matches;
+            let compare_lz = comparison_result.group2_metrics.lz_matches;
+            data_points.push((file_idx as f64, 1.0 / calc_ratio_f64(compare_lz, base_lz)));
+        }
+
+        chart
+            .draw_series(LineSeries::new(data_points.clone(), line_style))?
+            .label("1 / lz_matches")
+            .legend(|(x, y)| {
+                PathElement::new(
+                    vec![(x, y), (x + 20, y)],
+                    ShapeStyle::from(&RED).stroke_width(5),
                 )
             });
         chart.draw_series(PointSeries::<_, _, Circle<_, _>, _>::new(
