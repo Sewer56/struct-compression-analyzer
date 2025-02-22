@@ -7,7 +7,40 @@ use crate::{
     analysis_results::AnalysisResults, comparison::split_comparison::SplitComparisonResult,
 };
 use plotters::prelude::*;
-use std::path::Path;
+use std::{fs, path::Path};
+
+/// Generates all plots for the analysis results.
+///
+/// This function acts as a wrapper to generate multiple plots,
+/// including the split comparison plot.
+///
+/// # Arguments
+///
+/// * `results` - A slice of [`AnalysisResults`], one for each analyzed file.
+/// * `output_dir` - The directory where the plot files will be written.
+///
+/// # Returns
+///
+/// * `Result<(), Box<dyn std::error::Error>>` - Ok if successful, otherwise a boxed [`std::error::Error`].
+pub fn generate_plots(
+    results: &[AnalysisResults],
+    output_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let split_comparisons_dir = output_dir.join("split_comparison_plots");
+    fs::create_dir_all(&split_comparisons_dir)?;
+
+    // Generate split comparison plot
+    for (x, comparison) in results[0].split_comparisons.iter().enumerate() {
+        let output_path = split_comparisons_dir.join(format!("{}.png", comparison.name));
+        generate_ratio_split_comparison_plot(results, x, &output_path, false)?;
+
+        let output_path = split_comparisons_dir.join(format!("{}_extra.png", comparison.name));
+        generate_ratio_split_comparison_plot(results, x, &output_path, true)?;
+    }
+
+    // Add calls to other plot generation functions here in the future
+    Ok(())
+}
 
 /// Struct to hold data and styling for a single plot line.
 struct PlotData<'a> {
@@ -16,23 +49,23 @@ struct PlotData<'a> {
     data_points: Vec<(f64, f64)>,
 }
 
-/// Generates a line plot for the "ratio_zstd" column from split comparisons.
-///
-/// This function creates a PNG file in the specified output directory,
-/// visualizing the "ratio_zstd" values for each split comparison across
-/// all analyzed files as a line graph.
+/// Generates a line plot for the various columns from split comparisons.
 ///
 /// # Arguments
 ///
 /// * `results` - A slice of [`AnalysisResults`], one for each analyzed file.
-/// * `output_dir` - The directory where the plot file will be written.
+/// * `comparison_index` - The index of the split comparison to plot in the `split_comparisons` array.
+/// * `output_path` - The path where the plot file will be written.
+/// * `include_misc_columns` - Whether to include extra columns (entropy ratio).
 ///
 /// # Returns
 ///
-/// * `Result<(), Box<dyn std::error::Error>>` - Ok if successful, otherwise a boxed `std::error::Error`.
-pub fn generate_split_comparison_plot(
+/// * `Result<(), Box<dyn std::error::Error>>` - Ok if successful, otherwise a boxed [`std::error::Error`].
+pub fn generate_ratio_split_comparison_plot(
     results: &[AnalysisResults],
+    comparison_index: usize,
     output_path: &Path,
+    include_misc_columns: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if results.is_empty() || results[0].split_comparisons.is_empty() {
         return Ok(()); // No data to plot
@@ -50,42 +83,54 @@ pub fn generate_split_comparison_plot(
     let mut plots: Vec<PlotData> = Vec::new();
 
     // Zstd Ratio Plot Data
-    for comp_idx in 0..results[0].split_comparisons.len() {
-        let zstd_data_points = calculate_plot_data_points(results, comp_idx, |comparison| {
-            let base_zstd = comparison.group1_metrics.zstd_size;
-            let compare_zstd = comparison.group2_metrics.zstd_size;
-            calc_ratio_f64(compare_zstd, base_zstd)
-        });
+    let zstd_data_points = calculate_plot_data_points(results, comparison_index, |comparison| {
+        let base_zstd = comparison.group1_metrics.zstd_size;
+        let compare_zstd = comparison.group2_metrics.zstd_size;
+        calc_ratio_f64(compare_zstd, base_zstd)
+    });
 
-        plots.push(PlotData {
-            label: "zstd_ratio",
-            line_color: BLUE,
-            data_points: zstd_data_points,
-        });
-    }
+    plots.push(PlotData {
+        label: "zstd_ratio",
+        line_color: BLACK,
+        data_points: zstd_data_points,
+    });
 
     // LZ Ratio Plot Data (inverted)
-    for comp_idx in 0..results[0].split_comparisons.len() {
-        let lz_data_points = calculate_plot_data_points(results, comp_idx, |comparison| {
-            let base_lz = comparison.group1_metrics.lz_matches;
-            let compare_lz = comparison.group2_metrics.lz_matches;
-            1.0 / calc_ratio_f64(compare_lz, base_lz)
-        });
-        plots.push(PlotData {
-            label: "1 / lz_matches",
-            line_color: RED,
-            data_points: lz_data_points,
-        });
-    }
+    let lz_data_points = calculate_plot_data_points(results, comparison_index, |comparison| {
+        let base_lz = comparison.group1_metrics.lz_matches;
+        let compare_lz = comparison.group2_metrics.lz_matches;
+        1.0 / calc_ratio_f64(compare_lz, base_lz)
+    });
+
+    plots.push(PlotData {
+        label: "1 / lz_matches_ratio",
+        line_color: RED,
+        data_points: lz_data_points,
+    });
 
     // Entropy Difference Plot Data
-    for comp_idx in 0..results[0].split_comparisons.len() {
-        let lz_data_points = calculate_plot_data_points(results, comp_idx, |comparison| {
-            1.0 / comparison.split_max_entropy_diff_ratio()
+    let lz_data_points = calculate_plot_data_points(results, comparison_index, |comparison| {
+        1.0 / comparison.split_max_entropy_diff_ratio()
+    });
+
+    plots.push(PlotData {
+        label: "1 / entropy_ratio",
+        line_color: GREEN,
+        data_points: lz_data_points,
+    });
+
+    if include_misc_columns {
+        // Entropy Difference Plot Data
+        let lz_data_points = calculate_plot_data_points(results, comparison_index, |comparison| {
+            let base_lz = comparison.group1_metrics.lz_matches;
+            let compare_lz = comparison.group2_metrics.lz_matches;
+            let lz_matches_ratio = calc_ratio_f64(compare_lz, base_lz);
+            1.0 / (comparison.split_max_entropy_diff_ratio() * lz_matches_ratio)
         });
+
         plots.push(PlotData {
-            label: "1 / entropy_ratio",
-            line_color: GREEN,
+            label: "1 / (entropy_ratio * lz_matches)",
+            line_color: BLUE,
             data_points: lz_data_points,
         });
     }
