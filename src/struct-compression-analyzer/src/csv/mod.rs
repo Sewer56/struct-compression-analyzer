@@ -205,40 +205,6 @@ pub fn write_split_comparison_csv(
                 .map(|m| format!("{:.2}", m.entropy))
                 .collect();
 
-            let group2_lz_values: Vec<usize> = comparison
-                .split_comparison_metrics
-                .iter()
-                .map(|m| m.lz_matches)
-                .collect();
-
-            let max_intra_comp_lz_diff_ratio = if group2_lz_values.len() < 2 {
-                0.0
-            } else {
-                let max = *group2_lz_values.iter().max().unwrap() as f64;
-                let min = *group2_lz_values.iter().min().unwrap() as f64;
-                max / min
-            };
-
-            let group2_entropy_values: Vec<f64> = comparison
-                .split_comparison_metrics
-                .iter()
-                .map(|m| m.entropy)
-                .collect();
-
-            let max_intra_comp_entropy_diff = if group2_entropy_values.len() < 2 {
-                0.0
-            } else {
-                let max = group2_entropy_values
-                    .iter()
-                    .max_by(|a, b| a.partial_cmp(b).unwrap())
-                    .unwrap();
-                let min = group2_entropy_values
-                    .iter()
-                    .min_by(|a, b| a.partial_cmp(b).unwrap())
-                    .unwrap();
-                max - min
-            };
-
             wtr.write_record(vec![
                 comparison.name.clone(), // name
                 file_paths[file_idx]
@@ -266,8 +232,8 @@ pub fn write_split_comparison_csv(
                 comp_group_lz.join("|"),
                 base_group_entropy.join("|"),
                 comp_group_entropy.join("|"),
-                format!("{:.2}", max_intra_comp_lz_diff_ratio),
-                format!("{:.2}", max_intra_comp_entropy_diff),
+                format!("{:.2}", comparison.baseline_max_entropy_diff()),
+                format!("{:.2}", comparison.split_max_entropy_diff()),
             ])?;
 
             wtr.flush()?;

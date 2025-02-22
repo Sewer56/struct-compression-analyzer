@@ -78,6 +78,18 @@ pub fn generate_split_comparison_plot(
         });
     }
 
+    // Entropy Difference Plot Data
+    for comp_idx in 0..results[0].split_comparisons.len() {
+        let lz_data_points = calculate_plot_data_points(results, comp_idx, |comparison| {
+            1.0 / comparison.split_max_entropy_diff_ratio()
+        });
+        plots.push(PlotData {
+            label: "1 / entropy_ratio",
+            line_color: GREEN,
+            data_points: lz_data_points,
+        });
+    }
+
     // Draw plots
     for plot in plots {
         draw_plot(&mut chart, &plot)?;
@@ -151,7 +163,7 @@ fn create_drawing_area<'a>(
 }
 
 /// Creates a chart for plotting compression ratio information,
-/// with a fixed range of 0.75 to 1.25 in terms of compression ratio.
+/// with a fixed range of 0.6 to 1.20 in terms of compression ratio.
 fn create_ratio_chart<'a>(
     num_results: usize,
     root: &DrawingArea<BitMapBackend<'a>, plotters::coord::Shift>,
@@ -173,7 +185,7 @@ fn create_ratio_chart<'a>(
         .y_label_area_size(80)
         .build_cartesian_2d(
             0f64..num_results as f64, // x axis range, one point per file
-            0.75f64..1.25f64,         // y axis range, adjust as needed
+            0.60f64..1.20f64,         // y axis range, adjust as needed
         )?;
     Ok(chart)
 }
