@@ -4,8 +4,10 @@
 //! results, using the `plotters` crate.
 
 use crate::{
-    analysis_results::AnalysisResults, comparison::split_comparison::SplitComparisonResult,
+    analysis_results::AnalysisResults,
+    comparison::{compare_groups::GroupComparisonResult, split_comparison::SplitComparisonResult},
 };
+use core::ops::Range;
 use plotters::prelude::*;
 use std::{fs, path::Path};
 
@@ -26,6 +28,10 @@ pub fn generate_plots(
     results: &[AnalysisResults],
     output_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    if results.is_empty() {
+        return Ok(());
+    }
+
     let split_comparisons_dir = output_dir.join("split_comparison_plots");
     fs::create_dir_all(&split_comparisons_dir)?;
 
@@ -38,18 +44,60 @@ pub fn generate_plots(
         generate_ratio_split_comparison_plot(results, x, &output_path, true)?;
     }
 
+    let custom_comparisons_dir = output_dir.join("custom_comparison_plots");
+    fs::create_dir_all(&custom_comparisons_dir)?;
+
+    // Generate custom comparison plot
+    // Note: Assumption all items have same number of comparisons and
+    for (x, comparison) in results[0].custom_comparisons.iter().enumerate() {
+        // Write data for individual groups.
+        for (y, group_name) in comparison.group_names.iter().enumerate() {
+            let output_path = custom_comparisons_dir.join(format!(
+                "{}_{}_{}.png",
+                comparison.name,
+                group_name.replace(' ', "_"),
+                y
+            ));
+            generate_ratio_custom_comparison_plot(results, x, y..y + 1, &output_path)?;
+
+            let output_path = custom_comparisons_dir.join(format!(
+                "{}_{}_{}_extra.png",
+                comparison.name,
+                group_name.replace(' ', "_"),
+                y
+            ));
+            generate_ratio_custom_comparison_plot(results, x, y..y + 1, &output_path)?;
+        }
+
+        let output_path = custom_comparisons_dir.join(format!("{}.png", comparison.name));
+        generate_ratio_custom_comparison_plot(
+            results,
+            x,
+            0..comparison.group_names.len(),
+            &output_path,
+        )?;
+
+        let output_path = custom_comparisons_dir.join(format!("{}_extra.png", comparison.name));
+        generate_ratio_custom_comparison_plot(
+            results,
+            x,
+            0..comparison.group_names.len(),
+            &output_path,
+        )?;
+    }
+
     // Add calls to other plot generation functions here in the future
     Ok(())
 }
 
 /// Struct to hold data and styling for a single plot line.
-struct PlotData<'a> {
-    label: &'a str,
+struct PlotData {
+    label: String,
     line_color: RGBColor,
     data_points: Vec<(f64, f64)>,
 }
 
-/// Generates a line plot for the various columns from split comparisons.
+/// Generates a line plot for the various columns from a split comparison.
 ///
 /// # Arguments
 ///
@@ -83,45 +131,45 @@ pub fn generate_ratio_split_comparison_plot(
     let mut plots: Vec<PlotData> = Vec::new();
 
     // Zstd Ratio Plot Data
-    let zstd_data_points = calculate_plot_data_points(results, comparison_index, |comparison| {
+    let zstd_data_points = make_split_data_points(results, comparison_index, |comparison| {
         let base_zstd = comparison.group1_metrics.zstd_size;
         let compare_zstd = comparison.group2_metrics.zstd_size;
         calc_ratio_f64(compare_zstd, base_zstd)
     });
 
     plots.push(PlotData {
-        label: "zstd_ratio",
+        label: "zstd_ratio".to_owned(),
         line_color: BLACK,
         data_points: zstd_data_points,
     });
 
     // LZ Ratio Plot Data (inverted)
-    let lz_data_points = calculate_plot_data_points(results, comparison_index, |comparison| {
+    let lz_data_points = make_split_data_points(results, comparison_index, |comparison| {
         let base_lz = comparison.group1_metrics.lz_matches;
         let compare_lz = comparison.group2_metrics.lz_matches;
         1.0 / calc_ratio_f64(compare_lz, base_lz)
     });
 
     plots.push(PlotData {
-        label: "1 / lz_matches_ratio",
+        label: "1 / lz_matches_ratio".to_owned(),
         line_color: RED,
         data_points: lz_data_points,
     });
 
     // Entropy Difference Plot Data
-    let lz_data_points = calculate_plot_data_points(results, comparison_index, |comparison| {
+    let lz_data_points = make_split_data_points(results, comparison_index, |comparison| {
         1.0 / comparison.split_max_entropy_diff_ratio()
     });
 
     plots.push(PlotData {
-        label: "1 / entropy_ratio",
+        label: "1 / entropy_ratio".to_owned(),
         line_color: GREEN,
         data_points: lz_data_points,
     });
 
     if include_misc_columns {
         // Entropy Difference Plot Data
-        let lz_data_points = calculate_plot_data_points(results, comparison_index, |comparison| {
+        let data_points = make_split_data_points(results, comparison_index, |comparison| {
             let base_lz = comparison.group1_metrics.lz_matches;
             let compare_lz = comparison.group2_metrics.lz_matches;
             let lz_matches_ratio = calc_ratio_f64(compare_lz, base_lz);
@@ -129,9 +177,9 @@ pub fn generate_ratio_split_comparison_plot(
         });
 
         plots.push(PlotData {
-            label: "1 / (entropy_ratio * lz_matches)",
+            label: "1 / (entropy_ratio * lz_matches)".to_owned(),
             line_color: BLUE,
-            data_points: lz_data_points,
+            data_points,
         });
     }
 
@@ -145,8 +193,98 @@ pub fn generate_ratio_split_comparison_plot(
     Ok(())
 }
 
+/// Generates a line plot for the various columns from a custom comparison.
+///
+/// # Arguments
+///
+/// * `results` - A slice of [`AnalysisResults`], one for each analyzed file.
+/// * `comparison_index` - The index of the custom comparison to plot in the `custom_comparisons` array.
+/// * `group_indices` - The range of indices for the groups to compare.
+/// * `output_path` - The path where the plot file will be written.
+///
+/// # Returns
+///
+/// * `Result<(), Box<dyn std::error::Error>>` - Ok if successful, otherwise a boxed [`std::error::Error`].
+pub fn generate_ratio_custom_comparison_plot(
+    results: &[AnalysisResults],
+    comparison_index: usize,
+    group_indices: Range<usize>,
+    output_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if results.is_empty() || results[0].split_comparisons.is_empty() {
+        return Ok(()); // No data to plot
+    }
+
+    let root = create_drawing_area(results, output_path)?;
+
+    // Create the chart.
+    let mut chart = create_ratio_chart(results.len(), &root)?;
+
+    // Add labels (file indices).
+    draw_ratio_grid(results.len(), &mut chart)?;
+
+    // Prepare plot data
+    let mut plots: Vec<PlotData> = Vec::new();
+    let group_names = &results[0].custom_comparisons[0].group_names;
+
+    // Zstd Ratio Plot Data
+    for group_idx in group_indices {
+        let group_name = &group_names[group_idx];
+        let zstd_data_points = make_custom_data_points(results, comparison_index, |comparison| {
+            let base_zstd = comparison.baseline_metrics.zstd_size;
+            let compare_zstd = comparison.group_metrics[group_idx].zstd_size;
+            calc_ratio_f64(compare_zstd, base_zstd)
+        });
+
+        plots.push(PlotData {
+            label: format!("zstd_ratio ({})", group_name),
+            line_color: BLACK,
+            data_points: zstd_data_points,
+        });
+
+        // LZ Ratio Plot Data (inverted)
+        let lz_data_points = make_custom_data_points(results, comparison_index, |comparison| {
+            let base_lz = comparison.baseline_metrics.lz_matches;
+            let compare_lz = comparison.group_metrics[group_idx].lz_matches;
+            1.0 / calc_ratio_f64(compare_lz, base_lz)
+        });
+
+        plots.push(PlotData {
+            label: format!("1 / lz_matches_ratio ({})", group_name),
+            line_color: RED,
+            data_points: lz_data_points,
+        });
+
+        // Entropy Ratio Plot Data
+        let entropy_data_points =
+            make_custom_data_points(results, comparison_index, |comparison| {
+                1.0 / (comparison.baseline_metrics.entropy
+                    / comparison.group_metrics[group_idx].entropy)
+            });
+
+        // Don't plot if the entropy ratio is 1.0.
+        // This is a 'rough' check to avoid plotting a straight line.
+        if entropy_data_points[0].1 != 1.0 {
+            plots.push(PlotData {
+                label: format!("entropy_ratio ({})", group_name),
+                line_color: GREEN,
+                data_points: entropy_data_points,
+            });
+        }
+    }
+
+    // Draw plots
+    for plot in plots {
+        draw_plot(&mut chart, &plot)?;
+    }
+
+    add_series_labels(&mut chart)?;
+    root.present()?;
+    Ok(())
+}
+
 /// Calculates the data points for a plot.
-fn calculate_plot_data_points<F>(
+fn make_split_data_points<F>(
     results: &[AnalysisResults],
     comp_idx: usize,
     value_calculator: F,
@@ -157,6 +295,24 @@ where
     let mut data_points: Vec<(f64, f64)> = Vec::new();
     for (file_idx, result) in results.iter().enumerate() {
         let comparison_result = &result.split_comparisons[comp_idx];
+        let y_value = value_calculator(comparison_result);
+        data_points.push((file_idx as f64, y_value));
+    }
+    data_points
+}
+
+/// Calculates the data points for a plot.
+fn make_custom_data_points<F>(
+    results: &[AnalysisResults],
+    comp_idx: usize,
+    value_calculator: F,
+) -> Vec<(f64, f64)>
+where
+    F: Fn(&GroupComparisonResult) -> f64,
+{
+    let mut data_points: Vec<(f64, f64)> = Vec::new();
+    for (file_idx, result) in results.iter().enumerate() {
+        let comparison_result = &result.custom_comparisons[comp_idx];
         let y_value = value_calculator(comparison_result);
         data_points.push((file_idx as f64, y_value));
     }
@@ -179,7 +335,7 @@ fn draw_plot<'a>(
     let plot_points = plot.data_points.clone();
     chart
         .draw_series(LineSeries::new(plot_points, line_style))?
-        .label(plot.label)
+        .label(&plot.label)
         .legend(move |(x, y)| {
             PathElement::new(
                 vec![(x, y), (x + 20, y)],
