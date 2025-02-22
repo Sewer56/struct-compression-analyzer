@@ -207,7 +207,10 @@ fn main() -> anyhow::Result<()> {
             if let Some(output_dir) = &dir_cmd.output {
                 std::fs::create_dir_all(output_dir)?;
                 csv::write_all_csvs(&individual_results, &merged_results, output_dir, &files)?;
-                generate_split_comparison_zstd_ratio_plot(&individual_results, output_dir, &files)?;
+                generate_split_comparison_zstd_ratio_plot(
+                    &individual_results,
+                    &output_dir.join("split_comparison_zstd_ratio.png"),
+                )?;
                 println!("Generated field CSV reports in: {}", output_dir.display());
             }
         }

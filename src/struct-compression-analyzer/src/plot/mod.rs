@@ -5,10 +5,7 @@
 
 use crate::analysis_results::AnalysisResults;
 use plotters::prelude::*;
-use std::{
-    ffi::OsStr,
-    path::{Path, PathBuf},
-};
+use std::path::Path;
 use thiserror::Error;
 
 /// Custom error type for plot generation.
@@ -17,9 +14,6 @@ pub enum PlotError<'a> {
     /// Error during file creation or writing.
     #[error("IO error: {0}")]
     IOError(#[from] std::io::Error),
-
-    #[error("Count of file paths {found} does not match the count of analysis results {expected}")]
-    InvalidFileCount { found: usize, expected: usize },
 
     /// Error parsing data for plotting.
     #[error("Drawing area error: {0}")]
@@ -45,53 +39,23 @@ pub enum PlotError<'a> {
 /// * `Result<(), PlotError>` - Ok if successful, otherwise a `PlotError`.
 pub fn generate_split_comparison_zstd_ratio_plot<'a>(
     results: &[AnalysisResults],
-    output_dir: &Path,
-    files: &[PathBuf],
+    output_path: &Path,
 ) -> Result<(), PlotError<'a>> {
     if results.is_empty() || results[0].split_comparisons.is_empty() {
         return Ok(()); // No data to plot
     }
 
-    if files.len() != results.len() {
-        return Err(PlotError::InvalidFileCount {
-            found: files.len(),
-            expected: results.len(),
-        });
-    }
-
-    let output_file = output_dir.join("split_comparison_zstd_ratio.png");
-
-    // Create the image.
-    let root = BitMapBackend::new(&output_file, (2560, 1440)).into_drawing_area();
-    root.fill(&WHITE)?;
+    let root = create_drawing_area(results, output_path)?;
 
     // Create the chart.
-    let mut chart = ChartBuilder::on(&root)
-        .caption("Zstd Ratio", ("sans-serif", 50).into_font())
-        .margin(5)
-        .x_label_area_size(80)
-        .y_label_area_size(80)
-        .build_cartesian_2d(
-            0f64..results.len() as f64, // x axis range, one point per file
-            0f64..2.0f64,               // y axis range, adjust as needed
-        )?;
+    let mut chart = create_ratio_chart(results.len(), &root)?;
 
-    // Add labels (filenames) - this is basic, might need improvement for many files
-    chart
-        .configure_mesh()
-        // Title
-        .axis_desc_style(("sans-serif", 40).into_font())
-        // y labels
-        .y_label_style(("sans-serif", 40).into_font())
-        // x labels
-        .x_labels(results.len())
-        .x_label_style(("sans-serif", 40).into_font())
-        .x_label_formatter(&|x| format!("{}", x))
-        .draw()?;
+    // Add labels (file indices).
+    draw_ratio_grid(results.len(), &mut chart)?;
 
     // Draw the lines
-    let line_style = ShapeStyle::from(&BLUE).stroke_width(5);
-    let coord_style = ShapeStyle::from(&BLACK).filled();
+    let line_style = ShapeStyle::from(BLUE).stroke_width(5);
+    let coord_style = ShapeStyle::from(BLACK).filled();
     for comp_idx in 0..results[0].split_comparisons.len() {
         let mut data_points: Vec<(f64, f64)> = Vec::new();
         for (file_idx, result) in results.iter().enumerate() {
@@ -101,7 +65,15 @@ pub fn generate_split_comparison_zstd_ratio_plot<'a>(
             data_points.push((file_idx as f64, calc_ratio_f64(compare_zstd, base_zstd)));
         }
 
-        chart.draw_series(LineSeries::new(data_points.clone(), line_style))?;
+        chart
+            .draw_series(LineSeries::new(data_points.clone(), line_style))?
+            .label("zstd_ratio")
+            .legend(|(x, y)| {
+                PathElement::new(
+                    vec![(x, y), (x + 20, y)],
+                    ShapeStyle::from(&BLUE).stroke_width(5),
+                )
+            });
         chart.draw_series(PointSeries::<_, _, Circle<_, _>, _>::new(
             data_points,
             7.5,
@@ -109,6 +81,91 @@ pub fn generate_split_comparison_zstd_ratio_plot<'a>(
         ))?;
     }
 
+    add_series_labels(&mut chart)?;
+    root.present()?;
+    Ok(())
+}
+
+fn create_drawing_area<'a, 'b>(
+    results: &[AnalysisResults],
+    output_file: &'b Path,
+) -> Result<DrawingArea<BitMapBackend<'b>, plotters::coord::Shift>, PlotError<'a>> {
+    // Auto adjust size such that each value has constant amount of sapce.
+    let width = results.len() * 64;
+    let root = BitMapBackend::new(output_file, (width as u32, 1440)).into_drawing_area();
+    root.fill(&WHITE)?;
+    Ok(root)
+}
+
+/// Creates a chart for plotting compression ratio information,
+/// with a fixed range of 0.75 to 1.25 in terms of compression ratio.
+fn create_ratio_chart<'a, 'b>(
+    num_results: usize,
+    root: &DrawingArea<BitMapBackend<'b>, plotters::coord::Shift>,
+) -> Result<
+    ChartContext<
+        'b,
+        BitMapBackend<'b>,
+        Cartesian2d<plotters::coord::types::RangedCoordf64, plotters::coord::types::RangedCoordf64>,
+    >,
+    PlotError<'a>,
+> {
+    let chart: ChartContext<
+        '_,
+        BitMapBackend<'b>,
+        Cartesian2d<plotters::coord::types::RangedCoordf64, plotters::coord::types::RangedCoordf64>,
+    > = ChartBuilder::on(root)
+        .caption("Zstd Ratio", ("sans-serif", 50).into_font())
+        .margin(5)
+        .x_label_area_size(80)
+        .y_label_area_size(80)
+        .build_cartesian_2d(
+            0f64..num_results as f64, // x axis range, one point per file
+            0.75f64..1.25f64,         // y axis range, adjust as needed
+        )?;
+    Ok(chart)
+}
+
+/// Draws the grid, including the labels for a graph which presents a compression ratio
+/// centered around 1.0
+fn draw_ratio_grid<'a, 'b>(
+    results_len: usize,
+    chart: &mut ChartContext<
+        'b,
+        BitMapBackend<'b>,
+        Cartesian2d<plotters::coord::types::RangedCoordf64, plotters::coord::types::RangedCoordf64>,
+    >,
+) -> Result<(), PlotError<'a>> {
+    chart
+        .configure_mesh()
+        // Title
+        .axis_desc_style(("sans-serif", 40).into_font())
+        // y labels
+        .y_label_style(("sans-serif", 40).into_font())
+        // x labels
+        .x_labels(results_len)
+        .x_label_style(("sans-serif", 40).into_font())
+        .x_label_formatter(&|x| format!("{}", x))
+        .draw()?;
+    Ok(())
+}
+
+/// Adds the series labels to the current chart.
+/// i.e. the little box which shows lines and their corresponding names.
+fn add_series_labels<'a, 'b>(
+    chart: &mut ChartContext<
+        'b,
+        BitMapBackend<'b>,
+        Cartesian2d<plotters::coord::types::RangedCoordf64, plotters::coord::types::RangedCoordf64>,
+    >,
+) -> Result<(), PlotError<'a>> {
+    chart
+        .configure_series_labels()
+        .label_font(("sans-serif", 40))
+        .background_style(WHITE.mix(0.8))
+        .border_style(BLACK)
+        .position(SeriesLabelPosition::UpperLeft)
+        .draw()?;
     Ok(())
 }
 
