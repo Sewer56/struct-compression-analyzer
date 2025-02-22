@@ -168,7 +168,6 @@ fn create_ratio_chart<'a>(
         BitMapBackend<'a>,
         Cartesian2d<plotters::coord::types::RangedCoordf64, plotters::coord::types::RangedCoordf64>,
     > = ChartBuilder::on(root)
-        .caption("Zstd Ratio", ("sans-serif", 50).into_font())
         .margin(5)
         .x_label_area_size(80)
         .y_label_area_size(80)
