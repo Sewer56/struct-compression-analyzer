@@ -3,23 +3,17 @@
 //! This module provides functions to create various plots based on the analysis
 //! results, using the `plotters` crate.
 
-use crate::analysis_results::AnalysisResults;
+use crate::{
+    analysis_results::AnalysisResults, comparison::split_comparison::SplitComparisonResult,
+};
 use plotters::prelude::*;
 use std::path::Path;
-use thiserror::Error;
 
-/// Custom error type for plot generation.
-#[derive(Error, Debug)]
-pub enum PlotError<'a> {
-    /// Error during file creation or writing.
-    #[error("IO error: {0}")]
-    IOError(#[from] std::io::Error),
-
-    /// Error parsing data for plotting.
-    #[error("Drawing area error: {0}")]
-    DrawingAreaError(
-        #[from] DrawingAreaErrorKind<<BitMapBackend<'a> as DrawingBackend>::ErrorType>,
-    ),
+/// Struct to hold data and styling for a single plot line.
+struct PlotData<'a> {
+    label: &'a str,
+    line_color: RGBColor,
+    data_points: Vec<(f64, f64)>,
 }
 
 /// Generates a line plot for the "ratio_zstd" column from split comparisons.
@@ -35,11 +29,11 @@ pub enum PlotError<'a> {
 ///
 /// # Returns
 ///
-/// * `Result<(), PlotError>` - Ok if successful, otherwise a `PlotError`.
-pub fn generate_split_comparison_zstd_ratio_plot<'a>(
+/// * `Result<(), Box<dyn std::error::Error>>` - Ok if successful, otherwise a boxed `std::error::Error`.
+pub fn generate_split_comparison_plot(
     results: &[AnalysisResults],
     output_path: &Path,
-) -> Result<(), PlotError<'a>> {
+) -> Result<(), Box<dyn std::error::Error>> {
     if results.is_empty() || results[0].split_comparisons.is_empty() {
         return Ok(()); // No data to plot
     }
@@ -52,60 +46,41 @@ pub fn generate_split_comparison_zstd_ratio_plot<'a>(
     // Add labels (file indices).
     draw_ratio_grid(results.len(), &mut chart)?;
 
-    // Draw zstd ratio
-    let line_style = ShapeStyle::from(BLUE).stroke_width(5);
-    let coord_style = ShapeStyle::from(BLACK).filled();
-    for comp_idx in 0..results[0].split_comparisons.len() {
-        let mut data_points: Vec<(f64, f64)> = Vec::new();
-        for (file_idx, result) in results.iter().enumerate() {
-            let comparison_result = &result.split_comparisons[comp_idx];
-            let base_zstd = comparison_result.group1_metrics.zstd_size;
-            let compare_zstd = comparison_result.group2_metrics.zstd_size;
-            data_points.push((file_idx as f64, calc_ratio_f64(compare_zstd, base_zstd)));
-        }
+    // Prepare plot data
+    let mut plots: Vec<PlotData> = Vec::new();
 
-        chart
-            .draw_series(LineSeries::new(data_points.clone(), line_style))?
-            .label("zstd_ratio")
-            .legend(|(x, y)| {
-                PathElement::new(
-                    vec![(x, y), (x + 20, y)],
-                    ShapeStyle::from(&BLUE).stroke_width(5),
-                )
-            });
-        chart.draw_series(PointSeries::<_, _, Circle<_, _>, _>::new(
-            data_points,
-            7.5,
-            coord_style,
-        ))?;
+    // Zstd Ratio Plot Data
+    for comp_idx in 0..results[0].split_comparisons.len() {
+        let zstd_data_points = calculate_plot_data_points(results, comp_idx, |comparison| {
+            let base_zstd = comparison.group1_metrics.zstd_size;
+            let compare_zstd = comparison.group2_metrics.zstd_size;
+            calc_ratio_f64(compare_zstd, base_zstd)
+        });
+
+        plots.push(PlotData {
+            label: "zstd_ratio",
+            line_color: BLUE,
+            data_points: zstd_data_points,
+        });
     }
 
-    // Draw lz ratio
-    let line_style = ShapeStyle::from(RED).stroke_width(5);
-    let coord_style = ShapeStyle::from(BLACK).filled();
+    // LZ Ratio Plot Data (inverted)
     for comp_idx in 0..results[0].split_comparisons.len() {
-        let mut data_points: Vec<(f64, f64)> = Vec::new();
-        for (file_idx, result) in results.iter().enumerate() {
-            let comparison_result = &result.split_comparisons[comp_idx];
-            let base_lz = comparison_result.group1_metrics.lz_matches;
-            let compare_lz = comparison_result.group2_metrics.lz_matches;
-            data_points.push((file_idx as f64, 1.0 / calc_ratio_f64(compare_lz, base_lz)));
-        }
+        let lz_data_points = calculate_plot_data_points(results, comp_idx, |comparison| {
+            let base_lz = comparison.group1_metrics.lz_matches;
+            let compare_lz = comparison.group2_metrics.lz_matches;
+            1.0 / calc_ratio_f64(compare_lz, base_lz)
+        });
+        plots.push(PlotData {
+            label: "1 / lz_matches",
+            line_color: RED,
+            data_points: lz_data_points,
+        });
+    }
 
-        chart
-            .draw_series(LineSeries::new(data_points.clone(), line_style))?
-            .label("1 / lz_matches")
-            .legend(|(x, y)| {
-                PathElement::new(
-                    vec![(x, y), (x + 20, y)],
-                    ShapeStyle::from(&RED).stroke_width(5),
-                )
-            });
-        chart.draw_series(PointSeries::<_, _, Circle<_, _>, _>::new(
-            data_points,
-            7.5,
-            coord_style,
-        ))?;
+    // Draw plots
+    for plot in plots {
+        draw_plot(&mut chart, &plot)?;
     }
 
     add_series_labels(&mut chart)?;
@@ -113,10 +88,61 @@ pub fn generate_split_comparison_zstd_ratio_plot<'a>(
     Ok(())
 }
 
-fn create_drawing_area<'a, 'b>(
+/// Calculates the data points for a plot.
+fn calculate_plot_data_points<F>(
     results: &[AnalysisResults],
-    output_file: &'b Path,
-) -> Result<DrawingArea<BitMapBackend<'b>, plotters::coord::Shift>, PlotError<'a>> {
+    comp_idx: usize,
+    value_calculator: F,
+) -> Vec<(f64, f64)>
+where
+    F: Fn(&SplitComparisonResult) -> f64,
+{
+    let mut data_points: Vec<(f64, f64)> = Vec::new();
+    for (file_idx, result) in results.iter().enumerate() {
+        let comparison_result = &result.split_comparisons[comp_idx];
+        let y_value = value_calculator(comparison_result);
+        data_points.push((file_idx as f64, y_value));
+    }
+    data_points
+}
+
+/// Draws a single plot line and its points.
+fn draw_plot<'a>(
+    chart: &mut ChartContext<
+        'a,
+        BitMapBackend<'a>,
+        Cartesian2d<plotters::coord::types::RangedCoordf64, plotters::coord::types::RangedCoordf64>,
+    >,
+    plot: &PlotData,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let line_color = plot.line_color;
+    let line_style = ShapeStyle::from(line_color).stroke_width(5);
+    let coord_style = ShapeStyle::from(BLACK).filled();
+
+    let plot_points = plot.data_points.clone();
+    chart
+        .draw_series(LineSeries::new(plot_points, line_style))?
+        .label(plot.label)
+        .legend(move |(x, y)| {
+            PathElement::new(
+                vec![(x, y), (x + 20, y)],
+                ShapeStyle::from(line_color).stroke_width(5),
+            )
+        });
+
+    chart.draw_series(PointSeries::<_, _, Circle<_, _>, _>::new(
+        plot.data_points.clone(),
+        7.5,
+        coord_style,
+    ))?;
+
+    Ok(())
+}
+
+fn create_drawing_area<'a>(
+    results: &[AnalysisResults],
+    output_file: &'a Path,
+) -> Result<DrawingArea<BitMapBackend<'a>, plotters::coord::Shift>, Box<dyn std::error::Error>> {
     // Auto adjust size such that each value has constant amount of sapce.
     let width = results.len() * 64;
     let root = BitMapBackend::new(output_file, (width as u32, 1440)).into_drawing_area();
@@ -126,20 +152,20 @@ fn create_drawing_area<'a, 'b>(
 
 /// Creates a chart for plotting compression ratio information,
 /// with a fixed range of 0.75 to 1.25 in terms of compression ratio.
-fn create_ratio_chart<'a, 'b>(
+fn create_ratio_chart<'a>(
     num_results: usize,
-    root: &DrawingArea<BitMapBackend<'b>, plotters::coord::Shift>,
+    root: &DrawingArea<BitMapBackend<'a>, plotters::coord::Shift>,
 ) -> Result<
     ChartContext<
-        'b,
-        BitMapBackend<'b>,
+        'a,
+        BitMapBackend<'a>,
         Cartesian2d<plotters::coord::types::RangedCoordf64, plotters::coord::types::RangedCoordf64>,
     >,
-    PlotError<'a>,
+    Box<dyn std::error::Error>,
 > {
     let chart: ChartContext<
         '_,
-        BitMapBackend<'b>,
+        BitMapBackend<'a>,
         Cartesian2d<plotters::coord::types::RangedCoordf64, plotters::coord::types::RangedCoordf64>,
     > = ChartBuilder::on(root)
         .caption("Zstd Ratio", ("sans-serif", 50).into_font())
@@ -155,14 +181,14 @@ fn create_ratio_chart<'a, 'b>(
 
 /// Draws the grid, including the labels for a graph which presents a compression ratio
 /// centered around 1.0
-fn draw_ratio_grid<'a, 'b>(
+fn draw_ratio_grid<'a>(
     results_len: usize,
     chart: &mut ChartContext<
-        'b,
-        BitMapBackend<'b>,
+        'a,
+        BitMapBackend<'a>,
         Cartesian2d<plotters::coord::types::RangedCoordf64, plotters::coord::types::RangedCoordf64>,
     >,
-) -> Result<(), PlotError<'a>> {
+) -> Result<(), Box<dyn std::error::Error>> {
     chart
         .configure_mesh()
         // Title
@@ -179,13 +205,13 @@ fn draw_ratio_grid<'a, 'b>(
 
 /// Adds the series labels to the current chart.
 /// i.e. the little box which shows lines and their corresponding names.
-fn add_series_labels<'a, 'b>(
+fn add_series_labels<'a>(
     chart: &mut ChartContext<
-        'b,
-        BitMapBackend<'b>,
+        'a,
+        BitMapBackend<'a>,
         Cartesian2d<plotters::coord::types::RangedCoordf64, plotters::coord::types::RangedCoordf64>,
     >,
-) -> Result<(), PlotError<'a>> {
+) -> Result<(), Box<dyn std::error::Error>> {
     chart
         .configure_series_labels()
         .label_font(("sans-serif", 40))
