@@ -118,10 +118,33 @@ pub struct SplitComparisonResult {
     pub group2_metrics: GroupComparisonMetrics,
     /// Comparison between group 2 and group 1.
     pub difference: GroupDifference,
-    /// The size difference between the two groups.
+    /// The statistics for the individual fields of the baseline group.
     pub baseline_comparison_metrics: Vec<FieldComparisonMetrics>,
-    /// The size difference between the two groups.
+    /// The statistics for the individual fields of the split group.
     pub split_comparison_metrics: Vec<FieldComparisonMetrics>,
+}
+
+/// Helper functions around [`SplitComparisonResult`]
+impl SplitComparisonResult {
+    /// Ratio between the max and min entropy of the baseline fields.
+    pub fn baseline_max_entropy_diff_ratio(&self) -> f64 {
+        calculate_max_entropy_diff_ratio(&self.baseline_comparison_metrics)
+    }
+
+    /// Maximum difference between the entropy of the baseline fields.
+    pub fn baseline_max_entropy_diff(&self) -> f64 {
+        calculate_max_entropy_diff(&self.baseline_comparison_metrics)
+    }
+
+    /// Maximum difference between the entropy of the split fields.
+    pub fn split_max_entropy_diff(&self) -> f64 {
+        calculate_max_entropy_diff(&self.split_comparison_metrics)
+    }
+
+    /// Ratio between the max and min entropy of the split fields.
+    pub fn split_max_entropy_diff_ratio(&self) -> f64 {
+        calculate_max_entropy_diff_ratio(&self.split_comparison_metrics)
+    }
 }
 
 /// Represents the statistics for the individual fields which were used
@@ -147,5 +170,42 @@ impl From<FieldMetrics> for FieldComparisonMetrics {
             entropy: value.entropy,
             lz_matches: value.lz_matches,
         }
+    }
+}
+
+fn calculate_max_entropy_diff(results: &[FieldComparisonMetrics]) -> f64 {
+    let entropy_values: Vec<f64> = results.iter().map(|m| m.entropy).collect();
+    if entropy_values.len() < 2 {
+        0.0
+    } else {
+        let max = entropy_values
+            .iter()
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
+        let min = entropy_values
+            .iter()
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
+        max - min
+    }
+}
+
+fn calculate_max_entropy_diff_ratio(results: &[FieldComparisonMetrics]) -> f64 {
+    let entropy_values: Vec<f64> = results.iter().map(|m| m.entropy).collect();
+    if entropy_values.len() < 2 {
+        0.0
+    } else {
+        let max = entropy_values
+            .iter()
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
+        let min = entropy_values
+            .iter()
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
+        if *min == 0.0 {
+            return 0.0;
+        }
+        max / min
     }
 }
