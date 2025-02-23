@@ -7,7 +7,7 @@ use crate::{
     analysis_results::AnalysisResults,
     comparison::{compare_groups::GroupComparisonResult, split_comparison::SplitComparisonResult},
 };
-use core::ops::Range;
+use core::{error::Error, ops::Range};
 use plotters::prelude::*;
 use std::{fs, path::Path};
 
@@ -193,6 +193,64 @@ pub fn generate_ratio_split_comparison_plot(
     Ok(())
 }
 
+/// Generates the base colours that will be transformed by a gradient
+fn generate_base_colors(
+    num_colors: usize,
+) -> Result<Vec<(RGBColor, RGBColor)>, Box<dyn std::error::Error>> {
+    let mut colours = Vec::<(RGBColor, RGBColor)>::new();
+    if num_colors > 0 {
+        colours.push((RGBColor(0, 0, 0), RGBColor(150, 150, 150))); // Black to light grey
+    }
+    if num_colors > 1 {
+        colours.push((RGBColor(255, 0, 0), RGBColor(255, 150, 150))); // Red to light red
+    }
+    if num_colors > 2 {
+        colours.push((RGBColor(0, 255, 0), RGBColor(150, 255, 150))); // Green to light green
+    }
+    if num_colors > 3 {
+        colours.push((RGBColor(0, 0, 255), RGBColor(150, 150, 255))); // Blue to light blue
+    }
+    if num_colors > 4 {
+        return Err(Box::<dyn Error>::from(format!(
+            "Too many colours: {}",
+            num_colors
+        )));
+    }
+    Ok(colours)
+}
+
+/// Generates a sequence of distinct colors for plotting, with gradients.
+/// The colours are interleaved, R,G,B * num_gradients
+fn generate_color_palette(
+    base_colors: &[(RGBColor, RGBColor)],
+    num_gradients: usize,
+) -> Vec<RGBColor> {
+    let mut palette = Vec::new();
+
+    // (color channels)
+    for x in 0..num_gradients {
+        // Alternate, R,G,B
+        for (base_color, end_color) in base_colors {
+            let gradient_step = if num_gradients == 1 {
+                0.0
+            } else {
+                x as f32 / (num_gradients - 1) as f32
+            };
+
+            let r_step = (end_color.0 as f32 - base_color.0 as f32) * gradient_step;
+            let g_step = (end_color.1 as f32 - base_color.1 as f32) * gradient_step;
+            let b_step = (end_color.2 as f32 - base_color.2 as f32) * gradient_step;
+            let r = (base_color.0 as f32 + r_step) as u8;
+            let g = (base_color.1 as f32 + g_step) as u8;
+            let b = (base_color.2 as f32 + b_step) as u8;
+
+            palette.push(RGBColor(r, g, b));
+        }
+    }
+
+    palette
+}
+
 /// Generates a line plot for the various columns from a custom comparison.
 ///
 /// # Arguments
@@ -227,9 +285,19 @@ pub fn generate_ratio_custom_comparison_plot(
     let mut plots: Vec<PlotData> = Vec::new();
     let group_names = &results[0].custom_comparisons[0].group_names;
 
+    // Get color palette
+    let num_gradients = group_indices.len();
+    let num_base_colors = 3;
+    let base_colors = generate_base_colors(num_base_colors)?;
+    let colors = generate_color_palette(&base_colors, num_gradients);
+
     // Zstd Ratio Plot Data
+    let start_index = group_indices.start;
     for group_idx in group_indices {
         let group_name = &group_names[group_idx];
+        let group_offset = group_idx - start_index;
+        let color_offset = group_offset * num_base_colors;
+
         let zstd_data_points = make_custom_data_points(results, comparison_index, |comparison| {
             let base_zstd = comparison.baseline_metrics.zstd_size;
             let compare_zstd = comparison.group_metrics[group_idx].zstd_size;
@@ -238,7 +306,7 @@ pub fn generate_ratio_custom_comparison_plot(
 
         plots.push(PlotData {
             label: format!("zstd_ratio ({})", group_name),
-            line_color: BLACK,
+            line_color: colors[color_offset],
             data_points: zstd_data_points,
         });
 
@@ -251,7 +319,7 @@ pub fn generate_ratio_custom_comparison_plot(
 
         plots.push(PlotData {
             label: format!("1 / lz_matches_ratio ({})", group_name),
-            line_color: RED,
+            line_color: colors[color_offset + 1],
             data_points: lz_data_points,
         });
 
@@ -267,7 +335,7 @@ pub fn generate_ratio_custom_comparison_plot(
         if entropy_data_points[0].1 != 1.0 {
             plots.push(PlotData {
                 label: format!("entropy_ratio ({})", group_name),
-                line_color: GREEN,
+                line_color: colors[color_offset + 2],
                 data_points: entropy_data_points,
             });
         }
