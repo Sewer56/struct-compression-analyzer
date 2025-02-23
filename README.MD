@@ -236,7 +236,7 @@ struct-compression-analyzer = "0.1.0"
 use struct_compression_analyzer::analysis_results::PrintFormat;
 use struct_compression_analyzer::schema::Schema;
 use struct_compression_analyzer::analyzer::SchemaAnalyzer;
-use struct_compression_analyzer::analyzer::AnalysisOptions;
+use struct_compression_analyzer::analyzer::CompressionOptions;
 use std::path::Path;
 
 fn main() -> anyhow::Result<()> {
@@ -244,7 +244,7 @@ fn main() -> anyhow::Result<()> {
     let schema = Schema::load_from_file(Path::new("schema.yaml"))?;
     
     // Set the options
-    let options = AnalysisOptions::default();
+    let options = CompressionOptions::default();
 
     // Create an analyzer
     let mut analyzer = SchemaAnalyzer::new(&schema, options);

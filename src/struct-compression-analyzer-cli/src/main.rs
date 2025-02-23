@@ -9,7 +9,7 @@ use std::{
 };
 use struct_compression_analyzer::{
     analysis_results::{AnalysisResults, PrintFormat},
-    analyzer::{AnalysisOptions, SchemaAnalyzer},
+    analyzer::{CompressionOptions, SchemaAnalyzer},
     csv,
     offset_evaluator::try_evaluate_file_offset,
     plot::generate_plots,
@@ -256,7 +256,7 @@ fn analyze_file(params: &AnalyzeFileParams) -> anyhow::Result<AnalysisResults> {
     // Analyze the file with SchemaAnalyzer
     let mut analyzer = SchemaAnalyzer::new(
         params.schema,
-        AnalysisOptions::default().with_zstd_compression_level(params.zstd_compression_level),
+        CompressionOptions::default().with_zstd_compression_level(params.zstd_compression_level),
     );
     let mut bytes_left = length;
 

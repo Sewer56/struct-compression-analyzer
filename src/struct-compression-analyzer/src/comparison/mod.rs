@@ -15,10 +15,12 @@
 //!
 //! ```no_run
 //! use struct_compression_analyzer::comparison::*;
+//! use struct_compression_analyzer::analyzer::CompressionOptions;
 //!
 //! fn calculate_example(baseline_data: &[u8], comparison_data: &[u8]) {
-//!     let baseline = GroupComparisonMetrics::from_bytes(&baseline_data);
-//!     let comparison = GroupComparisonMetrics::from_bytes(&comparison_data);
+//!     let options = CompressionOptions::default();
+//!     let baseline = GroupComparisonMetrics::from_bytes(&baseline_data, options);
+//!     let comparison = GroupComparisonMetrics::from_bytes(&comparison_data, options);
 //!
 //!     // Compare the difference
 //!     let difference = GroupDifference::from_metrics(&baseline, &comparison);
@@ -30,8 +32,9 @@
 //! [`GroupComparisonMetrics`]: GroupComparisonMetrics
 //! [`GroupDifference`]: GroupDifference
 
-use crate::utils::analyze_utils::{
-    calculate_file_entropy, get_zstd_compressed_size, size_estimate,
+use crate::{
+    analyzer::CompressionOptions,
+    utils::analyze_utils::{calculate_file_entropy, get_zstd_compressed_size, size_estimate},
 };
 use lossless_transform_utils::match_estimator::estimate_num_lz_matches_fast;
 
@@ -83,14 +86,16 @@ impl GroupComparisonMetrics {
     ///
     /// # Arguments
     /// * `bytes` - A slice of bytes representing the data to analyze.
+    /// * `compression_options` - Compression options, zstd compression level, etc.
     ///
     /// # Returns
     /// A [`GroupComparisonMetrics`] struct containing the computed metrics.
-    pub fn from_bytes(bytes: &[u8]) -> Self {
+    pub fn from_bytes(bytes: &[u8], compression_options: CompressionOptions) -> Self {
         let entropy = calculate_file_entropy(bytes);
         let lz_matches = estimate_num_lz_matches_fast(bytes) as u64;
         let estimated_size = size_estimate(bytes, lz_matches as usize, entropy) as u64;
-        let zstd_size = get_zstd_compressed_size(bytes) as u64;
+        let zstd_size =
+            get_zstd_compressed_size(bytes, compression_options.zstd_compression_level) as u64;
 
         GroupComparisonMetrics {
             lz_matches,

@@ -44,10 +44,10 @@
 //! ```no_run
 //! use struct_compression_analyzer::{analyzer::SchemaAnalyzer, schema::Schema};
 //! use struct_compression_analyzer::analysis_results::AnalysisResults;
-//! use struct_compression_analyzer::analyzer::AnalysisOptions;
+//! use struct_compression_analyzer::analyzer::CompressionOptions;
 //!
 //! fn analyze_data(schema: &Schema, data: &[u8]) -> AnalysisResults {
-//!     let options = AnalysisOptions { zstd_compression_level: 7 };
+//!     let options = CompressionOptions { zstd_compression_level: 7 };
 //!     let mut analyzer = SchemaAnalyzer::new(schema, options);
 //!     analyzer.add_entry(data);
 //!     analyzer.generate_results().unwrap()
@@ -96,6 +96,7 @@
 
 use crate::analyzer::AnalyzerFieldState;
 use crate::analyzer::BitStats;
+use crate::analyzer::CompressionOptions;
 use crate::analyzer::SchemaAnalyzer;
 use crate::comparison::compare_groups::analyze_custom_comparisons;
 use crate::comparison::compare_groups::GroupComparisonError;
@@ -224,7 +225,10 @@ pub fn compute_analysis_results(
         let entropy = calculate_file_entropy(writer_buffer);
         let lz_matches = estimate_num_lz_matches_fast(writer_buffer);
         let estimated_size = size_estimate(writer_buffer, lz_matches, entropy);
-        let actual_size = get_zstd_compressed_size(writer_buffer);
+        let actual_size = get_zstd_compressed_size(
+            writer_buffer,
+            analyzer.compression_options.zstd_compression_level,
+        );
 
         // reduce memory usage from leftover analyzer.
         stats.value_counts.shrink_to_fit();
@@ -253,11 +257,15 @@ pub fn compute_analysis_results(
         &mut analyzer.field_states,
         &analyzer.schema.analysis.split_groups,
         &field_metrics,
+        analyzer.compression_options,
     );
 
     // Process custom group comparisons
-    let custom_comparisons =
-        analyze_custom_comparisons(analyzer.schema, &mut analyzer.field_states)?;
+    let custom_comparisons = analyze_custom_comparisons(
+        analyzer.schema,
+        &mut analyzer.field_states,
+        analyzer.compression_options,
+    )?;
 
     Ok(AnalysisResults {
         file_entropy,
@@ -265,7 +273,10 @@ pub fn compute_analysis_results(
         per_field: field_metrics,
         schema_metadata: analyzer.schema.metadata.clone(),
         estimated_file_size: size_estimate(&analyzer.entries, file_lz_matches, file_entropy),
-        zstd_file_size: get_zstd_compressed_size(&analyzer.entries),
+        zstd_file_size: get_zstd_compressed_size(
+            &analyzer.entries,
+            analyzer.compression_options.zstd_compression_level,
+        ),
         original_size: analyzer.entries.len(),
         split_comparisons,
         custom_comparisons,
@@ -287,6 +298,7 @@ pub fn compute_analysis_results(
 /// * `field_stats` - The current field states (analyzer working state)
 /// * `comparisons` - A slice of [`SplitComparison`] objects defining the splits to compare.
 /// * `field_metrics` - A reference to a hash map of field metrics.
+/// * `compression_options` - The compression options (zstd compression level, etc).
 ///
 /// # Returns
 /// A vector of [`SplitComparisonResult`] objects containing the comparison results.
@@ -296,6 +308,7 @@ fn calc_split_comparisons(
     field_stats: &mut AHashMap<String, AnalyzerFieldState>,
     comparisons: &[SplitComparison],
     field_metrics: &AHashMap<String, FieldMetrics>,
+    compression_options: CompressionOptions,
 ) -> Vec<SplitComparisonResult> {
     let mut split_comparisons = Vec::new();
     for comparison in comparisons {
@@ -336,6 +349,7 @@ fn calc_split_comparisons(
             &group2_bytes,
             group1_field_metrics,
             group2_field_metrics,
+            compression_options,
         ));
     }
     split_comparisons

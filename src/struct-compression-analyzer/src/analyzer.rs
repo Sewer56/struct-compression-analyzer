@@ -10,7 +10,7 @@
 //! # Core Types
 //!
 //! - [`SchemaAnalyzer`]: Main analyzer that processes binary data.
-//! - [`AnalysisOptions`]: Configuration options for the analyzer.
+//! - [`CompressionOptions`]: Configuration options for the analyzer.
 //!
 //! # Internal Types
 //!
@@ -20,7 +20,7 @@
 //! # Example
 //!
 //! ```rust no_run
-//! use struct_compression_analyzer::{schema::Schema, analyzer::{SchemaAnalyzer, AnalysisOptions}};
+//! use struct_compression_analyzer::{schema::Schema, analyzer::{SchemaAnalyzer, CompressionOptions}};
 //! use anyhow::Result;
 //! use std::fs::read_to_string;
 //! use std::path::Path;
@@ -30,7 +30,7 @@
 //!     let schema = Schema::load_from_file(Path::new("schema.yaml"))?;
 //!
 //!     // Create analysis options
-//!     let options = AnalysisOptions::default();
+//!     let options = CompressionOptions::default();
 //!
 //!     // Create the analyzer from the schema, creating the initial state.
 //!     let mut analyzer = SchemaAnalyzer::new(&schema, options);
@@ -86,19 +86,19 @@ pub struct SchemaAnalyzer<'a> {
     /// This supports both 'groups' and fields.
     pub field_states: AHashMap<String, AnalyzerFieldState>,
     /// Configuration options for analysis.
-    pub options: AnalysisOptions,
+    pub compression_options: CompressionOptions,
 }
 
-/// Options to configure the behavior of [`SchemaAnalyzer`].
+/// Options to configure the behavior of compression when analysing schemas.
 #[derive(Debug, Clone, Copy)]
-pub struct AnalysisOptions {
+pub struct CompressionOptions {
     /// The zstd compression level to use.
     /// Usually '7' is good enough to represent the data well at runtime,
     /// but we default to higher for accuracy when analyzing.
     pub zstd_compression_level: i32,
 }
 
-impl Default for AnalysisOptions {
+impl Default for CompressionOptions {
     fn default() -> Self {
         Self {
             zstd_compression_level: 16,
@@ -106,7 +106,7 @@ impl Default for AnalysisOptions {
     }
 }
 
-impl AnalysisOptions {
+impl CompressionOptions {
     /// Sets the zstd compression level.
     /// Usually '7' is good enough to represent the data well at runtime,
     /// but we default to higher for accuracy when analyzing.
@@ -167,17 +167,17 @@ impl<'a> SchemaAnalyzer<'a> {
     ///
     /// # Example
     /// ```rust
-    /// # use struct_compression_analyzer::{schema::Schema, analyzer::{SchemaAnalyzer, AnalysisOptions}};
+    /// # use struct_compression_analyzer::{schema::Schema, analyzer::{SchemaAnalyzer, CompressionOptions}};
     /// # let schema = Schema::from_yaml("version: '1.0'\nroot: { type: group, fields: {} }").unwrap();
-    /// let options = AnalysisOptions::default();
+    /// let options = CompressionOptions::default();
     /// let analyzer = SchemaAnalyzer::new(&schema, options);
     /// ```
-    pub fn new(schema: &'a Schema, options: AnalysisOptions) -> Self {
+    pub fn new(schema: &'a Schema, options: CompressionOptions) -> Self {
         Self {
             schema,
             entries: Vec::new(),
             field_states: build_field_stats(&schema.root, "", 0, schema.bit_order),
-            options,
+            compression_options: options,
         }
     }
 
@@ -471,7 +471,7 @@ root:
     #[test]
     fn test_analyzer_initialization() {
         let schema = create_test_schema();
-        let options = AnalysisOptions::default();
+        let options = CompressionOptions::default();
         let analyzer = SchemaAnalyzer::new(&schema, options);
 
         // Should collect stats for all fields and groups
@@ -495,7 +495,7 @@ root:
       bit_order: msb
 "###;
         let schema = Schema::from_yaml(yaml).expect("Failed to parse test schema");
-        let options = AnalysisOptions::default();
+        let options = CompressionOptions::default();
         let mut analyzer = SchemaAnalyzer::new(&schema, options);
 
         // Add 4 entries (2 bits each) to make exactly 1 byte (8 bits)
@@ -579,7 +579,7 @@ root:
       bit_order: lsb
 "###;
         let schema = Schema::from_yaml(yaml).expect("Failed to parse test schema");
-        let options = AnalysisOptions::default();
+        let options = CompressionOptions::default();
         let mut analyzer = SchemaAnalyzer::new(&schema, options);
 
         // Add 4 entries (2 bits each) to make exactly 1 byte (8 bits)
@@ -603,7 +603,7 @@ root:
     #[test]
     fn test_field_stats_structure() {
         let schema = create_test_schema();
-        let options = AnalysisOptions::default();
+        let options = CompressionOptions::default();
         let analyzer = SchemaAnalyzer::new(&schema, options);
 
         // Verify field hierarchy and properties
@@ -650,7 +650,7 @@ root:
     dummy: 8
 "#;
         let schema = Schema::from_yaml(yaml).unwrap();
-        let options = AnalysisOptions::default();
+        let options = CompressionOptions::default();
         let mut analyzer = SchemaAnalyzer::new(&schema, options);
 
         // Should process - matching magic
@@ -683,7 +683,7 @@ root:
           value: 1
 "#;
         let schema = Schema::from_yaml(yaml).unwrap();
-        let options = AnalysisOptions::default();
+        let options = CompressionOptions::default();
         let mut analyzer = SchemaAnalyzer::new(&schema, options);
 
         // First bit 1 - processes
@@ -697,10 +697,10 @@ root:
 
     #[test]
     fn test_builder() {
-        let options = AnalysisOptions::default().with_zstd_compression_level(7);
+        let options = CompressionOptions::default().with_zstd_compression_level(7);
         assert_eq!(options.zstd_compression_level, 7);
 
-        let options = AnalysisOptions::default();
+        let options = CompressionOptions::default();
         assert_eq!(options.zstd_compression_level, 16); // Check default value.
     }
 }

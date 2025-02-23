@@ -62,6 +62,7 @@ pub mod generate_bytes;
 pub(crate) mod test_helpers;
 
 use super::{GroupComparisonMetrics, GroupDifference};
+use crate::analyzer::CompressionOptions;
 use crate::comparison::compare_groups::generate_bytes::generate_group_bytes;
 use crate::schema::Schema;
 use crate::{analyzer::AnalyzerFieldState, schema::CustomComparison};
@@ -108,12 +109,14 @@ impl GroupComparisonResult {
     /// * `baseline_bytes` - The bytes of the baseline (original/reference) group.
     /// * `comparison_byte_slices` - The bytes of the comparison groups.
     /// * `group_names` - The names of the comparison groups in order they were specified in the schema.
+    /// * `compression_options` - Compression options, zstd compression level, etc.
     pub fn from_custom_comparison<T: AsRef<[u8]>>(
         name: String,
         description: String,
         baseline_bytes: &[u8],
         comparison_byte_slices: &[T],
         group_names: &[String],
+        compression_options: CompressionOptions,
     ) -> Result<Self, GroupComparisonError> {
         if comparison_byte_slices.len() != group_names.len() {
             return Err(GroupComparisonError::InvalidItemCount {
@@ -123,7 +126,8 @@ impl GroupComparisonResult {
         }
 
         // Calculate baseline metrics
-        let baseline_metrics = GroupComparisonMetrics::from_bytes(baseline_bytes);
+        let baseline_metrics =
+            GroupComparisonMetrics::from_bytes(baseline_bytes, compression_options);
 
         // Process comparison groups
         let mut group_metrics = Vec::with_capacity(comparison_byte_slices.len());
@@ -134,7 +138,8 @@ impl GroupComparisonResult {
         }
 
         for comparison in comparison_byte_slices {
-            let metrics = GroupComparisonMetrics::from_bytes(comparison.as_ref());
+            let metrics =
+                GroupComparisonMetrics::from_bytes(comparison.as_ref(), compression_options);
             differences.push(GroupDifference::from_metrics(&baseline_metrics, &metrics));
             group_metrics.push(metrics);
         }
@@ -157,6 +162,7 @@ impl GroupComparisonResult {
 ///
 /// * `comparison` - The comparison to analyze
 /// * `field_stats` - Mutable reference to field statistics map
+/// * `compression_options` - Compression options, zstd compression level, etc.
 ///
 /// # Returns
 ///
@@ -164,6 +170,7 @@ impl GroupComparisonResult {
 pub(crate) fn process_single_comparison(
     comparison: &CustomComparison,
     field_stats: &mut AHashMap<String, AnalyzerFieldState>,
+    compression_options: CompressionOptions,
 ) -> Result<GroupComparisonResult, GroupComparisonError> {
     // Generate baseline bytes with error context
     let baseline_bytes = generate_group_bytes(&comparison.baseline, field_stats).map_err(|e| {
@@ -195,6 +202,7 @@ pub(crate) fn process_single_comparison(
         &baseline_bytes,
         &comparison_bytes,
         &group_names,
+        compression_options,
     )
 }
 
@@ -205,6 +213,7 @@ pub(crate) fn process_single_comparison(
 ///
 /// * `schema` - Reference to loaded schema definition
 /// * `field_stats` - Mutable reference to field statistics map
+/// * `compression_options` - Compression options, zstd compression level, etc.
 ///
 /// # Returns
 ///
@@ -212,12 +221,13 @@ pub(crate) fn process_single_comparison(
 pub(crate) fn analyze_custom_comparisons(
     schema: &Schema,
     field_stats: &mut AHashMap<String, AnalyzerFieldState>,
+    compression_options: CompressionOptions,
 ) -> Result<Vec<GroupComparisonResult>, GroupComparisonError> {
     schema
         .analysis
         .compare_groups
         .iter()
-        .map(|comparison| process_single_comparison(comparison, field_stats))
+        .map(|comparison| process_single_comparison(comparison, field_stats, compression_options))
         .collect()
 }
 
@@ -264,7 +274,9 @@ mod from_custom_comparison_tests {
             },
         };
 
-        let result = process_single_comparison(&comparison, &mut field_stats).unwrap();
+        let result =
+            process_single_comparison(&comparison, &mut field_stats, CompressionOptions::default())
+                .unwrap();
 
         // Note: The 'zstd' and 'estimated size' numbers may randomly break with parameter changes.
         //       This is OK, we hardcoded them here for sanity test only.
@@ -329,7 +341,9 @@ mod from_custom_comparison_tests {
             },
         };
 
-        let result = process_single_comparison(&comparison, &mut field_stats).unwrap();
+        let result =
+            process_single_comparison(&comparison, &mut field_stats, CompressionOptions::default())
+                .unwrap();
 
         assert_eq!(result.group_names, vec!["half_bits", "full_bits"]);
         assert_eq!(result.differences.len(), 2);
@@ -361,7 +375,11 @@ mod from_custom_comparison_tests {
         };
 
         let mut field_stats = AHashMap::new();
-        let result = process_single_comparison(&invalid_comparison, &mut field_stats);
+        let result = process_single_comparison(
+            &invalid_comparison,
+            &mut field_stats,
+            CompressionOptions::default(),
+        );
 
         assert!(matches!(
             result,
@@ -379,6 +397,7 @@ mod from_custom_comparison_tests {
             &[],
             &[&[1u8], &[2u8]],
             &["group1".into()],
+            CompressionOptions::default(),
         );
 
         assert!(matches!(
