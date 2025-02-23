@@ -33,8 +33,8 @@
 //! [`GroupDifference`]: GroupDifference
 
 use crate::{
-    analyzer::CompressionOptions,
-    utils::analyze_utils::{calculate_file_entropy, get_zstd_compressed_size, size_estimate},
+    analyzer::{CompressionOptions, SizeEstimationParameters},
+    utils::analyze_utils::{calculate_file_entropy, get_zstd_compressed_size},
 };
 use lossless_transform_utils::match_estimator::estimate_num_lz_matches_fast;
 
@@ -93,7 +93,11 @@ impl GroupComparisonMetrics {
     pub fn from_bytes(bytes: &[u8], compression_options: CompressionOptions) -> Self {
         let entropy = calculate_file_entropy(bytes);
         let lz_matches = estimate_num_lz_matches_fast(bytes) as u64;
-        let estimated_size = size_estimate(bytes, lz_matches as usize, entropy) as u64;
+        let estimated_size = (compression_options.size_estimator_fn)(SizeEstimationParameters {
+            data: bytes,
+            num_lz_matches: lz_matches as usize,
+            entropy,
+        }) as u64;
         let zstd_size =
             get_zstd_compressed_size(bytes, compression_options.zstd_compression_level) as u64;
 

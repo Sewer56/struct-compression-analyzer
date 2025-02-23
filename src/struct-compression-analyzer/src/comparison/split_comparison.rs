@@ -36,8 +36,8 @@
 use super::{GroupComparisonMetrics, GroupDifference};
 use crate::{
     analysis_results::FieldMetrics,
-    analyzer::CompressionOptions,
-    utils::analyze_utils::{calculate_file_entropy, get_zstd_compressed_size, size_estimate},
+    analyzer::{CompressionOptions, SizeEstimationParameters},
+    utils::analyze_utils::{calculate_file_entropy, get_zstd_compressed_size},
 };
 use lossless_transform_utils::match_estimator::estimate_num_lz_matches_fast;
 
@@ -76,8 +76,16 @@ pub fn make_split_comparison_result(
     let entropy2 = calculate_file_entropy(split_bytes);
     let lz_matches1 = estimate_num_lz_matches_fast(baseline_bytes);
     let lz_matches2 = estimate_num_lz_matches_fast(split_bytes);
-    let estimated_size_1 = size_estimate(baseline_bytes, lz_matches1, entropy1);
-    let estimated_size_2 = size_estimate(split_bytes, lz_matches2, entropy2);
+    let estimated_size_1 = (compression_options.size_estimator_fn)(SizeEstimationParameters {
+        data: baseline_bytes,
+        num_lz_matches: lz_matches1,
+        entropy: entropy1,
+    });
+    let estimated_size_2 = (compression_options.size_estimator_fn)(SizeEstimationParameters {
+        data: split_bytes,
+        num_lz_matches: lz_matches2,
+        entropy: entropy2,
+    });
     let actual_size_1 =
         get_zstd_compressed_size(baseline_bytes, compression_options.zstd_compression_level);
     let actual_size_2 =

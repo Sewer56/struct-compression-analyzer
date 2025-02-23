@@ -58,7 +58,8 @@
 use super::schema::{Group, Schema};
 use crate::analysis_results::ComputeAnalysisResultsError;
 use crate::utils::analyze_utils::{
-    create_bit_reader, create_bit_writer, reverse_bits, BitReaderContainer, BitWriterContainer,
+    create_bit_reader, create_bit_writer, reverse_bits, size_estimate, BitReaderContainer,
+    BitWriterContainer,
 };
 use crate::utils::constants::CHILD_MARKER;
 use crate::{
@@ -89,6 +90,23 @@ pub struct SchemaAnalyzer<'a> {
     pub compression_options: CompressionOptions,
 }
 
+/// Struct to encapsulate parameters for size estimation functions.
+/// Functions accept this struct return an estimated size in bytes.
+#[derive(Debug, Clone, Copy)]
+pub struct SizeEstimationParameters<'a> {
+    /// The raw bytes of the data.
+    pub data: &'a [u8],
+    /// The number of LZ matches found in the data.
+    pub num_lz_matches: usize,
+    /// The estimated entropy of the data.
+    pub entropy: f64,
+}
+
+/// Function pointer type for size estimation functions.
+///
+/// Takes the uncompressed data and [`SizeEstimationParameters`] and returns the estimated size in bytes.
+pub type SizeEstimatorFn = fn(SizeEstimationParameters) -> usize;
+
 /// Options to configure the behavior of compression when analysing schemas.
 #[derive(Debug, Clone, Copy)]
 pub struct CompressionOptions {
@@ -96,12 +114,16 @@ pub struct CompressionOptions {
     /// Usually '7' is good enough to represent the data well at runtime,
     /// but we default to higher for accuracy when analyzing.
     pub zstd_compression_level: i32,
+    /// Function pointer to use for size estimation.
+    /// The function takes [`SizeEstimationParameters`] and returns the estimated size in bytes.
+    pub size_estimator_fn: SizeEstimatorFn,
 }
 
 impl Default for CompressionOptions {
     fn default() -> Self {
         Self {
             zstd_compression_level: 16,
+            size_estimator_fn: size_estimate,
         }
     }
 }
@@ -112,6 +134,14 @@ impl CompressionOptions {
     /// but we default to higher for accuracy when analyzing.
     pub fn with_zstd_compression_level(mut self, level: i32) -> Self {
         self.zstd_compression_level = level;
+        self
+    }
+
+    /// Sets the size estimator function.
+    /// The function takes in the `uncompressed data` and [`SizeEstimationParameters`]
+    /// and returns the estimated size of the compressed data in bytes.
+    pub fn with_size_estimator_fn(mut self, estimator_fn: SizeEstimatorFn) -> Self {
+        self.size_estimator_fn = estimator_fn;
         self
     }
 }

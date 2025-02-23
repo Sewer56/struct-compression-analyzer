@@ -47,7 +47,7 @@
 //! use struct_compression_analyzer::analyzer::CompressionOptions;
 //!
 //! fn analyze_data(schema: &Schema, data: &[u8]) -> AnalysisResults {
-//!     let options = CompressionOptions { zstd_compression_level: 7 };
+//!     let options = CompressionOptions::default();
 //!     let mut analyzer = SchemaAnalyzer::new(schema, options);
 //!     analyzer.add_entry(data);
 //!     analyzer.generate_results().unwrap()
@@ -98,6 +98,7 @@ use crate::analyzer::AnalyzerFieldState;
 use crate::analyzer::BitStats;
 use crate::analyzer::CompressionOptions;
 use crate::analyzer::SchemaAnalyzer;
+use crate::analyzer::SizeEstimationParameters;
 use crate::comparison::compare_groups::analyze_custom_comparisons;
 use crate::comparison::compare_groups::GroupComparisonError;
 use crate::comparison::compare_groups::GroupComparisonResult;
@@ -111,7 +112,6 @@ use crate::schema::SplitComparison;
 use crate::utils::analyze_utils::calculate_file_entropy;
 use crate::utils::analyze_utils::get_writer_buffer;
 use crate::utils::analyze_utils::get_zstd_compressed_size;
-use crate::utils::analyze_utils::size_estimate;
 use crate::utils::constants::CHILD_MARKER;
 use ahash::{AHashMap, HashMapExt};
 use derive_more::derive::FromStr;
@@ -224,7 +224,12 @@ pub fn compute_analysis_results(
         let writer_buffer = get_writer_buffer(&mut stats.writer);
         let entropy = calculate_file_entropy(writer_buffer);
         let lz_matches = estimate_num_lz_matches_fast(writer_buffer);
-        let estimated_size = size_estimate(writer_buffer, lz_matches, entropy);
+        let estimated_size =
+            (analyzer.compression_options.size_estimator_fn)(SizeEstimationParameters {
+                data: writer_buffer,
+                num_lz_matches: lz_matches,
+                entropy,
+            });
         let actual_size = get_zstd_compressed_size(
             writer_buffer,
             analyzer.compression_options.zstd_compression_level,
@@ -272,7 +277,13 @@ pub fn compute_analysis_results(
         file_lz_matches,
         per_field: field_metrics,
         schema_metadata: analyzer.schema.metadata.clone(),
-        estimated_file_size: size_estimate(&analyzer.entries, file_lz_matches, file_entropy),
+        estimated_file_size: (analyzer.compression_options.size_estimator_fn)(
+            SizeEstimationParameters {
+                data: &analyzer.entries,
+                num_lz_matches: file_lz_matches,
+                entropy: file_entropy,
+            },
+        ),
         zstd_file_size: get_zstd_compressed_size(
             &analyzer.entries,
             analyzer.compression_options.zstd_compression_level,
