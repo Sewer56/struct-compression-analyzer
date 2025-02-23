@@ -256,9 +256,7 @@ fn analyze_file(params: &AnalyzeFileParams) -> anyhow::Result<AnalysisResults> {
     // Analyze the file with SchemaAnalyzer
     let mut analyzer = SchemaAnalyzer::new(
         params.schema,
-        AnalysisOptions {
-            zstd_compression_level: params.zstd_compression_level,
-        },
+        AnalysisOptions::default().with_zstd_compression_level(params.zstd_compression_level),
     );
     let mut bytes_left = length;
 

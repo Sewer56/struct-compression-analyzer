@@ -108,6 +108,8 @@ impl Default for AnalysisOptions {
 
 impl AnalysisOptions {
     /// Sets the zstd compression level.
+    /// Usually '7' is good enough to represent the data well at runtime,
+    /// but we default to higher for accuracy when analyzing.
     pub fn with_zstd_compression_level(mut self, level: i32) -> Self {
         self.zstd_compression_level = level;
         self
