@@ -44,9 +44,11 @@
 //! ```no_run
 //! use struct_compression_analyzer::{analyzer::SchemaAnalyzer, schema::Schema};
 //! use struct_compression_analyzer::analysis_results::AnalysisResults;
+//! use struct_compression_analyzer::analyzer::AnalysisOptions;
 //!
 //! fn analyze_data(schema: &Schema, data: &[u8]) -> AnalysisResults {
-//!     let mut analyzer = SchemaAnalyzer::new(schema);
+//!     let options = AnalysisOptions { zstd_compression_level: 7 };
+//!     let mut analyzer = SchemaAnalyzer::new(schema, options);
 //!     analyzer.add_entry(data);
 //!     analyzer.generate_results().unwrap()
 //! }
