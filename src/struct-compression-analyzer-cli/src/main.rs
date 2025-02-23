@@ -9,7 +9,7 @@ use std::{
 };
 use struct_compression_analyzer::{
     analysis_results::{AnalysisResults, PrintFormat},
-    analyzer::SchemaAnalyzer,
+    analyzer::{CompressionOptions, SchemaAnalyzer},
     csv,
     offset_evaluator::try_evaluate_file_offset,
     plot::generate_plots,
@@ -62,6 +62,10 @@ struct FileCommand {
     /// show extra stats
     #[argh(switch, long = "show-extra-stats")]
     show_extra_stats: bool,
+
+    /// zstd compression level (default: 3)
+    #[argh(option, short = 'z', default = "3")]
+    zstd_compression_level: i32,
 }
 
 #[derive(Debug, FromArgs)]
@@ -99,6 +103,10 @@ struct DirectoryCommand {
     /// show extra stats
     #[argh(switch, long = "show-extra-stats")]
     show_extra_stats: bool,
+
+    /// zstd compression level (default: 16)
+    #[argh(option, short = 'z', default = "16")]
+    zstd_compression_level: i32,
 }
 
 /// Parameters to function used to analyze a single file.
@@ -114,6 +122,8 @@ struct AnalyzeFileParams<'a> {
     offset: Option<u64>,
     /// The length of the data to analyze. If not specified, the entire rest of the file is analyzed.
     length: Option<u64>,
+    /// The zstd compression level.
+    zstd_compression_level: i32,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -129,6 +139,7 @@ fn main() -> anyhow::Result<()> {
                 bytes_per_element: (schema.root.bits / 8) as u64,
                 offset: file_cmd.offset,
                 length: file_cmd.length,
+                zstd_compression_level: file_cmd.zstd_compression_level,
             })?;
             println!("Analysis Results:");
             analysis_result.print(
@@ -157,6 +168,7 @@ fn main() -> anyhow::Result<()> {
                         bytes_per_element: (schema.root.bits / 8) as u64,
                         offset: dir_cmd.offset,
                         length: dir_cmd.length,
+                        zstd_compression_level: dir_cmd.zstd_compression_level,
                     })
                 })
                 .filter_map(|result| match result {
@@ -242,7 +254,10 @@ fn analyze_file(params: &AnalyzeFileParams) -> anyhow::Result<AnalysisResults> {
     file.read_exact(&mut data)?;
 
     // Analyze the file with SchemaAnalyzer
-    let mut analyzer = SchemaAnalyzer::new(params.schema);
+    let mut analyzer = SchemaAnalyzer::new(
+        params.schema,
+        CompressionOptions::default().with_zstd_compression_level(params.zstd_compression_level),
+    );
     let mut bytes_left = length;
 
     while bytes_left > 0 {

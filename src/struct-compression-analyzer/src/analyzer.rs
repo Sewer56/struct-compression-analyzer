@@ -1,4 +1,4 @@
-//! Analyzes binary data structures against schema definitions
+//! Analyzes binary data structures against schema definitions.
 //!
 //! This module implements analysis of binary data structures according to a defined schema.
 //! It handles both field and group analysis, maintaining statistics about the data including:
@@ -9,7 +9,8 @@
 //!
 //! # Core Types
 //!
-//! - [`SchemaAnalyzer`]: Main analyzer that processes binary data
+//! - [`SchemaAnalyzer`]: Main analyzer that processes binary data.
+//! - [`CompressionOptions`]: Configuration options for the analyzer.
 //!
 //! # Internal Types
 //!
@@ -19,7 +20,7 @@
 //! # Example
 //!
 //! ```rust no_run
-//! use struct_compression_analyzer::{schema::Schema, analyzer::SchemaAnalyzer};
+//! use struct_compression_analyzer::{schema::Schema, analyzer::{SchemaAnalyzer, CompressionOptions}};
 //! use anyhow::Result;
 //! use std::fs::read_to_string;
 //! use std::path::Path;
@@ -28,8 +29,11 @@
 //!     // Load schema from disk.
 //!     let schema = Schema::load_from_file(Path::new("schema.yaml"))?;
 //!
+//!     // Create analysis options
+//!     let options = CompressionOptions::default();
+//!
 //!     // Create the analyzer from the schema, creating the initial state.
-//!     let mut analyzer = SchemaAnalyzer::new(&schema);
+//!     let mut analyzer = SchemaAnalyzer::new(&schema, options);
 //!
 //!     // Process multiple entries
 //!     // From binary file, or wherever they may come from.
@@ -54,7 +58,8 @@
 use super::schema::{Group, Schema};
 use crate::analysis_results::ComputeAnalysisResultsError;
 use crate::utils::analyze_utils::{
-    create_bit_reader, create_bit_writer, reverse_bits, BitReaderContainer, BitWriterContainer,
+    create_bit_reader, create_bit_writer, reverse_bits, size_estimate, BitReaderContainer,
+    BitWriterContainer,
 };
 use crate::utils::constants::CHILD_MARKER;
 use crate::{
@@ -81,6 +86,64 @@ pub struct SchemaAnalyzer<'a> {
     /// Intermediate analysis state (field name → statistics)
     /// This supports both 'groups' and fields.
     pub field_states: AHashMap<String, AnalyzerFieldState>,
+    /// Configuration options for analysis.
+    pub compression_options: CompressionOptions,
+}
+
+/// Struct to encapsulate parameters for size estimation functions.
+/// Functions accept this struct return an estimated size in bytes.
+#[derive(Debug, Clone, Copy)]
+pub struct SizeEstimationParameters<'a> {
+    /// The raw bytes of the data.
+    pub data: &'a [u8],
+    /// The number of LZ matches found in the data.
+    pub num_lz_matches: usize,
+    /// The estimated entropy of the data.
+    pub entropy: f64,
+}
+
+/// Function pointer type for size estimation functions.
+///
+/// Takes the uncompressed data and [`SizeEstimationParameters`] and returns the estimated size in bytes.
+pub type SizeEstimatorFn = fn(SizeEstimationParameters) -> usize;
+
+/// Options to configure the behavior of compression when analysing schemas.
+#[derive(Debug, Clone, Copy)]
+pub struct CompressionOptions {
+    /// The zstd compression level to use.
+    /// Usually '7' is good enough to represent the data well at runtime,
+    /// but we default to higher for accuracy when analyzing.
+    pub zstd_compression_level: i32,
+    /// Function pointer to use for size estimation.
+    /// The function takes [`SizeEstimationParameters`] and returns the estimated size in bytes.
+    pub size_estimator_fn: SizeEstimatorFn,
+}
+
+impl Default for CompressionOptions {
+    fn default() -> Self {
+        Self {
+            zstd_compression_level: 16,
+            size_estimator_fn: size_estimate,
+        }
+    }
+}
+
+impl CompressionOptions {
+    /// Sets the zstd compression level.
+    /// Usually '7' is good enough to represent the data well at runtime,
+    /// but we default to higher for accuracy when analyzing.
+    pub fn with_zstd_compression_level(mut self, level: i32) -> Self {
+        self.zstd_compression_level = level;
+        self
+    }
+
+    /// Sets the size estimator function.
+    /// The function takes in the `uncompressed data` and [`SizeEstimationParameters`]
+    /// and returns the estimated size of the compressed data in bytes.
+    pub fn with_size_estimator_fn(mut self, estimator_fn: SizeEstimatorFn) -> Self {
+        self.size_estimator_fn = estimator_fn;
+        self
+    }
 }
 
 /// Intermediate statistics for a single field or group of fields
@@ -134,15 +197,17 @@ impl<'a> SchemaAnalyzer<'a> {
     ///
     /// # Example
     /// ```rust
-    /// # use struct_compression_analyzer::{schema::Schema, analyzer::SchemaAnalyzer};
+    /// # use struct_compression_analyzer::{schema::Schema, analyzer::{SchemaAnalyzer, CompressionOptions}};
     /// # let schema = Schema::from_yaml("version: '1.0'\nroot: { type: group, fields: {} }").unwrap();
-    /// let analyzer = SchemaAnalyzer::new(&schema);
+    /// let options = CompressionOptions::default();
+    /// let analyzer = SchemaAnalyzer::new(&schema, options);
     /// ```
-    pub fn new(schema: &'a Schema) -> Self {
+    pub fn new(schema: &'a Schema, options: CompressionOptions) -> Self {
         Self {
             schema,
             entries: Vec::new(),
             field_states: build_field_stats(&schema.root, "", 0, schema.bit_order),
+            compression_options: options,
         }
     }
 
@@ -436,7 +501,8 @@ root:
     #[test]
     fn test_analyzer_initialization() {
         let schema = create_test_schema();
-        let analyzer = SchemaAnalyzer::new(&schema);
+        let options = CompressionOptions::default();
+        let analyzer = SchemaAnalyzer::new(&schema, options);
 
         // Should collect stats for all fields and groups
         assert_eq!(
@@ -459,7 +525,8 @@ root:
       bit_order: msb
 "###;
         let schema = Schema::from_yaml(yaml).expect("Failed to parse test schema");
-        let mut analyzer = SchemaAnalyzer::new(&schema);
+        let options = CompressionOptions::default();
+        let mut analyzer = SchemaAnalyzer::new(&schema, options);
 
         // Add 4 entries (2 bits each) to make exactly 1 byte (8 bits)
         // Values: 0b11, 0b00, 0b10, 0b01 → combined as 0b11001001 (0xC9)
@@ -542,7 +609,8 @@ root:
       bit_order: lsb
 "###;
         let schema = Schema::from_yaml(yaml).expect("Failed to parse test schema");
-        let mut analyzer = SchemaAnalyzer::new(&schema);
+        let options = CompressionOptions::default();
+        let mut analyzer = SchemaAnalyzer::new(&schema, options);
 
         // Add 4 entries (2 bits each) to make exactly 1 byte (8 bits)
         // This is a repeat of the logic from the big endian test.
@@ -565,7 +633,8 @@ root:
     #[test]
     fn test_field_stats_structure() {
         let schema = create_test_schema();
-        let analyzer = SchemaAnalyzer::new(&schema);
+        let options = CompressionOptions::default();
+        let analyzer = SchemaAnalyzer::new(&schema, options);
 
         // Verify field hierarchy and properties
         let root_group = analyzer.field_states.get("id").unwrap();
@@ -611,7 +680,8 @@ root:
     dummy: 8
 "#;
         let schema = Schema::from_yaml(yaml).unwrap();
-        let mut analyzer = SchemaAnalyzer::new(&schema);
+        let options = CompressionOptions::default();
+        let mut analyzer = SchemaAnalyzer::new(&schema, options);
 
         // Should process - matching magic
         analyzer.add_entry(&[0x55]).unwrap();
@@ -643,7 +713,8 @@ root:
           value: 1
 "#;
         let schema = Schema::from_yaml(yaml).unwrap();
-        let mut analyzer = SchemaAnalyzer::new(&schema);
+        let options = CompressionOptions::default();
+        let mut analyzer = SchemaAnalyzer::new(&schema, options);
 
         // First bit 1 - processes
         analyzer.add_entry(&[0b10000000]).unwrap();
@@ -652,5 +723,14 @@ root:
         // First bit 0 - skips
         analyzer.add_entry(&[0b00000000]).unwrap();
         assert_eq!(analyzer.field_states.get("header").unwrap().count, 1);
+    }
+
+    #[test]
+    fn test_builder() {
+        let options = CompressionOptions::default().with_zstd_compression_level(7);
+        assert_eq!(options.zstd_compression_level, 7);
+
+        let options = CompressionOptions::default();
+        assert_eq!(options.zstd_compression_level, 16); // Check default value.
     }
 }
