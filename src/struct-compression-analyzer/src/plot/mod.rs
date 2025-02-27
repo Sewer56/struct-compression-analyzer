@@ -8,7 +8,7 @@ use crate::{
     comparison::{compare_groups::GroupComparisonResult, split_comparison::SplitComparisonResult},
 };
 use core::{error::Error, ops::Range};
-use plotters::prelude::*;
+use plotters::{prelude::*, style::full_palette::PURPLE};
 use std::{fs, path::Path};
 
 /// Generates all plots for the analysis results.
@@ -32,16 +32,20 @@ pub fn generate_plots(
         return Ok(());
     }
 
-    let split_comparisons_dir = output_dir.join("split_comparison_plots");
-    fs::create_dir_all(&split_comparisons_dir)?;
+    let split_compare_dir = output_dir.join("split_comparison_plots");
+    fs::create_dir_all(&split_compare_dir)?;
 
     // Generate split comparison plot
     for (x, comparison) in results[0].split_comparisons.iter().enumerate() {
-        let output_path = split_comparisons_dir.join(format!("{}.png", comparison.name));
-        generate_ratio_split_comparison_plot(results, x, &output_path, false)?;
+        let output_path = split_compare_dir.join(format!("{}.png", comparison.name));
+        generate_ratio_split_comparison_plot(results, x, &output_path, false, false)?;
 
-        let output_path = split_comparisons_dir.join(format!("{}_extra.png", comparison.name));
-        generate_ratio_split_comparison_plot(results, x, &output_path, true)?;
+        let output_path = split_compare_dir.join(format!("{}_with_estimate.png", comparison.name));
+        generate_ratio_split_comparison_plot(results, x, &output_path, false, true)?;
+
+        let output_path =
+            split_compare_dir.join(format!("{}_with_entropy_by_lzmatches.png", comparison.name));
+        generate_ratio_split_comparison_plot(results, x, &output_path, true, false)?;
     }
 
     let custom_comparisons_dir = output_dir.join("custom_comparison_plots");
@@ -58,15 +62,15 @@ pub fn generate_plots(
                 group_name.replace(' ', "_"),
                 y
             ));
-            generate_ratio_custom_comparison_plot(results, x, y..y + 1, &output_path)?;
+            generate_ratio_custom_comparison_plot(results, x, y..y + 1, &output_path, false)?;
 
             let output_path = custom_comparisons_dir.join(format!(
-                "{}_{}_{}_extra.png",
+                "{}_{}_{}_with_estimate.png",
                 comparison.name,
                 group_name.replace(' ', "_"),
                 y
             ));
-            generate_ratio_custom_comparison_plot(results, x, y..y + 1, &output_path)?;
+            generate_ratio_custom_comparison_plot(results, x, y..y + 1, &output_path, true)?;
         }
 
         let output_path = custom_comparisons_dir.join(format!("{}.png", comparison.name));
@@ -75,14 +79,17 @@ pub fn generate_plots(
             x,
             0..comparison.group_names.len(),
             &output_path,
+            false,
         )?;
 
-        let output_path = custom_comparisons_dir.join(format!("{}_extra.png", comparison.name));
+        let output_path =
+            custom_comparisons_dir.join(format!("{}_with_estimate.png", comparison.name));
         generate_ratio_custom_comparison_plot(
             results,
             x,
             0..comparison.group_names.len(),
             &output_path,
+            true,
         )?;
     }
 
@@ -104,7 +111,8 @@ struct PlotData {
 /// * `results` - A slice of [`AnalysisResults`], one for each analyzed file.
 /// * `comparison_index` - The index of the split comparison to plot in the `split_comparisons` array.
 /// * `output_path` - The path where the plot file will be written.
-/// * `include_misc_columns` - Whether to include extra columns (entropy ratio).
+/// * `include_entropy_by_lzmatches_column` - Includes column for (1 / lz_matches * entropy_ratio).
+/// * `include_estimate_column` - Includes column for (estimate_ratio).
 ///
 /// # Returns
 ///
@@ -113,7 +121,8 @@ pub fn generate_ratio_split_comparison_plot(
     results: &[AnalysisResults],
     comparison_index: usize,
     output_path: &Path,
-    include_misc_columns: bool,
+    include_entropy_by_lzmatches_column: bool,
+    include_estimate_column: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if results.is_empty() || results[0].split_comparisons.is_empty() {
         return Ok(()); // No data to plot
@@ -167,8 +176,7 @@ pub fn generate_ratio_split_comparison_plot(
         data_points: lz_data_points,
     });
 
-    if include_misc_columns {
-        // Entropy Difference Plot Data
+    if include_entropy_by_lzmatches_column {
         let data_points = make_split_data_points(results, comparison_index, |comparison| {
             let base_lz = comparison.group1_metrics.lz_matches;
             let compare_lz = comparison.group2_metrics.lz_matches;
@@ -179,6 +187,21 @@ pub fn generate_ratio_split_comparison_plot(
         plots.push(PlotData {
             label: "1 / (entropy_ratio * lz_matches)".to_owned(),
             line_color: BLUE,
+            data_points,
+        });
+    }
+
+    if include_estimate_column {
+        // LZ Ratio Plot Data (inverted)
+        let data_points = make_split_data_points(results, comparison_index, |comparison| {
+            let base_est = comparison.group1_metrics.estimated_size;
+            let compare_est = comparison.group2_metrics.estimated_size;
+            calc_ratio_f64(compare_est, base_est)
+        });
+
+        plots.push(PlotData {
+            label: "estimate_ratio".to_owned(),
+            line_color: PURPLE,
             data_points,
         });
     }
@@ -259,6 +282,7 @@ fn generate_color_palette(
 /// * `comparison_index` - The index of the custom comparison to plot in the `custom_comparisons` array.
 /// * `group_indices` - The range of indices for the groups to compare.
 /// * `output_path` - The path where the plot file will be written.
+/// * `include_estimate_column` - Whether to include the estimate ratio column.
 ///
 /// # Returns
 ///
@@ -268,6 +292,7 @@ pub fn generate_ratio_custom_comparison_plot(
     comparison_index: usize,
     group_indices: Range<usize>,
     output_path: &Path,
+    include_estimate_column: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if results.is_empty() || results[0].split_comparisons.is_empty() {
         return Ok(()); // No data to plot
@@ -287,7 +312,7 @@ pub fn generate_ratio_custom_comparison_plot(
 
     // Get color palette
     let num_gradients = group_indices.len();
-    let num_base_colors = 3;
+    let num_base_colors = 4;
     let base_colors = generate_base_colors(num_base_colors)?;
     let colors = generate_color_palette(&base_colors, num_gradients);
 
@@ -337,6 +362,22 @@ pub fn generate_ratio_custom_comparison_plot(
                 label: format!("entropy_ratio ({})", group_name),
                 line_color: colors[color_offset + 2],
                 data_points: entropy_data_points,
+            });
+        }
+
+        // Estimate Ratio Plot Data
+        if include_estimate_column {
+            let estimate_data_points =
+                make_custom_data_points(results, comparison_index, |comparison| {
+                    let base_zstd = comparison.baseline_metrics.estimated_size;
+                    let compare_zstd = comparison.group_metrics[group_idx].estimated_size;
+                    calc_ratio_f64(compare_zstd, base_zstd)
+                });
+
+            plots.push(PlotData {
+                label: format!("estimate_ratio ({})", group_name),
+                line_color: colors[color_offset + 3],
+                data_points: estimate_data_points,
             });
         }
     }
