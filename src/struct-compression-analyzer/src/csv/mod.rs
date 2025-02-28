@@ -1,4 +1,4 @@
-use crate::analysis_results::AnalysisResults;
+use crate::results::analysis_results::AnalysisResults;
 use csv::Writer;
 use std::fs;
 use std::path::{Path, PathBuf};

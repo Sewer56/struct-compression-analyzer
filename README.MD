@@ -233,7 +233,7 @@ struct-compression-analyzer = "0.1.0"
 ```
 
 ```rust no_run
-use struct_compression_analyzer::analysis_results::PrintFormat;
+use struct_compression_analyzer::results::PrintFormat;
 use struct_compression_analyzer::schema::Schema;
 use struct_compression_analyzer::analyzer::SchemaAnalyzer;
 use struct_compression_analyzer::analyzer::CompressionOptions;

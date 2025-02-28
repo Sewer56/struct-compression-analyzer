@@ -8,11 +8,11 @@ use std::{
     time::Instant,
 };
 use struct_compression_analyzer::{
-    analysis_results::{AnalysisResults, PrintFormat},
     analyzer::{CompressionOptions, SchemaAnalyzer},
     csv,
     offset_evaluator::try_evaluate_file_offset,
     plot::generate_plots,
+    results::{analysis_results::AnalysisResults, PrintFormat},
     schema::Schema,
 };
 use walkdir::WalkDir;

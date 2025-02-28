@@ -3,10 +3,10 @@
 //! This module provides functions to create various plots based on the analysis
 //! results, using the `plotters` crate.
 
-use crate::{
-    analysis_results::AnalysisResults,
-    comparison::{compare_groups::GroupComparisonResult, split_comparison::SplitComparisonResult},
+use crate::comparison::{
+    compare_groups::GroupComparisonResult, split_comparison::SplitComparisonResult,
 };
+use crate::results::analysis_results::AnalysisResults;
 use core::{error::Error, ops::Range};
 use plotters::{prelude::*, style::full_palette::PURPLE};
 use std::{fs, path::Path};

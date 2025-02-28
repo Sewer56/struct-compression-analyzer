@@ -35,8 +35,8 @@
 
 use super::{GroupComparisonMetrics, GroupDifference};
 use crate::{
-    analysis_results::FieldMetrics,
     analyzer::{CompressionOptions, SizeEstimationParameters},
+    results::FieldMetrics,
     utils::analyze_utils::{calculate_file_entropy, get_zstd_compressed_size},
 };
 use lossless_transform_utils::match_estimator::estimate_num_lz_matches_fast;
