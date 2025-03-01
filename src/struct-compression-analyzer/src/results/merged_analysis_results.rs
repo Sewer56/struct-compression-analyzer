@@ -4,7 +4,8 @@ use super::{
 };
 use crate::{
     comparison::{
-        compare_groups::GroupComparisonResult, split_comparison::SplitComparisonResult,
+        compare_groups::GroupComparisonResult,
+        split_comparison::{FieldComparisonMetrics, SplitComparisonResult},
         GroupComparisonMetrics, GroupDifference,
     },
     results::calculate_percentage,
@@ -465,10 +466,10 @@ fn merge_split_comparisons(items: &[AnalysisResults]) -> Vec<SplitComparisonResu
     merged_comparisons
 }
 
-fn merge_split_comparison(index: usize, items: &[AnalysisResults]) -> SplitComparisonResult {
+fn merge_split_comparison(split_idx: usize, items: &[AnalysisResults]) -> SplitComparisonResult {
     let mut merged = SplitComparisonResult {
-        name: items[0].split_comparisons[index].name.clone(),
-        description: items[0].split_comparisons[index].description.clone(),
+        name: items[0].split_comparisons[split_idx].name.clone(),
+        description: items[0].split_comparisons[split_idx].description.clone(),
         group1_metrics: GroupComparisonMetrics::default(),
         group2_metrics: GroupComparisonMetrics::default(),
         difference: GroupDifference::default(),
@@ -479,11 +480,15 @@ fn merge_split_comparison(index: usize, items: &[AnalysisResults]) -> SplitCompa
     // First calculate G1 metrics
     let g1_metrics = &mut merged.group1_metrics;
     for item in items {
-        g1_metrics.lz_matches += item.split_comparisons[index].group1_metrics.lz_matches;
-        g1_metrics.entropy += item.split_comparisons[index].group1_metrics.entropy;
-        g1_metrics.estimated_size += item.split_comparisons[index].group1_metrics.estimated_size;
-        g1_metrics.zstd_size += item.split_comparisons[index].group1_metrics.zstd_size;
-        g1_metrics.original_size += item.split_comparisons[index].group1_metrics.original_size;
+        g1_metrics.lz_matches += item.split_comparisons[split_idx].group1_metrics.lz_matches;
+        g1_metrics.entropy += item.split_comparisons[split_idx].group1_metrics.entropy;
+        g1_metrics.estimated_size += item.split_comparisons[split_idx]
+            .group1_metrics
+            .estimated_size;
+        g1_metrics.zstd_size += item.split_comparisons[split_idx].group1_metrics.zstd_size;
+        g1_metrics.original_size += item.split_comparisons[split_idx]
+            .group1_metrics
+            .original_size;
     }
     g1_metrics.lz_matches /= items.len() as u64;
     g1_metrics.entropy /= items.len() as f64;
@@ -494,11 +499,15 @@ fn merge_split_comparison(index: usize, items: &[AnalysisResults]) -> SplitCompa
     // Second calculate G2 metrics
     let g2_metrics = &mut merged.group2_metrics;
     for item in items {
-        g2_metrics.lz_matches += item.split_comparisons[index].group2_metrics.lz_matches;
-        g2_metrics.entropy += item.split_comparisons[index].group2_metrics.entropy;
-        g2_metrics.estimated_size += item.split_comparisons[index].group2_metrics.estimated_size;
-        g2_metrics.zstd_size += item.split_comparisons[index].group2_metrics.zstd_size;
-        g2_metrics.original_size += item.split_comparisons[index].group2_metrics.original_size;
+        g2_metrics.lz_matches += item.split_comparisons[split_idx].group2_metrics.lz_matches;
+        g2_metrics.entropy += item.split_comparisons[split_idx].group2_metrics.entropy;
+        g2_metrics.estimated_size += item.split_comparisons[split_idx]
+            .group2_metrics
+            .estimated_size;
+        g2_metrics.zstd_size += item.split_comparisons[split_idx].group2_metrics.zstd_size;
+        g2_metrics.original_size += item.split_comparisons[split_idx]
+            .group2_metrics
+            .original_size;
     }
     g2_metrics.lz_matches /= items.len() as u64;
     g2_metrics.entropy /= items.len() as f64;
@@ -509,11 +518,11 @@ fn merge_split_comparison(index: usize, items: &[AnalysisResults]) -> SplitCompa
     // Now calculate difference
     let difference = &mut merged.difference;
     for item in items {
-        difference.lz_matches += item.split_comparisons[index].difference.lz_matches;
-        difference.entropy += item.split_comparisons[index].difference.entropy;
-        difference.estimated_size += item.split_comparisons[index].difference.estimated_size;
-        difference.zstd_size += item.split_comparisons[index].difference.zstd_size;
-        difference.original_size += item.split_comparisons[index].difference.original_size;
+        difference.lz_matches += item.split_comparisons[split_idx].difference.lz_matches;
+        difference.entropy += item.split_comparisons[split_idx].difference.entropy;
+        difference.estimated_size += item.split_comparisons[split_idx].difference.estimated_size;
+        difference.zstd_size += item.split_comparisons[split_idx].difference.zstd_size;
+        difference.original_size += item.split_comparisons[split_idx].difference.original_size;
     }
     difference.lz_matches /= items.len() as i64;
     difference.entropy /= items.len() as f64;
@@ -557,6 +566,58 @@ fn merge_split_comparison(index: usize, items: &[AnalysisResults]) -> SplitCompa
         merged.estimated_size /= items.len() as u64;
         merged.zstd_size /= items.len() as u64;
         merged.original_size /= items.len() as u64;
+    }
+
+    // Update 'baseline_comparison_metrics'
+    let baseline_metrics = &items[0].split_comparisons[split_idx].baseline_comparison_metrics;
+    if !baseline_metrics.is_empty() {
+        // Initialize merged metrics with default values
+        let field_count = baseline_metrics.len();
+        merged.baseline_comparison_metrics = vec![FieldComparisonMetrics::default(); field_count];
+
+        // Sum up metrics from all items
+        for item in items {
+            for (x, field_metrics) in item.split_comparisons[split_idx]
+                .baseline_comparison_metrics
+                .iter()
+                .enumerate()
+            {
+                merged.baseline_comparison_metrics[x].lz_matches += field_metrics.lz_matches;
+                merged.baseline_comparison_metrics[x].entropy += field_metrics.entropy;
+            }
+        }
+
+        // Calculate averages
+        for field_metrics in &mut merged.baseline_comparison_metrics {
+            field_metrics.lz_matches /= items.len();
+            field_metrics.entropy /= items.len() as f64;
+        }
+    }
+
+    // Update 'split_comparison_metrics'
+    let split_metrics = &items[0].split_comparisons[split_idx].split_comparison_metrics;
+    if !split_metrics.is_empty() {
+        // Initialize merged metrics with default values
+        let field_count = split_metrics.len();
+        merged.split_comparison_metrics = vec![FieldComparisonMetrics::default(); field_count];
+
+        // Sum up metrics from all items
+        for item in items {
+            for (x, field_metrics) in item.split_comparisons[split_idx]
+                .split_comparison_metrics
+                .iter()
+                .enumerate()
+            {
+                merged.split_comparison_metrics[x].lz_matches += field_metrics.lz_matches;
+                merged.split_comparison_metrics[x].entropy += field_metrics.entropy;
+            }
+        }
+
+        // Calculate averages
+        for field_metrics in &mut merged.split_comparison_metrics {
+            field_metrics.lz_matches /= items.len();
+            field_metrics.entropy /= items.len() as f64;
+        }
     }
 
     merged
