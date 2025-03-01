@@ -149,8 +149,9 @@ Merging 125 files.
 
 Aggregated (Merged) Analysis Results:
 Schema: DXT1/BC1 Block
-File: 6.78bpb, 9429814 LZ, 30165973/28322604/44739256 (67.43%/63.31%/100.00%) (est/zstd/orig)
+File: 6.78bpb, 9429814 LZ, 14061599/13420865/20015319 (70.25%/67.05%/100.00%) (est/zstd/orig)
 
+Field Metrics:
 colors: 5.50bpb, 9340190 LZ (99.05%), 4400265/3567275/10007659 (31.29%/26.58%/50.00%) (est/zstd/orig), 32bit
   color0: 5.42bpb, 4689715 LZ (50.21%), 2156012/1864829/5003829 (49.00%/52.28%/50.00%) (est/zstd/orig), 16bit
     r0: 6.97bpb, 483853 LZ (10.32%), 1223500/1276640/1563697 (56.75%/68.46%/31.25%) (est/zstd/orig), 5bit
@@ -183,8 +184,8 @@ Split Group Comparisons:
     Original Size: 10007659
     Base LZ, Entropy: (9340190, 5.50)
     Comp LZ, Entropy: (9560716, 5.50)
-    Base Group LZ, Entropy: ([], [])
-    Comp Group LZ, Entropy: ([], [])
+    Base Group LZ, Entropy: ([9340190], ["5.50"])
+    Comp Group LZ, Entropy: ([4689715, 4864159], ["5.42", "4.96"])
     Base (est/zstd): (4400265/3567275)
     Comp (est/zstd): (4337413/3498364)
     Ratio (est/zstd): (98.57163148128578/98.06824536936458)
