@@ -27,8 +27,12 @@
 //!
 //! - [`AnalysisResults`]: Primary container for analysis output
 //!   - [`AnalysisResults::print()`]: Display results in console
-//!   - [`AnalysisResults::try_merge_many()`]: Combine multiple analysis results
 //!   - [`AnalysisResults::as_field_metrics()`]: Convert file statistics to field metrics
+//!
+//! - [`MergedAnalysisResults`]: Specialization of analysis results for aggregating multiple files
+//!   - [`MergedAnalysisResults::from_results()`]: Create from multiple analysis results
+//!   - [`MergedAnalysisResults::print()`]: Display merged results
+//!   - [`MergedAnalysisResults::as_field_metrics()`]: Convert file statistics to field metrics
 //!
 //! - [`FieldMetrics`]: Per-field analysis data
 //!   - [`FieldMetrics::parent_path()`]: Get path of parent field
@@ -86,13 +90,18 @@
 //! - Provides parent/child relationship tracking
 //! - Implements efficient metric merging for group analysis
 //!
-//! [`AnalysisResults`]: crate::analysis_results::AnalysisResults
-//! [`FieldMetrics`]: crate::analysis_results::FieldMetrics
-//! [`PrintFormat`]: crate::analysis_results::PrintFormat
-//! [`Detailed`]: crate::analysis_results::PrintFormat::Detailed
-//! [`Concise`]: crate::analysis_results::PrintFormat::Concise
+//! [`AnalysisResults`]: crate::results::analysis_results::AnalysisResults
+//! [`FieldMetrics`]: crate::results::FieldMetrics
+//! [`PrintFormat`]: crate::results::PrintFormat
+//! [`Detailed`]: crate::results::PrintFormat::Detailed
+//! [`Concise`]: crate::results::PrintFormat::Concise
 //! [`CSV`]: crate::csv
 //! [`Plot`]: crate::plot
+//! [`compute_analysis_results()`]: crate::results::analysis_results::compute_analysis_results
+//! [`MergedAnalysisResults`]: crate::results::merged_analysis_results::MergedAnalysisResults
+//! [`MergedAnalysisResults::from_results()`]: crate::results::merged_analysis_results::MergedAnalysisResults::from_results
+//! [`MergedAnalysisResults::print()`]: crate::results::merged_analysis_results::MergedAnalysisResults::print
+//! [`MergedAnalysisResults::as_field_metrics()`]: crate::results::merged_analysis_results::MergedAnalysisResults::as_field_metrics
 
 pub mod analysis_results;
 pub mod merged_analysis_results;
@@ -103,6 +112,7 @@ use crate::results::analysis_results::AnalysisResults;
 use crate::schema::BitOrder;
 use crate::utils::constants::CHILD_MARKER;
 use derive_more::FromStr;
+use merged_analysis_results::MergedAnalysisResults;
 use rustc_hash::FxHashMap;
 use thiserror::Error;
 
@@ -127,7 +137,7 @@ pub enum ComputeAnalysisResultsError {
 }
 
 /// Complete analysis metrics for a single field
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct FieldMetrics {
     /// Name of the field or group
     pub name: String,
@@ -164,28 +174,34 @@ impl FieldMetrics {
     ///
     /// # Arguments
     ///
-    /// * `self` - The object to merge into.
-    /// * `other` - The object to merge from.
-    pub fn try_merge_many(&mut self, others: &[&Self]) -> Result<(), AnalysisMergeError> {
+    /// * `items` - The items to merge into a new instance.
+    pub fn try_merge_many(items: &[&Self]) -> Result<FieldMetrics, AnalysisMergeError> {
+        if items.is_empty() {
+            return Ok(FieldMetrics::default());
+        }
+
+        let first = items[0];
+
         // Validate compatible field configurations
-        for other in others {
-            if self.lenbits != other.lenbits {
+        for other in items {
+            if first.lenbits != other.lenbits {
                 return Err(AnalysisMergeError::FieldLengthMismatch(
-                    self.lenbits,
+                    first.lenbits,
                     other.lenbits,
                 ));
             }
         }
 
-        let total_items = others.len() + 1;
-        let mut total_count = self.count;
-        let mut total_entropy = self.entropy;
-        let mut total_lz_matches = self.lz_matches;
-        let mut total_estimated_size = self.estimated_size;
-        let mut total_zstd_size = self.zstd_size;
-        let mut total_original_size = self.original_size;
+        // Average over all items
+        let total_items = items.len();
+        let mut total_count = 0;
+        let mut total_entropy = 0.0;
+        let mut total_lz_matches = 0;
+        let mut total_estimated_size = 0;
+        let mut total_zstd_size = 0;
+        let mut total_original_size = 0;
 
-        for metrics in others {
+        for metrics in items {
             total_count += metrics.count;
             total_entropy += metrics.entropy;
             total_lz_matches += metrics.lz_matches;
@@ -194,25 +210,34 @@ impl FieldMetrics {
             total_original_size += metrics.original_size;
         }
 
-        self.count = total_count;
-        self.entropy = total_entropy / total_items as f64;
-        self.lz_matches = total_lz_matches / total_items;
-        self.estimated_size = total_estimated_size / total_items;
-        self.zstd_size = total_zstd_size / total_items;
-        self.original_size = total_original_size / total_items;
-
-        self.merge_bit_stats_and_value_counts(others)?;
-        Ok(())
+        let mut this = FieldMetrics {
+            name: first.name.clone(),
+            full_path: first.full_path.clone(),
+            depth: first.depth,
+            lenbits: first.lenbits,
+            bit_order: first.bit_order,
+            ..Default::default()
+        };
+        this.count = total_count;
+        this.entropy = total_entropy / total_items as f64;
+        this.lz_matches = total_lz_matches / total_items;
+        this.estimated_size = total_estimated_size / total_items;
+        this.zstd_size = total_zstd_size / total_items;
+        this.original_size = total_original_size / total_items;
+        this.merge_bit_stats_and_value_counts(items)?;
+        Ok(this)
     }
 
     fn merge_bit_stats_and_value_counts(
         &mut self,
-        others: &[&Self],
+        items: &[&Self],
     ) -> Result<(), AnalysisMergeError> {
-        let bit_counts = &mut self.bit_counts;
-        let value_counts = &mut self.value_counts;
+        let mut bit_counts = items[0].bit_counts.clone();
+        let mut value_counts = items[0].value_counts.clone();
 
-        for other in others {
+        for idx in 1..items.len() {
+            let other = items[idx];
+
             // Validate bit counts length
             if bit_counts.len() != other.bit_counts.len() {
                 return Err(AnalysisMergeError::BitCountsDontMatch);
@@ -231,6 +256,9 @@ impl FieldMetrics {
                 *value_counts.entry(*value).or_insert(0) += count;
             }
         }
+
+        self.bit_counts = bit_counts;
+        self.value_counts = value_counts;
         Ok(())
     }
 
@@ -254,6 +282,19 @@ impl FieldMetrics {
         parent_stats
     }
 
+    /// Returns the [`FieldMetrics`] object for the parent of the current field in a merged result.
+    pub fn parent_metrics_in_merged_or<'a>(
+        &self,
+        results: &'a MergedAnalysisResults,
+        optb: &'a FieldMetrics,
+    ) -> &'a FieldMetrics {
+        let parent_path = self.parent_path();
+        let parent_stats = parent_path
+            .and_then(|p| results.per_field.get(p))
+            .unwrap_or(optb);
+        parent_stats
+    }
+
     /// Get sorted value counts descending (value, count)
     pub fn sorted_value_counts(&self) -> Vec<(&u64, &u64)> {
         let mut counts: Vec<_> = self.value_counts.iter().collect();
@@ -267,4 +308,53 @@ pub enum PrintFormat {
     #[default]
     Detailed,
     Concise,
+}
+
+// Helper function to calculate percentage
+pub(crate) fn calculate_percentage(child: f64, parent: f64) -> f64 {
+    if parent == 0.0 {
+        0.0
+    } else {
+        (child / parent) * 100.0
+    }
+}
+
+pub(crate) fn print_field_metrics_value_stats(field: &FieldMetrics) {
+    // Print field name with indent
+    let indent = "  ".repeat(field.depth);
+    println!("{}{} ({} bits)", indent, field.name, field.lenbits);
+
+    // Print value statistics
+    let counts = field.sorted_value_counts();
+    if !counts.is_empty() {
+        let total_values: u64 = counts.iter().map(|(_, &c)| c).sum();
+        for (val, &count) in counts.iter().take(5) {
+            let pct = (count as f32 / total_values as f32) * 100.0;
+            println!("{}    {}: {:.1}%", indent, val, pct);
+        }
+    }
+}
+
+pub(crate) fn print_field_metrics_bit_stats(field: &FieldMetrics) {
+    let indent = "  ".repeat(field.depth);
+    println!("{}{} ({} bits)", indent, field.name, field.lenbits);
+
+    // If we didn't collect the bits, skip printing.
+    if field.bit_counts.len() != field.lenbits as usize {
+        return;
+    }
+
+    for i in 0..field.lenbits {
+        let bit_stats = &field.bit_counts[i as usize];
+        let total = bit_stats.zeros + bit_stats.ones;
+        let percentage = if total > 0 {
+            (bit_stats.ones as f64 / total as f64) * 100.0
+        } else {
+            0.0
+        };
+        println!(
+            "{}  Bit {}: ({}/{}) ({:.1}%)",
+            indent, i, bit_stats.zeros, bit_stats.ones, percentage
+        );
+    }
 }

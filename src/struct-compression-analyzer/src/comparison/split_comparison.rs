@@ -119,7 +119,7 @@ pub fn make_split_comparison_result(
 }
 
 /// The result of comparing 2 arbitrary groups of fields based on the schema.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct SplitComparisonResult {
     /// The name of the group comparison. (Copied from schema)
     pub name: String,

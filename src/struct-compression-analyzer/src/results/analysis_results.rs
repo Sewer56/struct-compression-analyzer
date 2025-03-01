@@ -1,4 +1,7 @@
-use super::{AnalysisMergeError, ComputeAnalysisResultsError, FieldMetrics, PrintFormat};
+use super::{
+    print_field_metrics_bit_stats, print_field_metrics_value_stats, ComputeAnalysisResultsError,
+    FieldMetrics, PrintFormat,
+};
 use crate::{
     analyzer::{AnalyzerFieldState, CompressionOptions, SchemaAnalyzer, SizeEstimationParameters},
     comparison::{
@@ -7,12 +10,12 @@ use crate::{
             make_split_comparison_result, FieldComparisonMetrics, SplitComparisonResult,
         },
     },
+    results::calculate_percentage,
     schema::{BitOrder, Metadata, Schema, SplitComparison},
     utils::analyze_utils::{calculate_file_entropy, get_writer_buffer, get_zstd_compressed_size},
 };
 use ahash::{AHashMap, HashMapExt};
 use lossless_transform_utils::match_estimator::estimate_num_lz_matches_fast;
-use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use rustc_hash::FxHashMap;
 
 /// Final computed metrics for output
@@ -210,33 +213,6 @@ fn calc_split_comparisons(
 }
 
 impl AnalysisResults {
-    /// Merge multiple [`AnalysisResults`] objects into one.
-    /// This is useful when analyzing multiple files or groups of fields.
-    /// With this you can 'aggregate' results over a large data set.
-    pub fn try_merge_many(&mut self, others: &[Self]) -> Result<(), AnalysisMergeError> {
-        self.per_field
-            .par_iter_mut()
-            .try_for_each(|(full_path, field_metrics)| {
-                // Get all matching `full_path` from all other elements as vec
-                let matches: Vec<&FieldMetrics> = others
-                    .iter()
-                    .flat_map(|results| results.per_field.get(full_path))
-                    .collect();
-
-                field_metrics.try_merge_many(&matches)
-            })?;
-
-        // Merge the file entropy and LZ matches
-        self.file_entropy = (self.file_entropy
-            + others.iter().map(|m| m.file_entropy).sum::<f64>())
-            / (others.len() + 1) as f64;
-        self.file_lz_matches = (self.file_lz_matches
-            + others.iter().map(|m| m.file_lz_matches).sum::<usize>())
-            / (others.len() + 1);
-
-        Ok(())
-    }
-
     /// Converts the file level statistics into a [`FieldMetrics`] object
     /// which can be used for comparison with parent in places such as the
     /// print function.
@@ -427,57 +403,8 @@ impl AnalysisResults {
     }
 }
 
-// Helper function to calculate percentage
-fn calculate_percentage(child: f64, parent: f64) -> f64 {
-    if parent == 0.0 {
-        0.0
-    } else {
-        (child / parent) * 100.0
-    }
-}
-
 fn detailed_print_comparison(comparison: &SplitComparisonResult) {
     concise_print_split_comparison(comparison);
-}
-
-fn print_field_metrics_value_stats(field: &FieldMetrics) {
-    // Print field name with indent
-    let indent = "  ".repeat(field.depth);
-    println!("{}{} ({} bits)", indent, field.name, field.lenbits);
-
-    // Print value statistics
-    let counts = field.sorted_value_counts();
-    if !counts.is_empty() {
-        let total_values: u64 = counts.iter().map(|(_, &c)| c).sum();
-        for (val, &count) in counts.iter().take(5) {
-            let pct = (count as f32 / total_values as f32) * 100.0;
-            println!("{}    {}: {:.1}%", indent, val, pct);
-        }
-    }
-}
-
-fn print_field_metrics_bit_stats(field: &FieldMetrics) {
-    let indent = "  ".repeat(field.depth);
-    println!("{}{} ({} bits)", indent, field.name, field.lenbits);
-
-    // If we didn't collect the bits, skip printing.
-    if field.bit_counts.len() != field.lenbits as usize {
-        return;
-    }
-
-    for i in 0..field.lenbits {
-        let bit_stats = &field.bit_counts[i as usize];
-        let total = bit_stats.zeros + bit_stats.ones;
-        let percentage = if total > 0 {
-            (bit_stats.ones as f64 / total as f64) * 100.0
-        } else {
-            0.0
-        };
-        println!(
-            "{}  Bit {}: ({}/{}) ({:.1}%)",
-            indent, i, bit_stats.zeros, bit_stats.ones, percentage
-        );
-    }
 }
 
 fn concise_print_custom_comparison(comparison: &GroupComparisonResult) {

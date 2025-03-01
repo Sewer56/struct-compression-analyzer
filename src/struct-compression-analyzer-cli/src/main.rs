@@ -12,7 +12,10 @@ use struct_compression_analyzer::{
     csv,
     offset_evaluator::try_evaluate_file_offset,
     plot::generate_plots,
-    results::{analysis_results::AnalysisResults, PrintFormat},
+    results::{
+        analysis_results::AnalysisResults, merged_analysis_results::MergedAnalysisResults,
+        PrintFormat,
+    },
     schema::Schema,
 };
 use walkdir::WalkDir;
@@ -187,8 +190,7 @@ fn main() -> anyhow::Result<()> {
                 individual_results.len()
             );
             let merge_start_time = Instant::now();
-            let mut merged_results = individual_results.first().unwrap().clone();
-            merged_results.try_merge_many(&individual_results[1..])?;
+            let merged_results = MergedAnalysisResults::from_results(&individual_results)?;
 
             // Print final aggregated results
             println!(
