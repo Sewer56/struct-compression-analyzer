@@ -182,6 +182,14 @@ fn calc_split_comparisons(
             }
         }
 
+        // Create custom compression options for this comparison using its multipliers
+        let custom_compression_options = CompressionOptions {
+            zstd_compression_level: compression_options.zstd_compression_level,
+            size_estimator_fn: compression_options.size_estimator_fn,
+            lz_match_multiplier: comparison.lz_match_multiplier,
+            entropy_multiplier: comparison.entropy_multiplier,
+        };
+
         split_comparisons.push(make_split_comparison_result(
             comparison.name.clone(),
             comparison.description.clone(),
@@ -189,7 +197,7 @@ fn calc_split_comparisons(
             &group2_bytes,
             group1_field_metrics,
             group2_field_metrics,
-            compression_options,
+            custom_compression_options,
         ));
     }
     split_comparisons

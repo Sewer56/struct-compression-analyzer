@@ -201,13 +201,21 @@ pub(crate) fn process_single_comparison(
         group_names.push(group_name.clone());
     }
 
+    // Create custom compression options for this comparison using its multipliers
+    let custom_compression_options = CompressionOptions {
+        zstd_compression_level: compression_options.zstd_compression_level,
+        size_estimator_fn: compression_options.size_estimator_fn,
+        lz_match_multiplier: comparison.lz_match_multiplier,
+        entropy_multiplier: comparison.entropy_multiplier,
+    };
+
     GroupComparisonResult::from_custom_comparison(
         comparison.name.clone(),
         comparison.description.clone(),
         &baseline_bytes,
         &comparison_bytes,
         &group_names,
-        compression_options,
+        custom_compression_options,
     )
 }
 
@@ -232,7 +240,10 @@ pub(crate) fn analyze_custom_comparisons(
         .analysis
         .compare_groups
         .iter()
-        .map(|comparison| process_single_comparison(comparison, field_stats, compression_options))
+        .map(|comparison| {
+            // Use base compression options but pass comparison through for multipliers
+            process_single_comparison(comparison, field_stats, compression_options)
+        })
         .collect()
 }
 
@@ -277,6 +288,8 @@ mod from_custom_comparison_tests {
                 );
                 map
             },
+            lz_match_multiplier: 0.375,
+            entropy_multiplier: 1.0,
         };
 
         let result =
@@ -344,6 +357,8 @@ mod from_custom_comparison_tests {
                 );
                 map
             },
+            lz_match_multiplier: 0.375,
+            entropy_multiplier: 1.0,
         };
 
         let result =
@@ -377,6 +392,8 @@ mod from_custom_comparison_tests {
                 bits: 8,
             })],
             comparisons: IndexMap::new(),
+            lz_match_multiplier: 0.375,
+            entropy_multiplier: 1.0,
         };
 
         let mut field_stats = AHashMap::new();

@@ -192,6 +192,12 @@ pub struct SplitComparison {
     /// Optional description of the comparison
     #[serde(default)]
     pub description: String,
+    /// Multiplier for LZ matches in size estimation (default: 0.375)
+    #[serde(default = "default_lz_match_multiplier")]
+    pub lz_match_multiplier: f64,
+    /// Multiplier for entropy in size estimation (default: 1.0)
+    #[serde(default = "default_entropy_multiplier")]
+    pub entropy_multiplier: f64,
 }
 
 /// Configuration for custom field group comparisons
@@ -209,6 +215,22 @@ pub struct CustomComparison {
     /// Human-readable description
     #[serde(default)]
     pub description: String,
+
+    /// Multiplier for LZ matches in size estimation
+    #[serde(default = "default_lz_match_multiplier")]
+    pub lz_match_multiplier: f64,
+
+    /// Multiplier for entropy in size estimation
+    #[serde(default = "default_entropy_multiplier")]
+    pub entropy_multiplier: f64,
+}
+
+pub(crate) fn default_lz_match_multiplier() -> f64 {
+    0.375
+}
+
+pub(crate) fn default_entropy_multiplier() -> f64 {
+    1.0
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -1232,7 +1254,7 @@ bit_order: msb
     }
 
     mod split_compare_tests {
-        use crate::schema::Schema;
+        use crate::schema::{default_lz_match_multiplier, Schema};
 
         #[test]
         fn parses_basic_comparison() {
@@ -1244,6 +1266,8 @@ analysis:
       group_1: [colors]
       group_2: [color_r, color_g, color_b]
       description: Compare interleaved vs planar layouts
+      lz_match_multiplier: 0.5
+      entropy_multiplier: 1.2
 root:
   type: group
   fields: {}
@@ -1263,6 +1287,8 @@ root:
                 comparisons[0].description,
                 "Compare interleaved vs planar layouts"
             );
+            assert_eq!(comparisons[0].lz_match_multiplier, 0.5);
+            assert_eq!(comparisons[0].entropy_multiplier, 1.2);
         }
 
         #[test]
@@ -1285,11 +1311,19 @@ root:
             assert_eq!(comparisons.len(), 1);
             assert_eq!(comparisons[0].name, "basic");
             assert!(comparisons[0].description.is_empty());
+            // Test default values for multipliers
+            assert_eq!(
+                comparisons[0].lz_match_multiplier,
+                default_lz_match_multiplier()
+            );
+            assert_eq!(comparisons[0].entropy_multiplier, 1.0);
         }
     }
 
     mod group_compare_tests {
-        use crate::schema::{GroupComponent, Schema};
+        use crate::schema::{
+            default_entropy_multiplier, default_lz_match_multiplier, GroupComponent, Schema,
+        };
 
         #[test]
         fn parses_custom_comparison() {
@@ -1299,6 +1333,8 @@ analysis:
   compare_groups:
     - name: convert_7_to_8_bit
       description: "Adjust 7-bit color channel to 8-bit by appending a padding bit."
+      lz_match_multiplier: 0.45
+      entropy_multiplier: 1.1
       baseline: # R, R, R
         - { type: array, field: color7, bits: 7 } 
       comparisons:
@@ -1318,6 +1354,8 @@ root:
 
             assert_eq!(comparisons.len(), 1);
             assert_eq!(comparisons[0].name, "convert_7_to_8_bit");
+            assert_eq!(comparisons[0].lz_match_multiplier, 0.45);
+            assert_eq!(comparisons[0].entropy_multiplier, 1.1);
 
             // Verify baseline
             let baseline = &comparisons[0].baseline;
@@ -1421,6 +1459,40 @@ root:
                 "Test multiple comparison order preservation"
             );
             assert_eq!(comparison.comparisons.len(), 3);
+        }
+
+        #[test]
+        fn handles_minimal_custom_comparison() {
+            let yaml = r#"
+version: '1.0'
+analysis:
+  compare_groups:
+    - name: minimal_test
+      baseline: 
+        - { type: array, field: test_field, bits: 8 } 
+      comparisons:
+        simple:
+          - { type: array, field: test_field, bits: 8 } 
+root:
+  type: group
+  fields: {}
+"#;
+
+            let schema = Schema::from_yaml(yaml).unwrap();
+            let comparisons = &schema.analysis.compare_groups;
+
+            assert_eq!(comparisons.len(), 1);
+            assert_eq!(comparisons[0].name, "minimal_test");
+            assert!(comparisons[0].description.is_empty());
+            // Test default values for multipliers
+            assert_eq!(
+                comparisons[0].lz_match_multiplier,
+                default_lz_match_multiplier()
+            );
+            assert_eq!(
+                comparisons[0].entropy_multiplier,
+                default_entropy_multiplier()
+            );
         }
     }
 }

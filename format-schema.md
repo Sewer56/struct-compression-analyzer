@@ -52,11 +52,15 @@ analysis:
       group_1: [colors]          # Base group to compare against.
       group_2: [color0, color1]  # Derived group to compare with.
       description: Compare regular interleaved colour format `colors` against their split components `color0` and `color1`.
+      lz_match_multiplier: 0.375 # Optional, multiplier for LZ matches in size estimation
+      entropy_multiplier: 1.0    # Optional, multiplier for entropy in size estimation
   compare_groups:
     - name: interleave_colours
       group_1: # Base group to compare against.
       group_2: # Derived group to compare with.
       description: Interleave colours such that `R0 R1 G0 G1 B0 B1` are now `R0 G0 B0 R1 G1 B1`.
+      lz_match_multiplier: 0.375 # Optional, multiplier for LZ matches in size estimation
+      entropy_multiplier: 1.0    # Optional, multiplier for entropy in size estimation
 ```
 
 The `analysis` section configures how results should be analyzed and presented:
@@ -66,9 +70,15 @@ The `analysis` section configures how results should be analyzed and presented:
   - A common use case is to compare a struct, or sub struct against its inner components.
     - This allows you to compare `structure of array` vs `array of structure` very easily.
   - `group_1` is used as baseline, while `group_2` is compared against it.
+  - Optional parameters for compression estimation:
+    - `lz_match_multiplier`: Multiplier for LZ matches in size estimation (default: 0.375)
+    - `entropy_multiplier`: Multiplier for entropy in size estimation (default: 1.0)
 - `compare_groups`: Compare custom groups of fields against each other.
   - This allows you to define two structures based on existing fields in the file, and compare them.
   - Read [Custom Compare Groups](#custom-compare-groups) for more information.
+  - Optional parameters for compression estimation:
+    - `lz_match_multiplier`: Multiplier for LZ matches in size estimation (default: 0.375)
+    - `entropy_multiplier`: Multiplier for entropy in size estimation (default: 1.0)
 
 ### Conditional Offsets
 
@@ -233,6 +243,8 @@ analysis:
       group_1: [colors]          # Base group to compare against.
       group_2: [color0, color1]  # Derived group to compare with.
       description: Compare regular interleaved colour format `colors` against their split components `color0` and `color1`.
+      lz_match_multiplier: 0.375 # Optional, multiplier for LZ matches in size estimation
+      entropy_multiplier: 1.0    # Optional, multiplier for entropy in size estimation
 ```
 
 ### Single Bit Field
