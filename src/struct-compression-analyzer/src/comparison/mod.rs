@@ -20,8 +20,8 @@
 //!
 //! fn calculate_example(baseline_data: &[u8], comparison_data: &[u8]) {
 //!     let options = CompressionOptions::default();
-//!     let baseline = GroupComparisonMetrics::from_bytes(&baseline_data, options);
-//!     let comparison = GroupComparisonMetrics::from_bytes(&comparison_data, options);
+//!     let baseline = GroupComparisonMetrics::from_bytes(&baseline_data, "name_a", options);
+//!     let comparison = GroupComparisonMetrics::from_bytes(&comparison_data, "name_b", options);
 //!
 //!     // Compare the difference
 //!     let difference = GroupDifference::from_metrics(&baseline, &comparison);
@@ -89,14 +89,21 @@ impl GroupComparisonMetrics {
     ///
     /// # Arguments
     /// * `bytes` - A slice of bytes representing the data to analyze.
+    /// * `group_name` - The name of the group being analyzed.
     /// * `compression_options` - Compression options, zstd compression level, etc.
     ///
     /// # Returns
     /// A [`GroupComparisonMetrics`] struct containing the computed metrics.
-    pub fn from_bytes(bytes: &[u8], compression_options: CompressionOptions) -> Self {
+    pub fn from_bytes(
+        bytes: &[u8],
+        group_name: &str,
+        compression_options: CompressionOptions,
+    ) -> Self {
         let entropy = calculate_file_entropy(bytes);
         let lz_matches = estimate_num_lz_matches_fast(bytes) as u64;
         let estimated_size = (compression_options.size_estimator_fn)(SizeEstimationParameters {
+            name: group_name,
+            data: Some(bytes),
             data_len: bytes.len(),
             num_lz_matches: lz_matches as usize,
             entropy,

@@ -76,15 +76,21 @@ pub fn make_split_comparison_result(
     let entropy2 = calculate_file_entropy(split_bytes);
     let lz_matches1 = estimate_num_lz_matches_fast(baseline_bytes);
     let lz_matches2 = estimate_num_lz_matches_fast(split_bytes);
+    let name_1 = format!("{}-1", name);
+    let name_2 = format!("{}-2", name);
     let estimated_size_1 = (compression_options.size_estimator_fn)(SizeEstimationParameters {
+        name: &name_1,
         data_len: baseline_bytes.len(),
+        data: Some(baseline_bytes),
         num_lz_matches: lz_matches1,
         entropy: entropy1,
         lz_match_multiplier: compression_options.lz_match_multiplier,
         entropy_multiplier: compression_options.entropy_multiplier,
     });
     let estimated_size_2 = (compression_options.size_estimator_fn)(SizeEstimationParameters {
+        name: &name_2,
         data_len: split_bytes.len(),
+        data: Some(split_bytes),
         num_lz_matches: lz_matches2,
         entropy: entropy2,
         lz_match_multiplier: compression_options.lz_match_multiplier,

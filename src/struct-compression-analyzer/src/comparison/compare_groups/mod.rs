@@ -126,8 +126,9 @@ impl GroupComparisonResult {
         }
 
         // Calculate baseline metrics
+        let baseline_name = format!("{}-baseline", name);
         let baseline_metrics =
-            GroupComparisonMetrics::from_bytes(baseline_bytes, compression_options);
+            GroupComparisonMetrics::from_bytes(baseline_bytes, &baseline_name, compression_options);
 
         // Process comparison groups
         let mut group_metrics = Vec::with_capacity(comparison_byte_slices.len());
@@ -137,9 +138,13 @@ impl GroupComparisonResult {
             names.push(group_name.clone());
         }
 
-        for comparison in comparison_byte_slices {
-            let metrics =
-                GroupComparisonMetrics::from_bytes(comparison.as_ref(), compression_options);
+        for (comparison, group_name) in comparison_byte_slices.iter().zip(group_names.iter()) {
+            let comparison_name = format!("{}-{}", name, group_name);
+            let metrics = GroupComparisonMetrics::from_bytes(
+                comparison.as_ref(),
+                &comparison_name,
+                compression_options,
+            );
             differences.push(GroupDifference::from_metrics(&baseline_metrics, &metrics));
             group_metrics.push(metrics);
         }
