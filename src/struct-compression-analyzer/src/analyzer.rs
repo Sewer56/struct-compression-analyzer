@@ -56,16 +56,15 @@
 //! - Conditional processing outcomes
 
 use super::schema::{Group, Schema};
-use crate::analysis_results::ComputeAnalysisResultsError;
+use crate::results::analysis_results::compute_analysis_results;
+use crate::results::analysis_results::AnalysisResults;
+use crate::results::ComputeAnalysisResultsError;
+use crate::schema::{BitOrder, Condition, FieldDefinition};
 use crate::utils::analyze_utils::{
     create_bit_reader, create_bit_writer, reverse_bits, size_estimate, BitReaderContainer,
     BitWriterContainer,
 };
 use crate::utils::constants::CHILD_MARKER;
-use crate::{
-    analysis_results::{compute_analysis_results, AnalysisResults},
-    schema::{BitOrder, Condition, FieldDefinition},
-};
 use ahash::{AHashMap, HashMapExt};
 use bitstream_io::{BitRead, BitReader, BitWrite, Endianness};
 use rustc_hash::FxHashMap;

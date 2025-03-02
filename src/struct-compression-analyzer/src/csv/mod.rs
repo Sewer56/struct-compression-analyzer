@@ -1,4 +1,5 @@
-use crate::analysis_results::AnalysisResults;
+use crate::results::analysis_results::AnalysisResults;
+use crate::results::merged_analysis_results::MergedAnalysisResults;
 use csv::Writer;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -15,7 +16,7 @@ use std::path::{Path, PathBuf};
 /// # Arguments
 ///
 /// * `results` - A slice of [`AnalysisResults`], one for each analyzed file.
-/// * `merged_results` -  An [`AnalysisResults`] object representing the merged results of all files.
+/// * `merged_results` -  An [`MergedAnalysisResults`] object representing the merged results of all files.
 /// * `output_dir` - The directory where the CSV files will be written.
 /// * `file_paths` - A slice of [`PathBuf`]s representing the original file paths for each result.
 ///
@@ -24,7 +25,7 @@ use std::path::{Path, PathBuf};
 /// * `std::io::Result<()>` -  Ok if successful, otherwise an error.
 pub fn write_all_csvs(
     results: &[AnalysisResults],
-    merged_results: &AnalysisResults,
+    merged_results: &MergedAnalysisResults,
     output_dir: &Path,
     file_paths: &[PathBuf],
 ) -> std::io::Result<()> {
@@ -408,7 +409,7 @@ pub fn write_custom_comparison_csv(
 ///
 /// * `std::io::Result<()>` - Ok if successful, otherwise an error.
 pub fn write_field_value_stats_csv(
-    results: &AnalysisResults,
+    results: &MergedAnalysisResults,
     output_dir: &Path,
 ) -> std::io::Result<()> {
     // Get field paths from first result
@@ -455,7 +456,7 @@ pub fn write_field_value_stats_csv(
 ///
 /// * `std::io::Result<()>` - Ok if successful, otherwise an error.
 pub fn write_field_bit_stats_csv(
-    results: &AnalysisResults,
+    results: &MergedAnalysisResults,
     output_dir: &Path,
 ) -> std::io::Result<()> {
     // Get field paths from first result

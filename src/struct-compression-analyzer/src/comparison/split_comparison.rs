@@ -35,8 +35,8 @@
 
 use super::{GroupComparisonMetrics, GroupDifference};
 use crate::{
-    analysis_results::FieldMetrics,
     analyzer::{CompressionOptions, SizeEstimationParameters},
+    results::FieldMetrics,
     utils::analyze_utils::{calculate_file_entropy, get_zstd_compressed_size},
 };
 use lossless_transform_utils::match_estimator::estimate_num_lz_matches_fast;
@@ -119,7 +119,7 @@ pub fn make_split_comparison_result(
 }
 
 /// The result of comparing 2 arbitrary groups of fields based on the schema.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct SplitComparisonResult {
     /// The name of the group comparison. (Copied from schema)
     pub name: String,
@@ -186,7 +186,7 @@ impl From<FieldMetrics> for FieldComparisonMetrics {
     }
 }
 
-fn calculate_max_entropy_diff(results: &[FieldComparisonMetrics]) -> f64 {
+pub(crate) fn calculate_max_entropy_diff(results: &[FieldComparisonMetrics]) -> f64 {
     let entropy_values: Vec<f64> = results.iter().map(|m| m.entropy).collect();
     if entropy_values.len() < 2 {
         0.0
@@ -203,7 +203,7 @@ fn calculate_max_entropy_diff(results: &[FieldComparisonMetrics]) -> f64 {
     }
 }
 
-fn calculate_max_entropy_diff_ratio(results: &[FieldComparisonMetrics]) -> f64 {
+pub(crate) fn calculate_max_entropy_diff_ratio(results: &[FieldComparisonMetrics]) -> f64 {
     let entropy_values: Vec<f64> = results.iter().map(|m| m.entropy).collect();
     if entropy_values.len() < 2 {
         0.0

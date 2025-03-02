@@ -3,10 +3,10 @@
 //! This module provides functions to create various plots based on the analysis
 //! results, using the `plotters` crate.
 
-use crate::{
-    analysis_results::AnalysisResults,
-    comparison::{compare_groups::GroupComparisonResult, split_comparison::SplitComparisonResult},
+use crate::comparison::{
+    compare_groups::GroupComparisonResult, split_comparison::SplitComparisonResult,
 };
+use crate::results::analysis_results::AnalysisResults;
 use core::{error::Error, ops::Range};
 use plotters::{prelude::*, style::full_palette::PURPLE};
 use std::{fs, path::Path};
@@ -553,7 +553,7 @@ fn add_series_labels<'a>(
 /// # Returns
 ///
 /// A string representing the ratio, or "0.0" if the denominator is zero.
-fn calc_ratio_f64(child: u64, parent: u64) -> f64 {
+pub(crate) fn calc_ratio_f64(child: u64, parent: u64) -> f64 {
     if parent == 0 {
         0.0
     } else {

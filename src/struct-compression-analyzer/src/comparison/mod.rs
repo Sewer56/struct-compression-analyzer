@@ -5,6 +5,7 @@
 //! - [`split_comparison`]: Easy comparison of 'splitting' structs.
 //!     - e.g. interleaved (RGBRGBRGB) vs. separated fields (RRRGGGBB)
 //! - [`compare_groups`]: Comparison of more custom field transformations and analysis
+//! - [`stats`]: Additional statistics for comparing groups
 //!
 //! # Types
 //!
@@ -29,6 +30,7 @@
 //!
 //! [`split_comparison`]: self::split_comparison
 //! [`compare_groups`]: self::compare_groups
+//! [`stats`]: self::stats
 //! [`GroupComparisonMetrics`]: GroupComparisonMetrics
 //! [`GroupDifference`]: GroupDifference
 
@@ -40,6 +42,7 @@ use lossless_transform_utils::match_estimator::estimate_num_lz_matches_fast;
 
 pub mod compare_groups;
 pub mod split_comparison;
+pub mod stats;
 
 /// The statistics for a given group of fields.
 /// This can be a group created by the [`split_comparison`] module, the
