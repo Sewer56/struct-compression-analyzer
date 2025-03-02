@@ -138,8 +138,8 @@ impl Default for CompressionOptions {
         Self {
             zstd_compression_level: 16,
             size_estimator_fn: size_estimate,
-            lz_match_multiplier: 0.375,
-            entropy_multiplier: 1.0,
+            lz_match_multiplier: 0.0,
+            entropy_multiplier: 0.0,
         }
     }
 }

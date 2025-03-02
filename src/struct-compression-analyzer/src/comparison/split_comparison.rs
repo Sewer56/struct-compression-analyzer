@@ -63,6 +63,7 @@ use lossless_transform_utils::match_estimator::estimate_num_lz_matches_fast;
 ///
 /// A [`SplitComparisonResult`] struct containing the aggregated comparison results
 /// and overall statistics.
+#[allow(clippy::too_many_arguments)]
 pub fn make_split_comparison_result(
     name: String,
     description: String,

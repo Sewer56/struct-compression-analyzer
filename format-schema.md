@@ -83,16 +83,16 @@ The `analysis` section configures how results should be analyzed and presented:
     - This allows you to compare `structure of array` vs `array of structure` very easily.
   - `group_1` is used as baseline, while `group_2` is compared against it.
   - Optional compression estimation parameters:
-    - `compression_estimation_group_1.lz_match_multiplier`: Multiplier for LZ matches in group_1 (default: 0.375)
-    - `compression_estimation_group_1.entropy_multiplier`: Multiplier for entropy in group_1 (default: 1.0)
-    - `compression_estimation_group_2.lz_match_multiplier`: Multiplier for LZ matches in group_2 (default: 0.375)
-    - `compression_estimation_group_2.entropy_multiplier`: Multiplier for entropy in group_2 (default: 1.0)
+    - `compression_estimation_group_1.lz_match_multiplier`: Multiplier for LZ matches in group_1
+    - `compression_estimation_group_1.entropy_multiplier`: Multiplier for entropy in group_1
+    - `compression_estimation_group_2.lz_match_multiplier`: Multiplier for LZ matches in group_2
+    - `compression_estimation_group_2.entropy_multiplier`: Multiplier for entropy in group_2
 - `compare_groups`: Compare custom groups of fields against each other.
   - This allows you to define two structures based on existing fields in the file, and compare them.
   - Read [Custom Compare Groups](#custom-compare-groups) for more information.
   - Optional compression estimation parameters:
-    - `lz_match_multiplier`: Multiplier for LZ matches in size estimation (default: 0.375)
-    - `entropy_multiplier`: Multiplier for entropy in size estimation (default: 1.0)
+    - `lz_match_multiplier`: Multiplier for LZ matches in size estimation
+    - `entropy_multiplier`: Multiplier for entropy in size estimation
 
 ### Conditional Offsets
 
