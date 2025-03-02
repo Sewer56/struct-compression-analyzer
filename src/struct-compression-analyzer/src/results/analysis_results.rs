@@ -72,7 +72,7 @@ pub fn compute_analysis_results(
         let lz_matches = estimate_num_lz_matches_fast(writer_buffer);
         let estimated_size =
             (analyzer.compression_options.size_estimator_fn)(SizeEstimationParameters {
-                data: writer_buffer,
+                data_len: writer_buffer.len(),
                 num_lz_matches: lz_matches,
                 entropy,
             });
@@ -125,7 +125,7 @@ pub fn compute_analysis_results(
         schema_metadata: analyzer.schema.metadata.clone(),
         estimated_file_size: (analyzer.compression_options.size_estimator_fn)(
             SizeEstimationParameters {
-                data: &analyzer.entries,
+                data_len: analyzer.entries.len(),
                 num_lz_matches: file_lz_matches,
                 entropy: file_entropy,
             },
@@ -252,7 +252,6 @@ impl AnalysisResults {
         println!("File LZ Matches: {}", self.file_lz_matches);
         println!("File Original Size: {}", self.original_size);
         println!("File Compressed Size: {}", self.zstd_file_size);
-        println!("File Estimated Size: {}", self.estimated_file_size);
         println!("\nPer-field Metrics (in schema order):");
 
         // Iterate through schema-defined fields in order
@@ -300,15 +299,10 @@ impl AnalysisResults {
             );
             let padding = format!("{}{}", indent, field.name).len() + 2; // +2 for ": "
             println!(
-                "{:padding$}Sizes: Estimated/ZStandard -16/Original: {}/{}/{} ({:.2}%/{:.2}%/{:.2}%)",
+                "{:padding$}Sizes: ZStandard/Original: {}/{} ({:.2}%/{:.2}%)",
                 "",
-                field.estimated_size,
                 field.zstd_size,
                 field.original_size,
-                calculate_percentage(
-                    field.estimated_size as f64,
-                    parent_stats.estimated_size as f64
-                ),
                 calculate_percentage(field.zstd_size as f64, parent_stats.zstd_size as f64),
                 calculate_percentage(
                     field.original_size as f64,
@@ -328,13 +322,11 @@ impl AnalysisResults {
     fn print_concise(&self, schema: &Schema, file_metrics: &FieldMetrics, skip_misc_stats: bool) {
         println!("Schema: {}", self.schema_metadata.name);
         println!(
-            "File: {:.2}bpb, {} LZ, {}/{}/{} ({:.2}%/{:.2}%/{:.2}%) (est/zstd/orig)",
+            "File: {:.2}bpb, {} LZ, {}/{} ({:.2}%/{:.2}%) (zstd/orig)",
             self.file_entropy,
             self.file_lz_matches,
-            self.estimated_file_size,
             self.zstd_file_size,
             self.original_size,
-            calculate_percentage(self.estimated_file_size as f64, self.original_size as f64),
             calculate_percentage(self.zstd_file_size as f64, self.original_size as f64),
             100.0
         );
@@ -373,18 +365,19 @@ impl AnalysisResults {
             let parent_stats = field.parent_metrics_or(self, file_metrics);
 
             println!(
-                "{}{}: {:.2}bpb, {} LZ ({:.2}%), {}/{}/{} ({:.2}%/{:.2}%/{:.2}%) (est/zstd/orig), {}bit",
+                "{}{}: {:.2}bpb, {} LZ ({:.2}%), {}/{} ({:.2}%/{:.2}%) (zstd/orig), {}bit",
                 indent,
                 field.name,
                 field.entropy,
                 field.lz_matches,
                 calculate_percentage(field.lz_matches as f64, parent_stats.lz_matches as f64),
-                field.estimated_size,
                 field.zstd_size,
                 field.original_size,
-                calculate_percentage(field.estimated_size as f64, parent_stats.estimated_size as f64),
                 calculate_percentage(field.zstd_size as f64, parent_stats.zstd_size as f64),
-                calculate_percentage(field.original_size as f64, parent_stats.original_size as f64),
+                calculate_percentage(
+                    field.original_size as f64,
+                    parent_stats.original_size as f64
+                ),
                 field.lenbits
             );
         }
@@ -410,7 +403,6 @@ fn detailed_print_comparison(comparison: &SplitComparisonResult) {
 fn concise_print_custom_comparison(comparison: &GroupComparisonResult) {
     let base_lz = comparison.baseline_metrics.lz_matches;
     let base_entropy = comparison.baseline_metrics.entropy;
-    let base_est = comparison.baseline_metrics.estimated_size;
     let base_zstd = comparison.baseline_metrics.zstd_size;
     let base_size = comparison.baseline_metrics.original_size;
 
@@ -418,7 +410,7 @@ fn concise_print_custom_comparison(comparison: &GroupComparisonResult) {
     println!("    Base Group:");
     println!("      Size: {}", base_size);
     println!("      LZ, Entropy: ({}, {:.2})", base_lz, base_entropy);
-    println!("      Est/Zstd: ({}/{})", base_est, base_zstd);
+    println!("      Zstd: {}", base_zstd);
 
     for (i, (group_name, metrics)) in comparison
         .group_names
@@ -428,24 +420,18 @@ fn concise_print_custom_comparison(comparison: &GroupComparisonResult) {
     {
         let comp_lz = metrics.lz_matches;
         let comp_entropy = metrics.entropy;
-        let comp_est = metrics.estimated_size;
         let comp_zstd = metrics.zstd_size;
         let comp_size = metrics.original_size;
 
-        let ratio_est = calculate_percentage(comp_est as f64, base_est as f64);
         let ratio_zstd = calculate_percentage(comp_zstd as f64, base_zstd as f64);
-        let diff_est = comparison.differences[i].estimated_size;
         let diff_zstd = comparison.differences[i].zstd_size;
 
         println!("\n    {} Group:", group_name);
         println!("      Size: {}", comp_size);
         println!("      LZ, Entropy: ({}, {:.2})", comp_lz, comp_entropy);
-        println!("      Est/Zstd: ({}/{})", comp_est, comp_zstd);
-        println!(
-            "      Ratio (est/zstd): ({:.1}%/{:.1}%)",
-            ratio_est, ratio_zstd
-        );
-        println!("      Diff (est/zstd): ({}/{})", diff_est, diff_zstd);
+        println!("      Zstd: {}", comp_zstd);
+        println!("      Ratio zstd: {:.1}%", ratio_zstd);
+        println!("      Diff zstd: {}", diff_zstd);
 
         if base_size != comp_size {
             println!("      [WARNING!!] Sizes of base and comparison groups don't match!! They may vary by a few bytes due to padding.");
@@ -460,19 +446,13 @@ fn concise_print_split_comparison(comparison: &SplitComparisonResult) {
     let size_comp = comparison.group2_metrics.original_size;
     let base_entropy = comparison.group1_metrics.entropy;
 
-    let base_est = comparison.group1_metrics.estimated_size;
     let base_zstd = comparison.group1_metrics.zstd_size;
 
     let comp_lz = comparison.group2_metrics.lz_matches;
     let comp_entropy = comparison.group2_metrics.entropy;
 
-    let comp_est = comparison.group2_metrics.estimated_size;
     let comp_zstd = comparison.group2_metrics.zstd_size;
-
-    let ratio_est = calculate_percentage(comp_est as f64, base_est as f64);
     let ratio_zstd = calculate_percentage(comp_zstd as f64, base_zstd as f64);
-
-    let diff_est = comparison.difference.estimated_size;
     let diff_zstd = comparison.difference.zstd_size;
 
     println!("  {}: {}", comparison.name, comparison.description);
@@ -506,10 +486,10 @@ fn concise_print_split_comparison(comparison: &SplitComparisonResult) {
             .collect::<Vec<_>>()
     );
 
-    println!("    Base (est/zstd): ({}/{})", base_est, base_zstd);
-    println!("    Comp (est/zstd): ({}/{})", comp_est, comp_zstd);
-    println!("    Ratio (est/zstd): ({}/{})", ratio_est, ratio_zstd);
-    println!("    Diff (est/zstd): ({}/{})", diff_est, diff_zstd);
+    println!("    Base (zstd): {}", base_zstd);
+    println!("    Comp (zstd): {}", comp_zstd);
+    println!("    Ratio (zstd): {}", ratio_zstd);
+    println!("    Diff (zstd): {}", diff_zstd);
 
     if size_orig != size_comp {
         println!("    [WARNING!!] Sizes of both groups in bytes don't match!! They may vary by a few bytes due to padding.");

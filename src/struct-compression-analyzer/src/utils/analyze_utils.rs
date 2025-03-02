@@ -48,7 +48,7 @@ use std::io::{self, Cursor, SeekFrom};
 /// replace this function with something more suitable for your use case, possibly.
 pub fn size_estimate(params: SizeEstimationParameters) -> usize {
     // Calculate expected bytes after LZ
-    let bytes_after_lz = params.data.len() - (params.num_lz_matches as f64 * 0.375f64) as usize;
+    let bytes_after_lz = params.data_len - (params.num_lz_matches as f64 * 0.375f64) as usize;
 
     // Calculate expected bits and convert to bytes
     (bytes_after_lz as f64 * params.entropy).ceil() as usize / 8

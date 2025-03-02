@@ -154,7 +154,6 @@ impl MergedAnalysisResults {
         println!("File LZ Matches: {}", self.file_lz_matches);
         println!("File Original Size: {}", self.original_size);
         println!("File Compressed Size: {}", self.zstd_file_size);
-        println!("File Estimated Size: {}", self.estimated_file_size);
         println!("\nPer-field Metrics (in schema order):");
 
         // Iterate through schema-defined fields in order
@@ -189,13 +188,11 @@ impl MergedAnalysisResults {
     fn print_concise(&self, schema: &Schema, file_metrics: &FieldMetrics, skip_misc_stats: bool) {
         println!("Schema: {}", self.schema_metadata.name);
         println!(
-            "File: {:.2}bpb, {} LZ, {}/{}/{} ({:.2}%/{:.2}%/{:.2}%) (est/zstd/orig)",
+            "File: {:.2}bpb, {} LZ, {}/{} ({:.2}%/{:.2}%) (zstd/orig)",
             self.file_entropy,
             self.file_lz_matches,
-            self.estimated_file_size,
             self.zstd_file_size,
             self.original_size,
-            calculate_percentage(self.estimated_file_size as f64, self.original_size as f64),
             calculate_percentage(self.zstd_file_size as f64, self.original_size as f64),
             100.0
         );
@@ -277,18 +274,19 @@ impl MergedAnalysisResults {
             let parent_stats = field.parent_metrics_in_merged_or(self, file_metrics);
 
             println!(
-                "{}{}: {:.2}bpb, {} LZ ({:.2}%), {}/{}/{} ({:.2}%/{:.2}%/{:.2}%) (est/zstd/orig), {}bit",
+                "{}{}: {:.2}bpb, {} LZ ({:.2}%), {}/{} ({:.2}%/{:.2}%) (zstd/orig), {}bit",
                 indent,
                 field.name,
                 field.entropy,
                 field.lz_matches,
                 calculate_percentage(field.lz_matches as f64, parent_stats.lz_matches as f64),
-                field.estimated_size,
                 field.zstd_size,
                 field.original_size,
-                calculate_percentage(field.estimated_size as f64, parent_stats.estimated_size as f64),
                 calculate_percentage(field.zstd_size as f64, parent_stats.zstd_size as f64),
-                calculate_percentage(field.original_size as f64, parent_stats.original_size as f64),
+                calculate_percentage(
+                    field.original_size as f64,
+                    parent_stats.original_size as f64
+                ),
                 field.lenbits
             );
         }
@@ -316,19 +314,14 @@ impl MergedAnalysisResults {
         let size_comp = comparison.group2_metrics.original_size;
         let base_entropy = comparison.group1_metrics.entropy;
 
-        let base_est = comparison.group1_metrics.estimated_size;
         let base_zstd = comparison.group1_metrics.zstd_size;
 
         let comp_lz = comparison.group2_metrics.lz_matches;
         let comp_entropy = comparison.group2_metrics.entropy;
 
-        let comp_est = comparison.group2_metrics.estimated_size;
         let comp_zstd = comparison.group2_metrics.zstd_size;
 
-        let ratio_est = calculate_percentage(comp_est as f64, base_est as f64);
         let ratio_zstd = calculate_percentage(comp_zstd as f64, base_zstd as f64);
-
-        let diff_est = comparison.difference.estimated_size;
         let diff_zstd = comparison.difference.zstd_size;
 
         println!("  {}: {}", comparison.name, comparison.description);
@@ -362,10 +355,10 @@ impl MergedAnalysisResults {
                 .collect::<Vec<_>>()
         );
 
-        println!("    Base (est/zstd): ({}/{})", base_est, base_zstd);
-        println!("    Comp (est/zstd): ({}/{})", comp_est, comp_zstd);
-        println!("    Ratio (est/zstd): ({}/{})", ratio_est, ratio_zstd);
-        println!("    Diff (est/zstd): ({}/{})", diff_est, diff_zstd);
+        println!("    Base (zstd): {}", base_zstd);
+        println!("    Comp (zstd): {}", comp_zstd);
+        println!("    Ratio (zstd): {}", ratio_zstd);
+        println!("    Diff (zstd): {}", diff_zstd);
 
         // If we have enough files for statistics, show the detailed stats
         println!("    Zstd Ratio Statistics:");
@@ -393,7 +386,6 @@ impl MergedAnalysisResults {
     fn concise_print_custom_comparison(&self, comparison: &GroupComparisonResult) {
         let base_lz = comparison.baseline_metrics.lz_matches;
         let base_entropy = comparison.baseline_metrics.entropy;
-        let base_est = comparison.baseline_metrics.estimated_size;
         let base_zstd = comparison.baseline_metrics.zstd_size;
         let base_size = comparison.baseline_metrics.original_size;
 
@@ -401,7 +393,7 @@ impl MergedAnalysisResults {
         println!("    Base Group:");
         println!("      Size: {}", base_size);
         println!("      LZ, Entropy: ({}, {:.2})", base_lz, base_entropy);
-        println!("      Est/Zstd: ({}/{})", base_est, base_zstd);
+        println!("      Zstd: {}", base_zstd);
 
         for (x, (group_name, metrics)) in comparison
             .group_names
@@ -411,24 +403,18 @@ impl MergedAnalysisResults {
         {
             let comp_lz = metrics.lz_matches;
             let comp_entropy = metrics.entropy;
-            let comp_est = metrics.estimated_size;
             let comp_zstd = metrics.zstd_size;
             let comp_size = metrics.original_size;
 
-            let ratio_est = calculate_percentage(comp_est as f64, base_est as f64);
             let ratio_zstd = calculate_percentage(comp_zstd as f64, base_zstd as f64);
-            let diff_est = comparison.differences[x].estimated_size;
             let diff_zstd = comparison.differences[x].zstd_size;
 
             println!("\n    {} Group:", group_name);
             println!("      Size: {}", comp_size);
             println!("      LZ, Entropy: ({}, {:.2})", comp_lz, comp_entropy);
-            println!("      Est/Zstd: ({}/{})", comp_est, comp_zstd);
-            println!(
-                "      Ratio (est/zstd): ({:.1}%/{:.1}%)",
-                ratio_est, ratio_zstd
-            );
-            println!("      Diff (est/zstd): ({}/{})", diff_est, diff_zstd);
+            println!("      Zstd: {}", comp_zstd);
+            println!("      Ratio (zstd): {:.1}%", ratio_zstd);
+            println!("      Diff (zstd): {}", diff_zstd);
 
             // Find the index of this comparison in the custom_comparisons array
             if let Some(comp_index) = self

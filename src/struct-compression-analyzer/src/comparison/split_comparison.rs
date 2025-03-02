@@ -77,12 +77,12 @@ pub fn make_split_comparison_result(
     let lz_matches1 = estimate_num_lz_matches_fast(baseline_bytes);
     let lz_matches2 = estimate_num_lz_matches_fast(split_bytes);
     let estimated_size_1 = (compression_options.size_estimator_fn)(SizeEstimationParameters {
-        data: baseline_bytes,
+        data_len: baseline_bytes.len(),
         num_lz_matches: lz_matches1,
         entropy: entropy1,
     });
     let estimated_size_2 = (compression_options.size_estimator_fn)(SizeEstimationParameters {
-        data: split_bytes,
+        data_len: split_bytes.len(),
         num_lz_matches: lz_matches2,
         entropy: entropy2,
     });

@@ -97,7 +97,7 @@ impl GroupComparisonMetrics {
         let entropy = calculate_file_entropy(bytes);
         let lz_matches = estimate_num_lz_matches_fast(bytes) as u64;
         let estimated_size = (compression_options.size_estimator_fn)(SizeEstimationParameters {
-            data: bytes,
+            data_len: bytes.len(),
             num_lz_matches: lz_matches as usize,
             entropy,
         }) as u64;

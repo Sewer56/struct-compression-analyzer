@@ -92,9 +92,9 @@ pub struct SchemaAnalyzer<'a> {
 /// Struct to encapsulate parameters for size estimation functions.
 /// Functions accept this struct return an estimated size in bytes.
 #[derive(Debug, Clone, Copy)]
-pub struct SizeEstimationParameters<'a> {
+pub struct SizeEstimationParameters {
     /// The raw bytes of the data.
-    pub data: &'a [u8],
+    pub data_len: usize,
     /// The number of LZ matches found in the data.
     pub num_lz_matches: usize,
     /// The estimated entropy of the data.
