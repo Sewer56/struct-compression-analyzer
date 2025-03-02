@@ -305,11 +305,13 @@ impl MergedAnalysisResults {
         let base_entropy = comparison.group1_metrics.entropy;
 
         let base_zstd = comparison.group1_metrics.zstd_size;
+        let base_estimated = comparison.group1_metrics.estimated_size;
 
         let comp_lz = comparison.group2_metrics.lz_matches;
         let comp_entropy = comparison.group2_metrics.entropy;
 
         let comp_zstd = comparison.group2_metrics.zstd_size;
+        let comp_estimated = comparison.group2_metrics.estimated_size;
 
         let ratio_zstd = calculate_percentage(comp_zstd as f64, base_zstd as f64);
         let diff_zstd = comparison.difference.zstd_size;
@@ -345,8 +347,18 @@ impl MergedAnalysisResults {
                 .collect::<Vec<_>>()
         );
 
-        println!("    Base (zstd): {}", base_zstd);
-        println!("    Comp (zstd): {}", comp_zstd);
+        if base_estimated != 0 {
+            println!("    Base (est/zstd): {}/{}", base_estimated, base_zstd);
+        } else {
+            println!("    Base (zstd): {}", base_zstd);
+        }
+
+        if comp_estimated != 0 {
+            println!("    Comp (est/zstd): {}/{}", comp_estimated, comp_zstd);
+        } else {
+            println!("    Comp (zstd): {}", comp_zstd);
+        }
+
         println!("    Ratio (zstd): {}", ratio_zstd);
         println!("    Diff (zstd): {}", diff_zstd);
 
@@ -377,13 +389,18 @@ impl MergedAnalysisResults {
         let base_lz = comparison.baseline_metrics.lz_matches;
         let base_entropy = comparison.baseline_metrics.entropy;
         let base_zstd = comparison.baseline_metrics.zstd_size;
+        let base_estimated = comparison.baseline_metrics.estimated_size;
         let base_size = comparison.baseline_metrics.original_size;
 
         println!("  {}: {}", comparison.name, comparison.description);
         println!("    Base Group:");
         println!("      Size: {}", base_size);
         println!("      LZ, Entropy: ({}, {:.2})", base_lz, base_entropy);
-        println!("      Zstd: {}", base_zstd);
+        if base_estimated != 0 {
+            println!("      Estimate/Zstd: {}/{}", base_estimated, base_zstd);
+        } else {
+            println!("      Zstd: {}", base_zstd);
+        }
 
         for (x, (group_name, metrics)) in comparison
             .group_names
@@ -394,6 +411,7 @@ impl MergedAnalysisResults {
             let comp_lz = metrics.lz_matches;
             let comp_entropy = metrics.entropy;
             let comp_zstd = metrics.zstd_size;
+            let comp_estimated = metrics.estimated_size;
             let comp_size = metrics.original_size;
 
             let ratio_zstd = calculate_percentage(comp_zstd as f64, base_zstd as f64);
@@ -402,7 +420,11 @@ impl MergedAnalysisResults {
             println!("\n    {} Group:", group_name);
             println!("      Size: {}", comp_size);
             println!("      LZ, Entropy: ({}, {:.2})", comp_lz, comp_entropy);
-            println!("      Zstd: {}", comp_zstd);
+            if comp_estimated != 0 {
+                println!("      Estimate/Zstd: {}/{}", comp_estimated, comp_zstd);
+            } else {
+                println!("      Zstd: {}", comp_zstd);
+            }
             println!("      Ratio (zstd): {:.1}%", ratio_zstd);
             println!("      Diff (zstd): {}", diff_zstd);
 
