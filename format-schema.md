@@ -258,8 +258,8 @@ analysis:
       group_2: [color0, color1]  # Derived group to compare with.
       description: Compare regular interleaved colour format `colors` against their split components `color0` and `color1`.
       compression_estimation_group_1:      # Optional compression estimation parameters for group_1
-      lz_match_multiplier: 0.375 # Optional, multiplier for LZ matches in size estimation
-      entropy_multiplier: 1.0    # Optional, multiplier for entropy in size estimation
+        lz_match_multiplier: 0.375 # Optional, multiplier for LZ matches in size estimation
+        entropy_multiplier: 1.0    # Optional, multiplier for entropy in size estimation
       compression_estimation_group_2:      # Optional compression estimation parameters for group_2
         lz_match_multiplier: 0.4   # Optional, multiplier for LZ matches in size estimation 
         entropy_multiplier: 0.9    # Optional, multiplier for entropy in size estimation
