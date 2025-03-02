@@ -205,8 +205,8 @@ pub(crate) fn process_single_comparison(
     let custom_compression_options = CompressionOptions {
         zstd_compression_level: compression_options.zstd_compression_level,
         size_estimator_fn: compression_options.size_estimator_fn,
-        lz_match_multiplier: comparison.lz_match_multiplier,
-        entropy_multiplier: comparison.entropy_multiplier,
+        lz_match_multiplier: compression_options.lz_match_multiplier,
+        entropy_multiplier: compression_options.entropy_multiplier,
     };
 
     GroupComparisonResult::from_custom_comparison(
@@ -275,6 +275,7 @@ mod from_custom_comparison_tests {
                 field: TEST_FIELD_NAME.to_string(),
                 offset: 0,
                 bits: 8,
+                ..Default::default()
             })],
             comparisons: {
                 let mut map = IndexMap::new();
@@ -284,12 +285,11 @@ mod from_custom_comparison_tests {
                         field: TEST_FIELD_NAME.to_string(),
                         offset: 0,
                         bits: 4,
+                        ..Default::default()
                     })],
                 );
                 map
             },
-            lz_match_multiplier: 0.375,
-            entropy_multiplier: 1.0,
         };
 
         let result =
@@ -336,6 +336,7 @@ mod from_custom_comparison_tests {
                 field: TEST_FIELD_NAME.to_string(),
                 offset: 0,
                 bits: 8,
+                ..Default::default()
             })],
             comparisons: {
                 let mut map = IndexMap::new();
@@ -345,6 +346,7 @@ mod from_custom_comparison_tests {
                         field: TEST_FIELD_NAME.to_string(),
                         offset: 0,
                         bits: 4,
+                        ..Default::default()
                     })],
                 );
                 map.insert(
@@ -353,12 +355,11 @@ mod from_custom_comparison_tests {
                         field: TEST_FIELD_NAME.to_string(),
                         offset: 0,
                         bits: 8,
+                        ..Default::default()
                     })],
                 );
                 map
             },
-            lz_match_multiplier: 0.375,
-            entropy_multiplier: 1.0,
         };
 
         let result =
@@ -390,10 +391,9 @@ mod from_custom_comparison_tests {
                 field: "nonexistent_field".to_string(), // Field doesn't exist
                 offset: 0,
                 bits: 8,
+                ..Default::default()
             })],
             comparisons: IndexMap::new(),
-            lz_match_multiplier: 0.375,
-            entropy_multiplier: 1.0,
         };
 
         let mut field_stats = AHashMap::new();

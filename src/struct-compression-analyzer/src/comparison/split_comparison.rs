@@ -37,6 +37,7 @@ use super::{GroupComparisonMetrics, GroupDifference};
 use crate::{
     analyzer::{CompressionOptions, SizeEstimationParameters},
     results::FieldMetrics,
+    schema::CompressionEstimationParams,
     utils::analyze_utils::{calculate_file_entropy, get_zstd_compressed_size},
 };
 use lossless_transform_utils::match_estimator::estimate_num_lz_matches_fast;
@@ -70,7 +71,14 @@ pub fn make_split_comparison_result(
     baseline_comparison_metrics: Vec<FieldComparisonMetrics>,
     split_comparison_metrics: Vec<FieldComparisonMetrics>,
     compression_options: CompressionOptions,
+    compression_estimation_group_1: Option<CompressionEstimationParams>,
+    compression_estimation_group_2: Option<CompressionEstimationParams>,
 ) -> SplitComparisonResult {
+    let comp_est_1 = compression_estimation_group_1
+        .unwrap_or(CompressionEstimationParams::new(&compression_options));
+    let comp_est_2 = compression_estimation_group_2
+        .unwrap_or(CompressionEstimationParams::new(&compression_options));
+
     // Calculate entropy and LZ matches for both group sets.
     let entropy1 = calculate_file_entropy(baseline_bytes);
     let entropy2 = calculate_file_entropy(split_bytes);
@@ -84,8 +92,8 @@ pub fn make_split_comparison_result(
         data: Some(baseline_bytes),
         num_lz_matches: lz_matches1,
         entropy: entropy1,
-        lz_match_multiplier: compression_options.lz_match_multiplier,
-        entropy_multiplier: compression_options.entropy_multiplier,
+        lz_match_multiplier: comp_est_1.lz_match_multiplier,
+        entropy_multiplier: comp_est_1.entropy_multiplier,
     });
     let estimated_size_2 = (compression_options.size_estimator_fn)(SizeEstimationParameters {
         name: &name_2,
@@ -93,8 +101,8 @@ pub fn make_split_comparison_result(
         data: Some(split_bytes),
         num_lz_matches: lz_matches2,
         entropy: entropy2,
-        lz_match_multiplier: compression_options.lz_match_multiplier,
-        entropy_multiplier: compression_options.entropy_multiplier,
+        lz_match_multiplier: comp_est_2.lz_match_multiplier,
+        entropy_multiplier: comp_est_2.entropy_multiplier,
     });
     let actual_size_1 =
         get_zstd_compressed_size(baseline_bytes, compression_options.zstd_compression_level);
