@@ -54,13 +54,19 @@ analysis:
       description: Compare regular interleaved colour format `colors` against their split components `color0` and `color1`.
       lz_match_multiplier: 0.375 # Optional, multiplier for LZ matches in size estimation
       entropy_multiplier: 1.0    # Optional, multiplier for entropy in size estimation
-  compare_groups:
-    - name: interleave_colours
-      group_1: # Base group to compare against.
-      group_2: # Derived group to compare with.
-      description: Interleave colours such that `R0 R1 G0 G1 B0 B1` are now `R0 G0 B0 R1 G1 B1`.
-      lz_match_multiplier: 0.375 # Optional, multiplier for LZ matches in size estimation
-      entropy_multiplier: 1.0    # Optional, multiplier for entropy in size estimation
+  colour_conversion:
+      description: "Rearrange interleaved colour channels from [R0 R1] [G0 G1] [B0 B1] to [R0 G0 B0] [R1 G1 B1]."
+      baseline: # Original colour format
+        - { type: array, field: R } # reads all 'R' values from input
+        - { type: array, field: G } # reads all 'G' values from input
+        - { type: array, field: B } # reads all 'B' values from input
+      comparisons: 
+        split_components: # R0 G0 B0. Repeats until no data written.
+          - type: struct
+            fields:
+              - { type: field, field: R } # reads 1 'R' value from input
+              - { type: field, field: G } # reads 1 'G' value from input
+              - { type: field, field: B } # reads 1 'B' value from input
 ```
 
 The `analysis` section configures how results should be analyzed and presented:
