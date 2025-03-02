@@ -75,6 +75,8 @@ pub fn compute_analysis_results(
                 data_len: writer_buffer.len(),
                 num_lz_matches: lz_matches,
                 entropy,
+                lz_match_multiplier: analyzer.compression_options.lz_match_multiplier,
+                entropy_multiplier: analyzer.compression_options.entropy_multiplier,
             });
         let actual_size = get_zstd_compressed_size(
             writer_buffer,
@@ -128,6 +130,8 @@ pub fn compute_analysis_results(
                 data_len: analyzer.entries.len(),
                 num_lz_matches: file_lz_matches,
                 entropy: file_entropy,
+                lz_match_multiplier: analyzer.compression_options.lz_match_multiplier,
+                entropy_multiplier: analyzer.compression_options.entropy_multiplier,
             },
         ),
         zstd_file_size: get_zstd_compressed_size(

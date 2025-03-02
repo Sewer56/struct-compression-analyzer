@@ -99,6 +99,10 @@ pub struct SizeEstimationParameters {
     pub num_lz_matches: usize,
     /// The estimated entropy of the data.
     pub entropy: f64,
+    /// LZ Match Multiplier (user provided)
+    pub lz_match_multiplier: f64,
+    /// Entropy Multiplier (user provided)
+    pub entropy_multiplier: f64,
 }
 
 /// Function pointer type for size estimation functions.
@@ -116,6 +120,10 @@ pub struct CompressionOptions {
     /// Function pointer to use for size estimation.
     /// The function takes [`SizeEstimationParameters`] and returns the estimated size in bytes.
     pub size_estimator_fn: SizeEstimatorFn,
+    /// LZ Match Multiplier (user provided)
+    pub lz_match_multiplier: f64,
+    /// Entropy Multiplier (user provided)
+    pub entropy_multiplier: f64,
 }
 
 impl Default for CompressionOptions {
@@ -123,6 +131,8 @@ impl Default for CompressionOptions {
         Self {
             zstd_compression_level: 16,
             size_estimator_fn: size_estimate,
+            lz_match_multiplier: 0.375,
+            entropy_multiplier: 1.0,
         }
     }
 }

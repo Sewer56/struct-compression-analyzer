@@ -38,9 +38,11 @@ use std::io::{self, Cursor, SeekFrom};
 /// # Arguments
 ///
 /// * `params` - [`SizeEstimationParameters`] containing:
-///     * `data` - The uncompressed data
+///     * `data_len` - The uncompressed data length
 ///     * `num_lz_matches` - The number of LZ matches
 ///     * `entropy` - The estimated entropy of the data
+///     * `lz_match_multiplier` - Multiplier for LZ matches
+///     * `entropy_multiplier` - Multiplier for entropy
 ///
 /// # Returns
 ///
@@ -48,10 +50,11 @@ use std::io::{self, Cursor, SeekFrom};
 /// replace this function with something more suitable for your use case, possibly.
 pub fn size_estimate(params: SizeEstimationParameters) -> usize {
     // Calculate expected bytes after LZ
-    let bytes_after_lz = params.data_len - (params.num_lz_matches as f64 * 0.375f64) as usize;
+    let bytes_after_lz =
+        params.data_len - (params.num_lz_matches as f64 * params.lz_match_multiplier) as usize;
 
     // Calculate expected bits and convert to bytes
-    (bytes_after_lz as f64 * params.entropy).ceil() as usize / 8
+    (bytes_after_lz as f64 * params.entropy * params.entropy_multiplier).ceil() as usize / 8
 }
 
 /// Determines the actual size of the compressed data by compressing with a realistic compressor.

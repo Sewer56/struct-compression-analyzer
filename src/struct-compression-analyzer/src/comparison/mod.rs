@@ -100,6 +100,8 @@ impl GroupComparisonMetrics {
             data_len: bytes.len(),
             num_lz_matches: lz_matches as usize,
             entropy,
+            lz_match_multiplier: compression_options.lz_match_multiplier,
+            entropy_multiplier: compression_options.entropy_multiplier,
         }) as u64;
         let zstd_size =
             get_zstd_compressed_size(bytes, compression_options.zstd_compression_level) as u64;

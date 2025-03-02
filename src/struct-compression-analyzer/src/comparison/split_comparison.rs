@@ -80,11 +80,15 @@ pub fn make_split_comparison_result(
         data_len: baseline_bytes.len(),
         num_lz_matches: lz_matches1,
         entropy: entropy1,
+        lz_match_multiplier: compression_options.lz_match_multiplier,
+        entropy_multiplier: compression_options.entropy_multiplier,
     });
     let estimated_size_2 = (compression_options.size_estimator_fn)(SizeEstimationParameters {
         data_len: split_bytes.len(),
         num_lz_matches: lz_matches2,
         entropy: entropy2,
+        lz_match_multiplier: compression_options.lz_match_multiplier,
+        entropy_multiplier: compression_options.entropy_multiplier,
     });
     let actual_size_1 =
         get_zstd_compressed_size(baseline_bytes, compression_options.zstd_compression_level);
