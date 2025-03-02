@@ -34,9 +34,6 @@ pub struct MergedAnalysisResults {
     /// Average LZ compression matches in the merged files
     pub file_lz_matches: usize,
 
-    /// Average estimated size of the compressed data from our estimator
-    pub estimated_file_size: usize,
-
     /// Average actual size of the compressed data when compressed with zstandard
     pub zstd_file_size: usize,
 
@@ -92,7 +89,6 @@ impl MergedAnalysisResults {
             schema_metadata: results.schema_metadata.clone(),
             file_entropy: results.file_entropy,
             file_lz_matches: results.file_lz_matches,
-            estimated_file_size: results.estimated_file_size,
             zstd_file_size: results.zstd_file_size,
             original_size: results.original_size,
             merged_file_count: 1,
@@ -119,7 +115,6 @@ impl MergedAnalysisResults {
             full_path: String::new(),
             depth: 0,
             zstd_size: self.zstd_file_size,
-            estimated_size: self.estimated_file_size,
             original_size: self.original_size,
             count: 0,
             lenbits: 0,
@@ -243,15 +238,10 @@ impl MergedAnalysisResults {
             );
             let padding = format!("{}{}", indent, field.name).len() + 2; // +2 for ": "
             println!(
-                "{:padding$}Sizes: Estimated/ZStandard -16/Original: {}/{}/{} ({:.2}%/{:.2}%/{:.2}%)",
+                "{:padding$}Sizes: ZStandard -16/Original: {}/{} ({:.2}%/{:.2}%)",
                 "",
-                field.estimated_size,
                 field.zstd_size,
                 field.original_size,
-                calculate_percentage(
-                    field.estimated_size as f64,
-                    parent_stats.estimated_size as f64
-                ),
                 calculate_percentage(field.zstd_size as f64, parent_stats.zstd_size as f64),
                 calculate_percentage(
                     field.original_size as f64,
@@ -454,21 +444,18 @@ pub fn merge_analysis_results(
     let total_count = results.len();
     let mut total_entropy = 0_f64;
     let mut total_lz_matches = 0;
-    let mut total_estimated_size = 0;
     let mut total_zstd_size = 0;
     let mut total_original_size = 0;
 
     for result in results {
         total_entropy += result.file_entropy;
         total_lz_matches += result.file_lz_matches;
-        total_estimated_size += result.estimated_file_size;
         total_zstd_size += result.zstd_file_size;
         total_original_size += result.original_size;
     }
 
     merged.file_entropy = total_entropy / total_count as f64;
     merged.file_lz_matches = total_lz_matches / total_count;
-    merged.estimated_file_size = total_estimated_size / total_count;
     merged.zstd_file_size = total_zstd_size / total_count;
     merged.original_size = total_original_size / total_count;
     merged.merged_file_count = total_count;

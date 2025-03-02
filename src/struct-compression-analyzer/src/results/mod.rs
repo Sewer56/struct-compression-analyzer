@@ -160,8 +160,6 @@ pub struct FieldMetrics {
     /// Value → occurrence count
     /// Count of occurrences for each observed value.
     pub value_counts: FxHashMap<u64, u64>,
-    /// Estimated size of the compressed data from our estimator
-    pub estimated_size: usize,
     /// Actual size of the compressed data when compressed with zstandard
     pub zstd_size: usize,
     /// Original size of the data before compression
@@ -197,7 +195,6 @@ impl FieldMetrics {
         let mut total_count = 0;
         let mut total_entropy = 0.0;
         let mut total_lz_matches = 0;
-        let mut total_estimated_size = 0;
         let mut total_zstd_size = 0;
         let mut total_original_size = 0;
 
@@ -205,7 +202,6 @@ impl FieldMetrics {
             total_count += metrics.count;
             total_entropy += metrics.entropy;
             total_lz_matches += metrics.lz_matches;
-            total_estimated_size += metrics.estimated_size;
             total_zstd_size += metrics.zstd_size;
             total_original_size += metrics.original_size;
         }
@@ -221,7 +217,6 @@ impl FieldMetrics {
         this.count = total_count;
         this.entropy = total_entropy / total_items as f64;
         this.lz_matches = total_lz_matches / total_items;
-        this.estimated_size = total_estimated_size / total_items;
         this.zstd_size = total_zstd_size / total_items;
         this.original_size = total_original_size / total_items;
         this.merge_bit_stats_and_value_counts(items)?;

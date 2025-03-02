@@ -3,7 +3,7 @@ use super::{
     FieldMetrics, PrintFormat,
 };
 use crate::{
-    analyzer::{AnalyzerFieldState, CompressionOptions, SchemaAnalyzer, SizeEstimationParameters},
+    analyzer::{AnalyzerFieldState, CompressionOptions, SchemaAnalyzer},
     comparison::{
         compare_groups::{analyze_custom_comparisons, GroupComparisonResult},
         split_comparison::{
@@ -29,9 +29,6 @@ pub struct AnalysisResults {
 
     /// LZ compression matches in the file
     pub file_lz_matches: usize,
-
-    /// Estimated size of the compressed data from our estimator
-    pub estimated_file_size: usize,
 
     /// Actual size of the compressed data when compressed with zstandard
     pub zstd_file_size: usize,
@@ -70,14 +67,6 @@ pub fn compute_analysis_results(
         let writer_buffer = get_writer_buffer(&mut stats.writer);
         let entropy = calculate_file_entropy(writer_buffer);
         let lz_matches = estimate_num_lz_matches_fast(writer_buffer);
-        let estimated_size =
-            (analyzer.compression_options.size_estimator_fn)(SizeEstimationParameters {
-                data_len: writer_buffer.len(),
-                num_lz_matches: lz_matches,
-                entropy,
-                lz_match_multiplier: analyzer.compression_options.lz_match_multiplier,
-                entropy_multiplier: analyzer.compression_options.entropy_multiplier,
-            });
         let actual_size = get_zstd_compressed_size(
             writer_buffer,
             analyzer.compression_options.zstd_compression_level,
@@ -98,7 +87,6 @@ pub fn compute_analysis_results(
                 count: stats.count,
                 lenbits: stats.lenbits,
                 bit_order: stats.bit_order,
-                estimated_size,
                 zstd_size: actual_size,
                 original_size: writer_buffer.len(),
             },
@@ -125,15 +113,6 @@ pub fn compute_analysis_results(
         file_lz_matches,
         per_field: field_metrics,
         schema_metadata: analyzer.schema.metadata.clone(),
-        estimated_file_size: (analyzer.compression_options.size_estimator_fn)(
-            SizeEstimationParameters {
-                data_len: analyzer.entries.len(),
-                num_lz_matches: file_lz_matches,
-                entropy: file_entropy,
-                lz_match_multiplier: analyzer.compression_options.lz_match_multiplier,
-                entropy_multiplier: analyzer.compression_options.entropy_multiplier,
-            },
-        ),
         zstd_file_size: get_zstd_compressed_size(
             &analyzer.entries,
             analyzer.compression_options.zstd_compression_level,
@@ -226,7 +205,6 @@ impl AnalysisResults {
             full_path: String::new(),
             depth: 0,
             zstd_size: self.zstd_file_size,
-            estimated_size: self.estimated_file_size,
             original_size: self.original_size,
             count: 0,
             lenbits: 0,
