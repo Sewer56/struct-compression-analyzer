@@ -235,9 +235,7 @@ impl FieldMetrics {
         let mut bit_counts = items[0].bit_counts.clone();
         let mut value_counts = items[0].value_counts.clone();
 
-        for idx in 1..items.len() {
-            let other = items[idx];
-
+        for other in items {
             // Validate bit counts length
             if bit_counts.len() != other.bit_counts.len() {
                 return Err(AnalysisMergeError::BitCountsDontMatch);
