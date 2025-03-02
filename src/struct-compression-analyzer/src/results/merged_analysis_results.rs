@@ -9,6 +9,7 @@ use crate::{
             calculate_max_entropy_diff, calculate_max_entropy_diff_ratio, FieldComparisonMetrics,
             SplitComparisonResult,
         },
+        stats::{calculate_custom_zstd_ratio_stats, calculate_zstd_ratio_stats, format_stats},
         GroupComparisonMetrics, GroupDifference,
     },
     results::calculate_percentage,
@@ -54,6 +55,10 @@ pub struct MergedAnalysisResults {
 
     /// Merged custom group comparison results from schema-defined comparisons
     pub custom_comparisons: Vec<GroupComparisonResult>,
+
+    /// Original analysis results used to create this merged result.
+    /// This is used for calculating statistics across the individual results.
+    pub original_results: Vec<AnalysisResults>,
 }
 
 /// The result of comparing 2 arbitrary groups of fields based on the schema,
@@ -96,6 +101,7 @@ impl MergedAnalysisResults {
                 &results.split_comparisons,
             ),
             custom_comparisons: results.custom_comparisons.clone(),
+            original_results: vec![results.clone()],
         }
     }
 
@@ -361,6 +367,23 @@ impl MergedAnalysisResults {
         println!("    Ratio (est/zstd): ({}/{})", ratio_est, ratio_zstd);
         println!("    Diff (est/zstd): ({}/{})", diff_est, diff_zstd);
 
+        // If we have enough files for statistics, show the detailed stats
+        println!("    Zstd Ratio Statistics:");
+
+        // Find the index of this comparison in the split_comparisons array
+        let comp_index = self
+            .split_comparisons
+            .iter()
+            .position(|c| c.name == comparison.name)
+            .unwrap_or(0);
+
+        // Calculate and print the zstd ratio statistics
+        if let Some(stats) = calculate_zstd_ratio_stats(&self.original_results, comp_index) {
+            println!("    * {}", format_stats(&stats));
+        } else {
+            println!("    * No statistics available (insufficient data)");
+        }
+
         if size_orig != size_comp {
             println!("    [WARNING!!] Sizes of both groups in bytes don't match!! They may vary by a few bytes due to padding.");
             println!("    [WARNING!!] However if they vary extremely, your groups may be incorrect. group1: {}, group2: {}", size_orig, size_comp);
@@ -380,7 +403,7 @@ impl MergedAnalysisResults {
         println!("      LZ, Entropy: ({}, {:.2})", base_lz, base_entropy);
         println!("      Est/Zstd: ({}/{})", base_est, base_zstd);
 
-        for (i, (group_name, metrics)) in comparison
+        for (x, (group_name, metrics)) in comparison
             .group_names
             .iter()
             .zip(&comparison.group_metrics)
@@ -394,8 +417,8 @@ impl MergedAnalysisResults {
 
             let ratio_est = calculate_percentage(comp_est as f64, base_est as f64);
             let ratio_zstd = calculate_percentage(comp_zstd as f64, base_zstd as f64);
-            let diff_est = comparison.differences[i].estimated_size;
-            let diff_zstd = comparison.differences[i].zstd_size;
+            let diff_est = comparison.differences[x].estimated_size;
+            let diff_zstd = comparison.differences[x].zstd_size;
 
             println!("\n    {} Group:", group_name);
             println!("      Size: {}", comp_size);
@@ -406,6 +429,21 @@ impl MergedAnalysisResults {
                 ratio_est, ratio_zstd
             );
             println!("      Diff (est/zstd): ({}/{})", diff_est, diff_zstd);
+
+            // Find the index of this comparison in the custom_comparisons array
+            if let Some(comp_index) = self
+                .custom_comparisons
+                .iter()
+                .position(|c| c.name == comparison.name)
+            {
+                // Calculate and print the zstd ratio statistics for this group
+                if let Some(stats) =
+                    calculate_custom_zstd_ratio_stats(&self.original_results, comp_index, x)
+                {
+                    println!("      Zstd Ratio Statistics: ");
+                    println!("      * {}", format_stats(&stats));
+                }
+            }
 
             if base_size != comp_size {
                 println!("      [WARNING!!] Sizes of base and comparison groups don't match!! They may vary by a few bytes due to padding.");
@@ -474,6 +512,7 @@ pub fn merge_analysis_results(
     // Merge split comparisons
     merged.split_comparisons = merge_split_comparisons(results);
     merged.custom_comparisons = merge_custom_comparisons(results);
+    merged.original_results = results.to_vec();
     Ok(merged)
 }
 
