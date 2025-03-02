@@ -186,7 +186,7 @@ impl From<FieldMetrics> for FieldComparisonMetrics {
     }
 }
 
-fn calculate_max_entropy_diff(results: &[FieldComparisonMetrics]) -> f64 {
+pub(crate) fn calculate_max_entropy_diff(results: &[FieldComparisonMetrics]) -> f64 {
     let entropy_values: Vec<f64> = results.iter().map(|m| m.entropy).collect();
     if entropy_values.len() < 2 {
         0.0
@@ -203,7 +203,7 @@ fn calculate_max_entropy_diff(results: &[FieldComparisonMetrics]) -> f64 {
     }
 }
 
-fn calculate_max_entropy_diff_ratio(results: &[FieldComparisonMetrics]) -> f64 {
+pub(crate) fn calculate_max_entropy_diff_ratio(results: &[FieldComparisonMetrics]) -> f64 {
     let entropy_values: Vec<f64> = results.iter().map(|m| m.entropy).collect();
     if entropy_values.len() < 2 {
         0.0

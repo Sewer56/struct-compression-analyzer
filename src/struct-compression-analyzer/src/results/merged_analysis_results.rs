@@ -5,7 +5,10 @@ use super::{
 use crate::{
     comparison::{
         compare_groups::GroupComparisonResult,
-        split_comparison::{FieldComparisonMetrics, SplitComparisonResult},
+        split_comparison::{
+            calculate_max_entropy_diff, calculate_max_entropy_diff_ratio, FieldComparisonMetrics,
+            SplitComparisonResult,
+        },
         GroupComparisonMetrics, GroupDifference,
     },
     results::calculate_percentage,
@@ -42,15 +45,38 @@ pub struct MergedAnalysisResults {
     /// Total number of files that were merged
     pub merged_file_count: usize,
 
-    /// Field path � computed metrics (merged)
+    /// Field path → computed metrics (merged)
     /// Maps each field's full path to the merged metrics across all analyzed files
     pub per_field: AHashMap<String, FieldMetrics>,
 
     /// Merged split comparison results
-    pub split_comparisons: Vec<SplitComparisonResult>,
+    pub split_comparisons: Vec<MergedSplitComparisonResult>,
 
     /// Merged custom group comparison results from schema-defined comparisons
     pub custom_comparisons: Vec<GroupComparisonResult>,
+}
+
+/// The result of comparing 2 arbitrary groups of fields based on the schema,
+/// specifically for merged analysis results.
+///
+/// This is similar to [`SplitComparisonResult`] but includes additional information
+/// about the number of files that were merged to create this result.
+#[derive(Clone, Default)]
+pub struct MergedSplitComparisonResult {
+    /// The name of the group comparison. (Copied from schema)
+    pub name: String,
+    /// A description of the group comparison. (Copied from schema)
+    pub description: String,
+    /// The metrics for the first group.
+    pub group1_metrics: GroupComparisonMetrics,
+    /// The metrics for the second group.
+    pub group2_metrics: GroupComparisonMetrics,
+    /// Comparison between group 2 and group 1.
+    pub difference: GroupDifference,
+    /// The statistics for the individual fields of the baseline group.
+    pub baseline_comparison_metrics: Vec<FieldComparisonMetrics>,
+    /// The statistics for the individual fields of the split group.
+    pub split_comparison_metrics: Vec<FieldComparisonMetrics>,
 }
 
 impl MergedAnalysisResults {
@@ -66,7 +92,9 @@ impl MergedAnalysisResults {
             original_size: results.original_size,
             merged_file_count: 1,
             per_field: results.per_field.clone(),
-            split_comparisons: results.split_comparisons.clone(),
+            split_comparisons: MergedSplitComparisonResult::from_split_comparisons(
+                &results.split_comparisons,
+            ),
             custom_comparisons: results.custom_comparisons.clone(),
         }
     }
@@ -272,11 +300,11 @@ impl MergedAnalysisResults {
         }
     }
 
-    fn detailed_print_comparison(&self, comparison: &SplitComparisonResult) {
+    fn detailed_print_comparison(&self, comparison: &MergedSplitComparisonResult) {
         self.concise_print_split_comparison(comparison);
     }
 
-    fn concise_print_split_comparison(&self, comparison: &SplitComparisonResult) {
+    fn concise_print_split_comparison(&self, comparison: &MergedSplitComparisonResult) {
         let base_lz = comparison.group1_metrics.lz_matches;
         let size_orig = comparison.group1_metrics.original_size;
         let size_comp = comparison.group2_metrics.original_size;
@@ -449,7 +477,7 @@ pub fn merge_analysis_results(
     Ok(merged)
 }
 
-fn merge_split_comparisons(items: &[AnalysisResults]) -> Vec<SplitComparisonResult> {
+fn merge_split_comparisons(items: &[AnalysisResults]) -> Vec<MergedSplitComparisonResult> {
     if items.is_empty() || items[0].split_comparisons.is_empty() {
         return Vec::new();
     }
@@ -466,8 +494,11 @@ fn merge_split_comparisons(items: &[AnalysisResults]) -> Vec<SplitComparisonResu
     merged_comparisons
 }
 
-fn merge_split_comparison(split_idx: usize, items: &[AnalysisResults]) -> SplitComparisonResult {
-    let mut merged = SplitComparisonResult {
+fn merge_split_comparison(
+    split_idx: usize,
+    items: &[AnalysisResults],
+) -> MergedSplitComparisonResult {
+    let mut merged = MergedSplitComparisonResult {
         name: items[0].split_comparisons[split_idx].name.clone(),
         description: items[0].split_comparisons[split_idx].description.clone(),
         group1_metrics: GroupComparisonMetrics::default(),
@@ -714,4 +745,58 @@ fn merge_custom_comparison(index: usize, items: &[AnalysisResults]) -> GroupComp
     }
 
     merged
+}
+
+/// Helper functions around [`MergedSplitComparisonResult`]
+impl MergedSplitComparisonResult {
+    /// Create a new [`MergedSplitComparisonResult`] from a [`SplitComparisonResult`]
+    pub fn from_split_comparison(result: &SplitComparisonResult) -> Self {
+        Self {
+            name: result.name.clone(),
+            description: result.description.clone(),
+            group1_metrics: result.group1_metrics.clone(),
+            group2_metrics: result.group2_metrics.clone(),
+            difference: result.difference,
+            baseline_comparison_metrics: result.baseline_comparison_metrics.clone(),
+            split_comparison_metrics: result.split_comparison_metrics.clone(),
+        }
+    }
+
+    /// Convert a Vec of SplitComparisonResult to a Vec of MergedSplitComparisonResult
+    pub fn from_split_comparisons(results: &[SplitComparisonResult]) -> Vec<Self> {
+        results.iter().map(Self::from_split_comparison).collect()
+    }
+
+    /// Ratio between the max and min entropy of the baseline fields.
+    pub fn baseline_max_entropy_diff_ratio(&self) -> f64 {
+        calculate_max_entropy_diff_ratio(&self.baseline_comparison_metrics)
+    }
+
+    /// Maximum difference between the entropy of the baseline fields.
+    pub fn baseline_max_entropy_diff(&self) -> f64 {
+        calculate_max_entropy_diff(&self.baseline_comparison_metrics)
+    }
+
+    /// Maximum difference between the entropy of the split fields.
+    pub fn split_max_entropy_diff(&self) -> f64 {
+        calculate_max_entropy_diff(&self.split_comparison_metrics)
+    }
+
+    /// Ratio between the max and min entropy of the split fields.
+    pub fn split_max_entropy_diff_ratio(&self) -> f64 {
+        calculate_max_entropy_diff_ratio(&self.split_comparison_metrics)
+    }
+
+    /// Convert to a [`SplitComparisonResult`] (primarily for backward compatibility)
+    pub fn to_split_comparison(&self) -> SplitComparisonResult {
+        SplitComparisonResult {
+            name: self.name.clone(),
+            description: self.description.clone(),
+            group1_metrics: self.group1_metrics.clone(),
+            group2_metrics: self.group2_metrics.clone(),
+            difference: self.difference,
+            baseline_comparison_metrics: self.baseline_comparison_metrics.clone(),
+            split_comparison_metrics: self.split_comparison_metrics.clone(),
+        }
+    }
 }
