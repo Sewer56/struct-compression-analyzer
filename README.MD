@@ -190,6 +190,8 @@ Split Group Comparisons:
     Comp (est/zstd): (4337413/3498364)
     Ratio (est/zstd): (98.57163148128578/98.06824536936458)
     Diff (est/zstd): (-62851/-68911)
+    Zstd Ratio Statistics:
+    * min: 0.937, Q1: 0.963, median: 0.979, Q3: 1.002, max: 1.161, IQR: 0.038, mean: 0.985 (n=125)
 
 Custom Group Comparisons:
   dxt1_transforms: Compare different arrangements of DXT1 block data
@@ -204,6 +206,8 @@ Custom Group Comparisons:
       Est/Zstd: (13437865/11767256)
       Ratio (est/zstd): (95.6%/87.7%)
       Diff (est/zstd): (-623734/-1653608)
+      Zstd Ratio Statistics: 
+      * min: 0.790, Q1: 0.868, median: 0.878, Q3: 0.886, max: 1.009, IQR: 0.018, mean: 0.879 (n=125)
 
     color0_color1_indices Group:
       Size: 20015319
@@ -211,6 +215,8 @@ Custom Group Comparisons:
       Est/Zstd: (13364569/11698334)
       Ratio (est/zstd): (95.0%/87.2%)
       Diff (est/zstd): (-697030/-1722530)
+      Zstd Ratio Statistics: 
+      * min: 0.770, Q1: 0.858, median: 0.871, Q3: 0.882, max: 1.078, IQR: 0.024, mean: 0.875 (n=125)
 ```
 
 Note the result above is an aggregate, i.e. the 'average' file.
