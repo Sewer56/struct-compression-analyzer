@@ -19,7 +19,7 @@ use lossless_transform_utils::match_estimator::estimate_num_lz_matches_fast;
 use rustc_hash::FxHashMap;
 
 /// Final computed metrics for output
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct AnalysisResults {
     /// Schema name
     pub schema_metadata: Metadata,

@@ -9,7 +9,7 @@ use std::{
 };
 use struct_compression_analyzer::{
     analyzer::{CompressionOptions, SchemaAnalyzer},
-    csv,
+    brute_force, csv,
     offset_evaluator::try_evaluate_file_offset,
     plot::generate_plots,
     results::{
@@ -110,6 +110,10 @@ struct DirectoryCommand {
     /// zstd compression level (default: 16)
     #[argh(option, short = 'z', default = "16")]
     zstd_compression_level: i32,
+
+    /// enable brute forcing of LZ match and entropy multiplier parameters
+    #[argh(switch, long = "brute-force-lz-params")]
+    brute_force: bool,
 }
 
 /// Parameters to function used to analyze a single file.
@@ -191,12 +195,20 @@ fn main() -> anyhow::Result<()> {
             );
             let merge_start_time = Instant::now();
             let merged_results = MergedAnalysisResults::from_results(&individual_results)?;
-
-            // Print final aggregated results
             println!(
                 "{}ms... Aggregated (Merged) Analysis Results:",
                 merge_start_time.elapsed().as_millis()
             );
+
+            // Run brute force optimization on merged results if enabled
+            if dir_cmd.brute_force {
+                println!("\nRunning LZ parameter optimization on merged results...");
+                //let optimization_results = brute_force::optimize_and_update_merged_results(&mut merged_results, None);
+                //brute_force::print_optimization_results(&optimization_results);
+            }
+
+            // Print final aggregated results
+
             merged_results.print(
                 &schema,
                 dir_cmd.format.unwrap_or(PrintFormat::default()),
