@@ -9,7 +9,7 @@ use std::{
 };
 use struct_compression_analyzer::{
     analyzer::{CompressionOptions, SchemaAnalyzer},
-    brute_force, csv,
+    csv,
     offset_evaluator::try_evaluate_file_offset,
     plot::generate_plots,
     results::{
