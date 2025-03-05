@@ -1,8 +1,6 @@
-use super::{BruteForceConfig, OptimizationResult};
-use crate::{
-    analyzer::SizeEstimationParameters,
-    results::{analysis_results::AnalysisResults, merged_analysis_results::MergedAnalysisResults},
-    utils::analyze_utils::size_estimate,
+use super::{calculate_error, BruteForceConfig, OptimizationResult};
+use crate::results::{
+    analysis_results::AnalysisResults, merged_analysis_results::MergedAnalysisResults,
 };
 
 /// Result of a brute force optimization on a split comparison.
@@ -24,9 +22,10 @@ pub struct SplitComparisonOptimizationResult {
 /// * `config` - Configuration for the optimization process (optional, uses default if [`None`])
 pub fn find_optimal_split_result_coefficients(
     merged_results: &mut MergedAnalysisResults,
-    config: Option<BruteForceConfig>,
+    config: Option<&BruteForceConfig>,
 ) -> Vec<(String, SplitComparisonOptimizationResult)> {
-    let config = config.unwrap_or_default();
+    let default_config = BruteForceConfig::default();
+    let config = config.unwrap_or(&default_config);
 
     let mut results: Vec<(String, SplitComparisonOptimizationResult)> = Vec::new();
 
@@ -144,47 +143,6 @@ fn calculate_error_for_all_results(
     }
 
     (group1_total_error, group2_total_error)
-}
-
-/// Calculates the error for a given set of LZ match and entropy multipliers.
-///
-/// # Arguments
-///
-/// * `num_lz_matches` - The number of LZ matches in the input
-/// * `entropy` - The estimated entropy of the input
-/// * `zstd_size` - The ZSTD compressed size of the input
-/// * `original_size` - The original size of the input
-/// * `lz_match_multiplier` - The current LZ match multiplier
-/// * `entropy_multiplier` - The current entropy multiplier
-///
-/// # Returns
-///
-/// The error for the tested parameters (difference between estimated and actual size).
-#[inline(always)]
-fn calculate_error(
-    // Compression Estimator Params
-    num_lz_matches: usize,
-    entropy: f64,
-    // Actual Compression Stats
-    zstd_size: u64,
-    original_size: usize,
-    // Coefficients to Test
-    lz_match_multiplier: f64,
-    entropy_multiplier: f64,
-) -> f64 {
-    // Calculate estimated size with current coefficients
-    let estimated_size = size_estimate(SizeEstimationParameters {
-        name: "",
-        data_len: original_size,
-        data: None,
-        num_lz_matches,
-        entropy,
-        lz_match_multiplier,
-        entropy_multiplier,
-    });
-
-    // Calculate error (difference between estimated and actual size)
-    ((estimated_size as f64) - (zstd_size as f64)).abs()
 }
 
 /// Print optimization results in a user-friendly format.
