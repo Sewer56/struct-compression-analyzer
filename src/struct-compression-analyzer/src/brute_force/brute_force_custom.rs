@@ -176,13 +176,13 @@ pub fn print_optimization_results(results: &[(String, CustomComparisonOptimizati
 
     for (name, result) in results {
         println!(
-            "{:<16} | {:<7} | {:<15.3} | {:<20.3} |",
+            "{:<16}|{:<7}|{:<15.3}|{:<20.3}|",
             name, "BASE", result.baseline.lz_match_multiplier, result.baseline.entropy_multiplier
         );
 
         for (i, comparison) in result.comparisons.iter().enumerate() {
             println!(
-                "{:<16} | {:<7} | {:<15.3} | {:<20.3} |",
+                "{:<16}|{:<7}|{:<15.3}|{:<20.3}|",
                 "", i, comparison.lz_match_multiplier, comparison.entropy_multiplier
             );
         }
