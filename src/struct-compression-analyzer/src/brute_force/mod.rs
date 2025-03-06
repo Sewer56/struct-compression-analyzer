@@ -62,12 +62,12 @@ pub struct BruteForceConfig {
 impl Default for BruteForceConfig {
     fn default() -> Self {
         Self {
-            min_lz_multiplier: 0.001,
+            min_lz_multiplier: 0.0001,
             max_lz_multiplier: 1.0,
-            lz_step_size: 0.001,
+            lz_step_size: 0.0001,
             min_entropy_multiplier: 1.0,
             max_entropy_multiplier: 1.2,
-            entropy_step_size: 0.001,
+            entropy_step_size: 0.0001,
         }
     }
 }
