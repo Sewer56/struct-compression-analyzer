@@ -238,8 +238,13 @@ fn main() -> anyhow::Result<()> {
             // Write CSV reports
             if let Some(output_dir) = &dir_cmd.output {
                 std::fs::create_dir_all(output_dir)?;
-                csv::write_all_csvs(&individual_results, &merged_results, output_dir, &files)?;
-                generate_plots(&individual_results, output_dir).unwrap();
+                csv::write_all_csvs(
+                    &merged_results.original_results,
+                    &merged_results,
+                    output_dir,
+                    &files,
+                )?;
+                generate_plots(&merged_results.original_results, output_dir).unwrap();
                 println!("Generated field CSV reports in: {}", output_dir.display());
             }
         }
