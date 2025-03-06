@@ -34,7 +34,7 @@ pub fn find_optimal_split_result_coefficients(
             comparison.name.clone(),
             find_optimal_split_result_coefficients_for_comparison(
                 comparison_idx,
-                &config,
+                config,
                 &merged_results.original_results,
             ),
         ));

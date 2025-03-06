@@ -9,6 +9,7 @@ use std::{
 };
 use struct_compression_analyzer::{
     analyzer::{CompressionOptions, SchemaAnalyzer},
+    brute_force::{optimize_and_apply_coefficients, print_all_optimization_results},
     csv,
     offset_evaluator::try_evaluate_file_offset,
     plot::generate_plots,
@@ -194,7 +195,7 @@ fn main() -> anyhow::Result<()> {
                 individual_results.len()
             );
             let merge_start_time = Instant::now();
-            let merged_results = MergedAnalysisResults::from_results(&individual_results)?;
+            let mut merged_results = MergedAnalysisResults::from_results(&individual_results)?;
             println!(
                 "{}ms... Aggregated (Merged) Analysis Results:",
                 merge_start_time.elapsed().as_millis()
@@ -203,11 +204,16 @@ fn main() -> anyhow::Result<()> {
             // Run brute force optimization on merged results if enabled
             if dir_cmd.brute_force {
                 println!("\nRunning LZ parameter optimization on merged results...");
-                //let optimization_results = brute_force::optimize_and_update_merged_results(&mut merged_results, None);
-                //brute_force::print_optimization_results(&optimization_results);
-            }
+                let brute_force_start_time = Instant::now();
+                let (split_results, custom_results) =
+                    optimize_and_apply_coefficients(&mut merged_results, None);
+                println!(
+                    "{}ms... Brute force optimization complete.",
+                    brute_force_start_time.elapsed().as_millis()
+                );
 
-            // Print final aggregated results
+                print_all_optimization_results(&split_results, &custom_results);
+            }
 
             merged_results.print(
                 &schema,
@@ -238,6 +244,7 @@ fn main() -> anyhow::Result<()> {
             }
         }
     }
+
     // Print time taken for analysis
     println!(
         "Analysis complete in {}ms",

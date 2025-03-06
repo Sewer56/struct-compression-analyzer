@@ -788,8 +788,8 @@ impl MergedSplitComparisonResult {
         Self {
             name: result.name.clone(),
             description: result.description.clone(),
-            group1_metrics: result.group1_metrics.clone(),
-            group2_metrics: result.group2_metrics.clone(),
+            group1_metrics: result.group1_metrics,
+            group2_metrics: result.group2_metrics,
             difference: result.difference,
             baseline_comparison_metrics: result.baseline_comparison_metrics.clone(),
             split_comparison_metrics: result.split_comparison_metrics.clone(),
@@ -826,8 +826,8 @@ impl MergedSplitComparisonResult {
         SplitComparisonResult {
             name: self.name.clone(),
             description: self.description.clone(),
-            group1_metrics: self.group1_metrics.clone(),
-            group2_metrics: self.group2_metrics.clone(),
+            group1_metrics: self.group1_metrics,
+            group2_metrics: self.group2_metrics,
             difference: self.difference,
             baseline_comparison_metrics: self.baseline_comparison_metrics.clone(),
             split_comparison_metrics: self.split_comparison_metrics.clone(),

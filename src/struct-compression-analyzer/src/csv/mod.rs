@@ -421,7 +421,7 @@ pub fn write_field_value_stats_csv(
             let value_counts = field.sorted_value_counts();
 
             // Calculate total count for ratio
-            let total_values: u64 = value_counts.iter().map(|(_, count)| **count as u64).sum();
+            let total_values: u64 = value_counts.iter().map(|(_, count)| **count).sum();
 
             // Write sorted values with ratios
             for (value, count) in value_counts {

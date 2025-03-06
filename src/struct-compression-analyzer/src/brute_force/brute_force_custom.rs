@@ -236,7 +236,7 @@ mod tests {
                 original_size: comparison_original_size,
             };
 
-            group_metrics.push(metrics.clone());
+            group_metrics.push(metrics);
             differences.push(GroupDifference::from_metrics(&baseline_metrics, &metrics));
         }
 

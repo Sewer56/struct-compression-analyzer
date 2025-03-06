@@ -4,9 +4,29 @@
 //! [`lz_match_multiplier`] and [`entropy_multiplier`] parameters used in the
 //! [`size_estimate`] function.
 //!
+//! It exposes two main optimization approaches:
+//!
+//! *   **Split comparisons:** Optimizes parameters for two groups being compared directly using the
+//!     [`find_optimal_split_result_coefficients`] function. Results are returned as
+//!     [`SplitComparisonOptimizationResult`].
+//!
+//! *   **Custom comparisons:** Optimizes parameters for custom groups with a variable number of
+//!     comparisons against a baseline group using the [`find_optimal_custom_result_coefficients`]
+//!     function. Results are returned as [`CustomComparisonOptimizationResult`].
+//!
+//! The main entry point for using this module is the [`optimize_and_apply_coefficients`] function,
+//! which performs the optimization and applies the resulting coefficients to an existing
+//! [`MergedAnalysisResults`] object in place.
+//!
 //! [`size_estimate`]: crate::utils::analyze_utils::size_estimate
 //! [`lz_match_multiplier`]: crate::analyzer::SizeEstimationParameters::lz_match_multiplier
 //! [`entropy_multiplier`]: crate::analyzer::SizeEstimationParameters::entropy_multiplier
+//! [`find_optimal_split_result_coefficients`]: crate::brute_force::find_optimal_split_result_coefficients
+//! [`find_optimal_custom_result_coefficients`]: crate::brute_force::find_optimal_custom_result_coefficients
+//! [`SplitComparisonOptimizationResult`]: crate::brute_force::SplitComparisonOptimizationResult
+//! [`CustomComparisonOptimizationResult`]: crate::brute_force::CustomComparisonOptimizationResult
+//! [`optimize_and_apply_coefficients`]: crate::brute_force::optimize_and_apply_coefficients
+//! [`MergedAnalysisResults`]: crate::results::merged_analysis_results::MergedAnalysisResults
 
 pub mod brute_force_custom;
 pub mod brute_force_split;
@@ -149,7 +169,7 @@ pub fn optimize_and_apply_coefficients(
 /// * `merged_results` - The merged analysis results to update
 /// * `split_optimization_results` - The optimization results for split comparisons
 /// * `custom_optimization_results` - The optimization results for custom comparisons
-fn apply_optimized_coefficients(
+pub fn apply_optimized_coefficients(
     merged_results: &mut MergedAnalysisResults,
     split_optimization_results: &[(String, SplitComparisonOptimizationResult)],
     custom_optimization_results: &[(String, CustomComparisonOptimizationResult)],

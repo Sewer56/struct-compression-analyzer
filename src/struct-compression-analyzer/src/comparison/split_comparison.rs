@@ -114,7 +114,7 @@ pub fn make_split_comparison_result(
         lz_matches: lz_matches1 as u64,
         entropy: entropy1,
         estimated_size: estimated_size_1 as u64,
-        zstd_size: actual_size_1 as u64,
+        zstd_size: actual_size_1,
         original_size: baseline_bytes.len() as u64,
     };
 
@@ -122,7 +122,7 @@ pub fn make_split_comparison_result(
         lz_matches: lz_matches2 as u64,
         entropy: entropy2,
         estimated_size: estimated_size_2 as u64,
-        zstd_size: actual_size_2 as u64,
+        zstd_size: actual_size_2,
         original_size: split_bytes.len() as u64,
     };
 
