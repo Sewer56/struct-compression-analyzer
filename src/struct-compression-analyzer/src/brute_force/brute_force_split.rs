@@ -150,15 +150,19 @@ fn calculate_error_for_all_results(
 /// # Arguments
 ///
 /// * `results` - Vector of (comparison name, OptimizationResult) tuples
-pub fn print_optimization_results(results: &[(String, OptimizationResult)]) {
-    println!("\n=== LZ and Entropy Parameter Optimization Results ===");
-    println!("Comparison Name               | LZ Multiplier | Entropy Multiplier |");
-    println!("------------------------------|---------------|--------------------|");
+pub fn print_optimization_results(results: &[(String, SplitComparisonOptimizationResult)]) {
+    println!("\n=== Split Comparison Parameter Optimization Results ===");
+    println!("Comparison Name               | Group | LZ Multiplier | Entropy Multiplier |");
+    println!("------------------------------|-------|---------------|--------------------|");
 
     for (name, result) in results {
         println!(
-            "{:<30} | {:<15.4} | {:<20.4}",
-            name, result.lz_match_multiplier, result.entropy_multiplier
+            "{:<30} | {:<7} | {:<15.4} | {:<20.4}",
+            name, "G1", result.group_1.lz_match_multiplier, result.group_1.entropy_multiplier
+        );
+        println!(
+            "{:<30} | {:<7} | {:<15.4} | {:<20.4}",
+            "", "G2", result.group_2.lz_match_multiplier, result.group_2.entropy_multiplier
         );
     }
 }

@@ -28,13 +28,13 @@ pub struct AnalysisResults {
     pub file_entropy: f64,
 
     /// LZ compression matches in the file
-    pub file_lz_matches: usize,
+    pub file_lz_matches: u64,
 
     /// Actual size of the compressed data when compressed with zstandard
-    pub zstd_file_size: usize,
+    pub zstd_file_size: u64,
 
     /// Original size of the uncompressed data
-    pub original_size: usize,
+    pub original_size: u64,
 
     /// Field path → computed metrics
     /// This is a map of `full_path` to [`FieldMetrics`], such that we
@@ -80,7 +80,7 @@ pub fn compute_analysis_results(
                 name: stats.name.clone(),
                 full_path: stats.full_path.clone(),
                 entropy,
-                lz_matches,
+                lz_matches: lz_matches as u64,
                 bit_counts: stats.bit_counts.clone(),
                 value_counts: stats.value_counts.clone(),
                 depth: stats.depth,
@@ -88,7 +88,7 @@ pub fn compute_analysis_results(
                 lenbits: stats.lenbits,
                 bit_order: stats.bit_order,
                 zstd_size: actual_size,
-                original_size: writer_buffer.len(),
+                original_size: writer_buffer.len() as u64,
             },
         );
     }
@@ -110,14 +110,14 @@ pub fn compute_analysis_results(
 
     Ok(AnalysisResults {
         file_entropy,
-        file_lz_matches,
+        file_lz_matches: file_lz_matches as u64,
         per_field: field_metrics,
         schema_metadata: analyzer.schema.metadata.clone(),
         zstd_file_size: get_zstd_compressed_size(
             &analyzer.entries,
             analyzer.compression_options.zstd_compression_level,
         ),
-        original_size: analyzer.entries.len(),
+        original_size: analyzer.entries.len() as u64,
         split_comparisons,
         custom_comparisons,
     })

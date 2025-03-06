@@ -32,13 +32,13 @@ pub struct MergedAnalysisResults {
     pub file_entropy: f64,
 
     /// Average LZ compression matches in the merged files
-    pub file_lz_matches: usize,
+    pub file_lz_matches: u64,
 
     /// Average actual size of the compressed data when compressed with zstandard
-    pub zstd_file_size: usize,
+    pub zstd_file_size: u64,
 
     /// Average original size of the uncompressed data
-    pub original_size: usize,
+    pub original_size: u64,
 
     /// Total number of files that were merged
     pub merged_file_count: usize,
@@ -477,9 +477,9 @@ pub fn merge_analysis_results(
     }
 
     merged.file_entropy = total_entropy / total_count as f64;
-    merged.file_lz_matches = total_lz_matches / total_count;
-    merged.zstd_file_size = total_zstd_size / total_count;
-    merged.original_size = total_original_size / total_count;
+    merged.file_lz_matches = total_lz_matches / total_count as u64;
+    merged.zstd_file_size = total_zstd_size / total_count as u64;
+    merged.original_size = total_original_size / total_count as u64;
     merged.merged_file_count = total_count;
 
     // Merge field-level metrics in parallel
@@ -654,7 +654,7 @@ fn merge_split_comparison(
 
         // Calculate averages
         for field_metrics in &mut merged.baseline_comparison_metrics {
-            field_metrics.lz_matches /= items.len();
+            field_metrics.lz_matches /= items.len() as u64;
             field_metrics.entropy /= items.len() as f64;
         }
     }
@@ -680,7 +680,7 @@ fn merge_split_comparison(
 
         // Calculate averages
         for field_metrics in &mut merged.split_comparison_metrics {
-            field_metrics.lz_matches /= items.len();
+            field_metrics.lz_matches /= items.len() as u64;
             field_metrics.entropy /= items.len() as f64;
         }
     }

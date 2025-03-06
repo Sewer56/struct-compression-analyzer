@@ -190,7 +190,7 @@ impl SplitComparisonResult {
 #[derive(PartialEq, Debug, Clone, Copy, Default)]
 pub struct FieldComparisonMetrics {
     /// LZ compression matches in the field
-    pub lz_matches: usize,
+    pub lz_matches: u64,
     /// Shannon entropy in bits
     pub entropy: f64,
 }

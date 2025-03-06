@@ -202,7 +202,7 @@ pub fn write_split_comparison_csv(
                 .map(|m| format!("{:.2}", m.entropy))
                 .collect();
 
-            let group2_lz_values: Vec<usize> = comparison
+            let group2_lz_values: Vec<u64> = comparison
                 .split_comparison_metrics
                 .iter()
                 .map(|m| m.lz_matches)
@@ -230,12 +230,12 @@ pub fn write_split_comparison_csv(
                 comparison.group2_metrics.estimated_size.to_string(), // comp est
                 comparison.group2_metrics.zstd_size.to_string(), // comp zstd
                 calc_ratio(
-                    comparison.group2_metrics.estimated_size as usize,
-                    comparison.group1_metrics.estimated_size as usize,
+                    comparison.group2_metrics.estimated_size,
+                    comparison.group1_metrics.estimated_size,
                 ), // ratio est
                 calc_ratio(
-                    comparison.group2_metrics.zstd_size as usize,
-                    comparison.group1_metrics.zstd_size as usize,
+                    comparison.group2_metrics.zstd_size,
+                    comparison.group1_metrics.zstd_size,
                 ), // ratio zstd
                 comparison.difference.estimated_size.to_string(), // diff est
                 comparison.difference.zstd_size.to_string(), // diff zstd
@@ -354,8 +354,8 @@ pub fn write_custom_comparison_csv(
             // Write Estimated Ratio values
             for group_metrics in comparison.group_metrics.iter() {
                 record.push(calc_ratio(
-                    group_metrics.estimated_size as usize,
-                    comparison.baseline_metrics.estimated_size as usize,
+                    group_metrics.estimated_size,
+                    comparison.baseline_metrics.estimated_size,
                 ));
             }
 
@@ -373,8 +373,8 @@ pub fn write_custom_comparison_csv(
             // Write Zstd Ratio values
             for group_metrics in comparison.group_metrics.iter() {
                 record.push(calc_ratio(
-                    group_metrics.zstd_size as usize,
-                    comparison.baseline_metrics.zstd_size as usize,
+                    group_metrics.zstd_size,
+                    comparison.baseline_metrics.zstd_size,
                 ));
             }
 
@@ -421,14 +421,14 @@ pub fn write_field_value_stats_csv(
             let value_counts = field.sorted_value_counts();
 
             // Calculate total count for ratio
-            let total_values: usize = value_counts.iter().map(|(_, count)| **count as usize).sum();
+            let total_values: u64 = value_counts.iter().map(|(_, count)| **count as u64).sum();
 
             // Write sorted values with ratios
             for (value, count) in value_counts {
                 wtr.write_record(&[
                     value.to_string(),
                     count.to_string(),
-                    calc_ratio(*count as usize, total_values),
+                    calc_ratio(*count, total_values),
                 ])?;
             }
         }
@@ -469,10 +469,7 @@ pub fn write_field_bit_stats_csv(
                     i.to_string(),
                     stats.zeros.to_string(),
                     stats.ones.to_string(),
-                    calc_ratio(
-                        stats.zeros as usize,
-                        stats.zeros as usize + stats.ones as usize,
-                    ),
+                    calc_ratio(stats.zeros, stats.zeros + stats.ones),
                 ])?;
             }
         }
@@ -491,7 +488,7 @@ pub fn write_field_bit_stats_csv(
 /// # Returns
 ///
 /// A string representing the ratio, or "0.0" if the denominator is zero.
-pub fn calc_ratio(child: usize, parent: usize) -> String {
+pub fn calc_ratio(child: u64, parent: u64) -> String {
     if parent == 0 {
         "0.0".into()
     } else {

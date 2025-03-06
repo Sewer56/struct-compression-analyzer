@@ -47,7 +47,7 @@ pub mod stats;
 /// The statistics for a given group of fields.
 /// This can be a group created by the [`split_comparison`] module, the
 /// [`compare_groups`] module or any other piece of code that compares multiple sets of bytes.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug, PartialEq, Copy)]
 pub struct GroupComparisonMetrics {
     /// Number of total LZ matches
     pub lz_matches: u64,

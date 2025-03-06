@@ -58,11 +58,11 @@ pub fn size_estimate(params: SizeEstimationParameters) -> usize {
 }
 
 /// Determines the actual size of the compressed data by compressing with a realistic compressor.
-pub fn get_zstd_compressed_size(data: &[u8], level: i32) -> usize {
+pub fn get_zstd_compressed_size(data: &[u8], level: i32) -> u64 {
     zstd::bulk::compress(data, level)
         .ok()
         .map(|compressed| compressed.len())
-        .unwrap()
+        .unwrap() as u64
 }
 
 /// Calculates the entropy of a given input
@@ -236,6 +236,6 @@ mod tests {
     fn zstd_compression_estimate() {
         let data = b"This is a test string that should compress well with zstandard zstandard zstandard zstandard zstandard zstandard";
         let compressed_size = get_zstd_compressed_size(data, 16);
-        assert!(compressed_size < data.len());
+        assert!(compressed_size < data.len() as u64);
     }
 }
