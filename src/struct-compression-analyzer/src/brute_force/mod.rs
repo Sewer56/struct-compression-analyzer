@@ -67,7 +67,7 @@ impl Default for BruteForceConfig {
             lz_step_size: 0.0001,
             min_entropy_multiplier: 1.0,
             max_entropy_multiplier: 1.2,
-            entropy_step_size: 0.0001,
+            entropy_step_size: 0.001,
         }
     }
 }
