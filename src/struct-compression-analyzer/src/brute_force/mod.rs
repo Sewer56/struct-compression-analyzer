@@ -125,11 +125,11 @@ pub(crate) fn calculate_error(
     // If the ratios are on the opposite side of 1.0
     // (i.e.) estimate thinks its worse, when its better, impose a 'killing'
     // penalty by giving it max error.
-    //let zstd_is_bigger = zstd_size > original_size;
-    //let estimate_is_bigger = estimated_size as u64 > original_size;
-    //if zstd_is_bigger != estimate_is_bigger {
-    //    return f64::MAX;
-    //}
+    let zstd_is_bigger = zstd_size > original_size;
+    let estimate_is_bigger = estimated_size as u64 > original_size;
+    if zstd_is_bigger != estimate_is_bigger {
+        return f32::MAX as f64;
+    }
 
     error
 }
