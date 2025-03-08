@@ -98,11 +98,11 @@ pub struct OptimizationResult {
 #[inline(always)]
 pub(crate) fn calculate_error(
     // Compression Estimator Params
-    num_lz_matches: usize,
+    num_lz_matches: u64,
     entropy: f64,
     // Actual Compression Stats
     zstd_size: u64,
-    original_size: usize,
+    original_size: u64,
     // Coefficients to Test
     lz_match_multiplier: f64,
     entropy_multiplier: f64,
@@ -110,16 +110,27 @@ pub(crate) fn calculate_error(
     // Calculate estimated size with current coefficients
     let estimated_size = size_estimate(SizeEstimationParameters {
         name: "",
-        data_len: original_size,
+        data_len: original_size as usize,
         data: None,
-        num_lz_matches,
+        num_lz_matches: num_lz_matches as usize,
         entropy,
         lz_match_multiplier,
         entropy_multiplier,
     });
 
     // Calculate error (difference between estimated and actual size)
-    ((estimated_size as f64) - (zstd_size as f64)).abs()
+    let error = ((estimated_size as f64) - (zstd_size as f64)).abs();
+
+    // If the ratios are on the opposite side of 1.0
+    // (i.e.) estimate thinks its worse, when its better, impose a 'killing'
+    // penalty by giving it max error.
+    //let zstd_is_bigger = zstd_size > original_size;
+    //let estimate_is_bigger = estimated_size as u64 > original_size;
+    //if zstd_is_bigger != estimate_is_bigger {
+    //    return f64::MAX;
+    //}
+
+    error
 }
 
 /// Optimizes and applies coefficients to a [`MergedAnalysisResults`] object.

@@ -124,19 +124,19 @@ fn calculate_error_for_all_results(
         let comparison = &result.split_comparisons[comparison_idx];
 
         group1_total_error += calculate_error(
-            comparison.group1_metrics.lz_matches as usize,
+            comparison.group1_metrics.lz_matches,
             comparison.group1_metrics.entropy,
             comparison.group1_metrics.zstd_size,
-            comparison.group1_metrics.original_size as usize,
+            comparison.group1_metrics.original_size,
             lz_match_multiplier,
             entropy_multiplier,
         );
 
         group2_total_error += calculate_error(
-            comparison.group2_metrics.lz_matches as usize,
+            comparison.group2_metrics.lz_matches,
             comparison.group2_metrics.entropy,
             comparison.group2_metrics.zstd_size,
-            comparison.group2_metrics.original_size as usize,
+            comparison.group2_metrics.original_size,
             lz_match_multiplier,
             entropy_multiplier,
         );

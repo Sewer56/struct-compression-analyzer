@@ -140,10 +140,10 @@ fn calculate_error_for_all_results(
 
         // Calculate error for baseline
         baseline_total_error += calculate_error(
-            comparison.baseline_metrics.lz_matches as usize,
+            comparison.baseline_metrics.lz_matches,
             comparison.baseline_metrics.entropy,
             comparison.baseline_metrics.zstd_size,
-            comparison.baseline_metrics.original_size as usize,
+            comparison.baseline_metrics.original_size,
             lz_match_multiplier,
             entropy_multiplier,
         );
@@ -151,10 +151,10 @@ fn calculate_error_for_all_results(
         // Calculate error for each comparison group
         for (i, metrics) in comparison.group_metrics.iter().enumerate() {
             comparison_total_errors[i] += calculate_error(
-                metrics.lz_matches as usize,
+                metrics.lz_matches,
                 metrics.entropy,
                 metrics.zstd_size,
-                metrics.original_size as usize,
+                metrics.original_size,
                 lz_match_multiplier,
                 entropy_multiplier,
             );
