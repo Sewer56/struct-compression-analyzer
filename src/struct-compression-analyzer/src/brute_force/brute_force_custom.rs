@@ -1,7 +1,8 @@
-use super::{calculate_error, BruteForceConfig, OptimizationResult};
+use super::{calculate_error, BruteForceComparisonMetrics, BruteForceConfig, OptimizationResult};
 use crate::results::{
     analysis_results::AnalysisResults, merged_analysis_results::MergedAnalysisResults,
 };
+use branches::unlikely;
 
 /// Result of a brute force optimization on a custom comparison.
 #[derive(Debug, Clone)]
@@ -45,60 +46,87 @@ pub fn find_optimal_custom_result_coefficients(
 }
 
 /// This function finds the optimal coefficients for the baseline and each comparison group in a custom comparison
+#[allow(clippy::needless_range_loop)]
 fn find_optimal_custom_result_coefficients_for_comparison(
     comparison_idx: usize,
     config: &BruteForceConfig,
     original_results: &[AnalysisResults], // guaranteed non-empty
 ) -> CustomComparisonOptimizationResult {
-    let mut baseline_best = OptimizationResult::default();
-    let mut min_error_baseline = f64::MAX;
-
     // Get the first result to determine how many comparison groups exist
     let first_result = &original_results[0].custom_comparisons[comparison_idx];
     let num_comparisons = first_result.group_metrics.len();
 
-    // Initialize comparison group optimization results
-    let mut comparison_bests = vec![OptimizationResult::default(); num_comparisons];
-    let mut min_error_comparisons = vec![f64::MAX; num_comparisons].into_boxed_slice();
+    // Extract baseline metrics first
+    let baseline_metrics = extract_baseline_metrics(comparison_idx, original_results);
+    let mut baseline_best = OptimizationResult::default();
+    let mut min_error_baseline = f64::MAX;
 
+    // Find optimal coefficients for baseline
     let mut lz_multiplier = config.min_lz_multiplier;
     while lz_multiplier <= config.max_lz_multiplier {
         let mut entropy_multiplier = config.min_entropy_multiplier;
         while entropy_multiplier <= config.max_entropy_multiplier {
-            // With the given coefficients, calculate the error for baseline and all comparison groups
-            let errors = calculate_error_for_all_results(
-                original_results,
-                comparison_idx,
+            // Calculate the error for baseline with the given coefficients
+            let baseline_err = calculate_error_for_bruteforce_metrics(
+                &baseline_metrics,
                 lz_multiplier,
                 entropy_multiplier,
             );
 
-            // Check if the baseline error is better than the current best
-            if errors.0 < min_error_baseline {
+            // Update if better than current best
+            if unlikely(baseline_err < min_error_baseline) {
                 baseline_best = OptimizationResult {
                     lz_match_multiplier: lz_multiplier,
                     entropy_multiplier,
                 };
 
-                min_error_baseline = errors.0;
-            }
-
-            // Check if any comparison group errors are better than their current best
-            for (i, &error) in errors.1.iter().enumerate() {
-                if error < min_error_comparisons[i] {
-                    comparison_bests[i] = OptimizationResult {
-                        lz_match_multiplier: lz_multiplier,
-                        entropy_multiplier,
-                    };
-
-                    min_error_comparisons[i] = error;
-                }
+                min_error_baseline = baseline_err;
             }
 
             entropy_multiplier += config.entropy_step_size;
         }
 
         lz_multiplier += config.lz_step_size;
+    }
+    drop(baseline_metrics);
+
+    // Initialize comparison group optimization results
+    let mut comparison_bests = vec![OptimizationResult::default(); num_comparisons];
+
+    // Process each comparison group separately
+    for group_idx in 0..num_comparisons {
+        let group_metrics =
+            extract_comparison_group_metrics(comparison_idx, group_idx, original_results);
+        let mut min_error_group = f64::MAX;
+
+        // Find optimal coefficients for this comparison group
+        let mut lz_multiplier = config.min_lz_multiplier;
+        while lz_multiplier <= config.max_lz_multiplier {
+            let mut entropy_multiplier = config.min_entropy_multiplier;
+            while entropy_multiplier <= config.max_entropy_multiplier {
+                // Calculate the error for this group with the given coefficients
+                let group_err = calculate_error_for_bruteforce_metrics(
+                    &group_metrics,
+                    lz_multiplier,
+                    entropy_multiplier,
+                );
+
+                // Update if better than current best
+                if unlikely(group_err < min_error_group) {
+                    comparison_bests[group_idx] = OptimizationResult {
+                        lz_match_multiplier: lz_multiplier,
+                        entropy_multiplier,
+                    };
+
+                    min_error_group = group_err;
+                }
+
+                entropy_multiplier += config.entropy_step_size;
+            }
+
+            lz_multiplier += config.lz_step_size;
+        }
+        drop(group_metrics);
     }
 
     CustomComparisonOptimizationResult {
@@ -107,61 +135,73 @@ fn find_optimal_custom_result_coefficients_for_comparison(
     }
 }
 
-/// Calculates the error for a given set of LZ match and entropy multipliers.
-/// This returns the sum of all of the errors for all results in &[AnalysisResults].
+/// Extracts all the baseline metrics from each [`AnalysisResults`], at a given comparison index.
+/// Returns a boxed slice of all metrics.
+fn extract_baseline_metrics(
+    comparison_idx: usize,
+    original_results: &[AnalysisResults], // guaranteed non-empty
+) -> Box<[BruteForceComparisonMetrics]> {
+    original_results
+        .iter()
+        .map(|result| {
+            result.custom_comparisons[comparison_idx]
+                .baseline_metrics
+                .into()
+        })
+        .collect()
+}
+
+/// Extracts all the metrics for a specific comparison group from each [`AnalysisResults`], at a given comparison index.
+/// Returns a boxed slice of all metrics.
 ///
 /// # Arguments
 ///
-/// * `analysis_results` - The [`AnalysisResults`] to calculate the error total for
-/// * `comparison_idx` - The index of the custom comparison to calculate the error for
+/// * `comparison_idx` - The index of the custom comparison in the custom_comparisons array
+/// * `group_idx` - The index of the comparison group in the group_metrics array
+/// * `original_results` - The original results to extract metrics from
+fn extract_comparison_group_metrics(
+    comparison_idx: usize,
+    group_idx: usize,
+    original_results: &[AnalysisResults], // guaranteed non-empty
+) -> Box<[BruteForceComparisonMetrics]> {
+    original_results
+        .iter()
+        .map(|result| result.custom_comparisons[comparison_idx].group_metrics[group_idx].into())
+        .collect()
+}
+
+/// Calculates the error for a given set of LZ match and entropy multipliers for metrics.
+/// This returns the sum of all of the errors for all results in &[BruteForceComparisonMetrics].
+///
+/// # Arguments
+///
+/// * `metrics` - The [`BruteForceComparisonMetrics`] to calculate the error total for
 /// * `lz_match_multiplier` - The current LZ match multiplier
 /// * `entropy_multiplier` - The current entropy multiplier
 ///
 /// # Returns
 ///
-/// A tuple, with the first value containing the sum of all of the errors for the baseline group,
-/// and the second value containing a vector of errors for each comparison group.
+/// The sum of all of the errors for the given metrics.
 #[inline(always)]
-fn calculate_error_for_all_results(
-    analysis_results: &[AnalysisResults],
-    comparison_idx: usize,
+fn calculate_error_for_bruteforce_metrics(
+    metrics: &[BruteForceComparisonMetrics],
     lz_match_multiplier: f64,
     entropy_multiplier: f64,
-) -> (f64, Box<[f64]>) {
-    let mut baseline_total_error = 0.0f64;
+) -> f64 {
+    let mut total_error = 0.0f64;
 
-    // Initialize the comparison group errors
-    let first_result = &analysis_results[0].custom_comparisons[comparison_idx];
-    let num_comparisons = first_result.group_metrics.len();
-    let mut comparison_total_errors = vec![0.0f64; num_comparisons].into_boxed_slice();
-
-    for result in analysis_results {
-        let comparison = &result.custom_comparisons[comparison_idx];
-
-        // Calculate error for baseline
-        baseline_total_error += calculate_error(
-            comparison.baseline_metrics.lz_matches,
-            comparison.baseline_metrics.entropy,
-            comparison.baseline_metrics.zstd_size,
-            comparison.baseline_metrics.original_size,
+    for result in metrics {
+        total_error += calculate_error(
+            result.lz_matches,
+            result.entropy,
+            result.zstd_size,
+            result.original_size,
             lz_match_multiplier,
             entropy_multiplier,
         );
-
-        // Calculate error for each comparison group
-        for (i, metrics) in comparison.group_metrics.iter().enumerate() {
-            comparison_total_errors[i] += calculate_error(
-                metrics.lz_matches,
-                metrics.entropy,
-                metrics.zstd_size,
-                metrics.original_size,
-                lz_match_multiplier,
-                entropy_multiplier,
-            );
-        }
     }
 
-    (baseline_total_error, comparison_total_errors)
+    total_error
 }
 
 /// Print optimization results in a user-friendly format.
@@ -195,8 +235,10 @@ mod tests {
 
     use super::*;
     use crate::{
-        comparison::compare_groups::GroupComparisonResult,
-        comparison::{GroupComparisonMetrics, GroupDifference},
+        comparison::{
+            compare_groups::GroupComparisonResult, GroupComparisonMetrics, GroupDifference,
+        },
+        schema::Metadata,
     };
 
     // Helper function to create a mock GroupComparisonResult for testing
@@ -278,7 +320,7 @@ mod tests {
         );
 
         AnalysisResults {
-            schema_metadata: crate::schema::Metadata {
+            schema_metadata: Metadata {
                 name: "Test Schema".to_string(),
                 description: "Test Schema Description".to_string(),
             },
@@ -343,14 +385,16 @@ mod tests {
         assert!(comparisons[1].entropy_multiplier >= config.min_entropy_multiplier);
         assert!(comparisons[1].entropy_multiplier <= config.max_entropy_multiplier);
 
-        // Assert the error is below 5 (known correct threshold)
+        // Calculate baseline error using the optimal parameters
         let original_results = vec![analysis_results1];
-        let (baseline_error, comparison_errors) = calculate_error_for_all_results(
-            &original_results,
-            0,
+        let baseline_metrics = extract_baseline_metrics(0, &original_results);
+        let baseline_error = calculate_error_for_bruteforce_metrics(
+            &baseline_metrics,
             optimal_results[0].1.baseline.lz_match_multiplier,
             optimal_results[0].1.baseline.entropy_multiplier,
         );
+
+        // Assert the error is below a reasonable threshold
         assert!(
             baseline_error < 5.0,
             "Baseline error {} should be less than 5.0",
@@ -358,26 +402,26 @@ mod tests {
         );
 
         // Check errors for each comparison group
-        for (i, &error) in comparison_errors.iter().enumerate() {
-            let (_, comparison_errors) = calculate_error_for_all_results(
-                &original_results,
-                0,
+        for i in 0..2 {
+            let group_metrics =
+                extract_comparison_group_metrics(0, i, &merged_results.original_results);
+            let group_error = calculate_error_for_bruteforce_metrics(
+                &group_metrics,
                 optimal_results[0].1.comparisons[i].lz_match_multiplier,
                 optimal_results[0].1.comparisons[i].entropy_multiplier,
             );
 
             assert!(
-                comparison_errors[i] < 5.0,
+                group_error < 5.0,
                 "Comparison group {} error {} should be less than 5.0",
                 i,
-                error
+                group_error
             );
         }
     }
 
     #[test]
     fn handles_empty_custom_results() {
-        // Create empty analysis results
         let analysis_results = AnalysisResults::default();
 
         // Create a merged analysis results with no custom comparisons

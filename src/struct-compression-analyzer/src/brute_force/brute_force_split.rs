@@ -1,3 +1,5 @@
+use branches::unlikely;
+
 use super::{calculate_error, BruteForceComparisonMetrics, BruteForceConfig, OptimizationResult};
 use crate::results::{
     analysis_results::AnalysisResults, merged_analysis_results::MergedAnalysisResults,
@@ -66,7 +68,7 @@ fn find_optimal_split_result_coefficients_for_comparison(
             );
 
             // Update if better than current best
-            if g1_err < min_error_group1 {
+            if unlikely(g1_err < min_error_group1) {
                 group1_best = OptimizationResult {
                     lz_match_multiplier: lz_multiplier,
                     entropy_multiplier,
@@ -80,6 +82,7 @@ fn find_optimal_split_result_coefficients_for_comparison(
 
         lz_multiplier += config.lz_step_size;
     }
+    drop(group1_metrics);
 
     let group2_metrics = extract_group2_metrics(comparison_idx, original_results);
     let mut group2_best = OptimizationResult::default();
@@ -98,7 +101,7 @@ fn find_optimal_split_result_coefficients_for_comparison(
             );
 
             // Update if better than current best
-            if g2_err < min_error_group2 {
+            if unlikely(g2_err < min_error_group2) {
                 group2_best = OptimizationResult {
                     lz_match_multiplier: lz_multiplier,
                     entropy_multiplier,
