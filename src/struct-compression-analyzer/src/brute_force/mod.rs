@@ -36,6 +36,7 @@ use brute_force_custom::{
 use brute_force_split::{
     find_optimal_split_result_coefficients, SplitComparisonOptimizationResult,
 };
+use rayon::prelude::*;
 
 use crate::analyzer::SizeEstimationParameters;
 use crate::comparison::{GroupComparisonMetrics, GroupDifference};
@@ -378,7 +379,7 @@ impl From<GroupComparisonMetrics> for BruteForceComparisonMetrics {
 }
 
 /// Finds the optimal coefficients (lz_match_multiplier and entropy_multiplier) for a given
-/// set of metrics by running a brute force optimization.
+/// set of metrics by running a brute force optimization. This runs in parallel on all threads.
 ///
 /// # Arguments
 ///
@@ -388,10 +389,75 @@ impl From<GroupComparisonMetrics> for BruteForceComparisonMetrics {
 /// # Returns
 ///
 /// The optimal [`OptimizationResult`] containing the best coefficients
-pub(crate) fn find_optimal_coefficients_for_metrics(
+pub(crate) fn find_optimal_coefficients_for_metrics_parallel(
     metrics: &[BruteForceComparisonMetrics],
     config: &BruteForceConfig,
 ) -> OptimizationResult {
+    // Determine how to split the lz range
+    let num_chunks = rayon::current_num_threads();
+    let lz_range = config.max_lz_multiplier - config.min_lz_multiplier;
+    let chunk_size = lz_range / num_chunks as f64;
+
+    // Create chunks for parallel processing
+    let mut chunks = Vec::with_capacity(num_chunks);
+    for x in 0..num_chunks {
+        let start = config.min_lz_multiplier + (x as f64 * chunk_size);
+        let end = if x == num_chunks - 1 {
+            config.max_lz_multiplier
+        } else {
+            config.min_lz_multiplier + ((x + 1) as f64 * chunk_size)
+        };
+
+        chunks.push((start, end));
+    }
+
+    // Process chunks in parallel
+    let results: Vec<_> = chunks
+        .par_iter()
+        .map(|(start, end)| {
+            find_optimal_coefficients_for_metrics(
+                metrics,
+                &BruteForceConfig {
+                    min_lz_multiplier: *start,
+                    max_lz_multiplier: *end,
+                    min_entropy_multiplier: config.min_entropy_multiplier,
+                    max_entropy_multiplier: config.max_entropy_multiplier,
+                    entropy_step_size: config.entropy_step_size,
+                    lz_step_size: config.lz_step_size,
+                },
+            )
+        })
+        .collect();
+
+    // Find the overall best result using a simple for loop
+    let mut best_result = OptimizationResult::default();
+    let mut min_error = f64::MAX;
+    for (result, error) in results {
+        if error < min_error {
+            min_error = error;
+            best_result = result;
+        }
+    }
+
+    best_result
+}
+
+/// Finds the optimal coefficients (lz_match_multiplier and entropy_multiplier) for a given
+/// set of metrics by running a brute force optimization.
+///
+/// # Arguments
+///
+/// * `metrics` - The metrics to find optimal coefficients for
+/// * `config` - Configuration for the optimization process
+///
+/// # Returns
+///
+/// The optimal [`OptimizationResult`] containing the best coefficients,
+/// and the minimum error found for this best result.
+pub(crate) fn find_optimal_coefficients_for_metrics(
+    metrics: &[BruteForceComparisonMetrics],
+    config: &BruteForceConfig,
+) -> (OptimizationResult, f64) {
     let mut best_result = OptimizationResult::default();
     let mut min_error = f64::MAX;
 
@@ -419,7 +485,7 @@ pub(crate) fn find_optimal_coefficients_for_metrics(
         lz_multiplier += config.lz_step_size;
     }
 
-    best_result
+    (best_result, min_error)
 }
 
 /// Calculates the error for a given set of metrics with specified coefficients.

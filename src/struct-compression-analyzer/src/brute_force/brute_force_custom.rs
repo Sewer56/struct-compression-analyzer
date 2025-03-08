@@ -1,5 +1,5 @@
 use super::{
-    find_optimal_coefficients_for_metrics, BruteForceComparisonMetrics, BruteForceConfig,
+    find_optimal_coefficients_for_metrics_parallel, BruteForceComparisonMetrics, BruteForceConfig,
     OptimizationResult,
 };
 use crate::results::{
@@ -60,7 +60,7 @@ fn find_optimal_custom_result_coefficients_for_comparison(
 
     // Extract baseline metrics and find optimal coefficients
     let baseline_metrics = extract_baseline_metrics(comparison_idx, original_results);
-    let baseline_best = find_optimal_coefficients_for_metrics(&baseline_metrics, config);
+    let baseline_best = find_optimal_coefficients_for_metrics_parallel(&baseline_metrics, config);
 
     // Initialize comparison group optimization results
     let mut comparison_bests = Vec::with_capacity(num_comparisons);
@@ -71,7 +71,7 @@ fn find_optimal_custom_result_coefficients_for_comparison(
             extract_comparison_group_metrics(comparison_idx, group_idx, original_results);
 
         // Find optimal coefficients for this comparison group
-        let group_best = find_optimal_coefficients_for_metrics(&group_metrics, config);
+        let group_best = find_optimal_coefficients_for_metrics_parallel(&group_metrics, config);
         comparison_bests.push(group_best);
     }
 

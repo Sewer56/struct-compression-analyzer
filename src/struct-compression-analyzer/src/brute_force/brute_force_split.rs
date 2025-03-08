@@ -1,5 +1,5 @@
 use super::{
-    find_optimal_coefficients_for_metrics, BruteForceComparisonMetrics, BruteForceConfig,
+    find_optimal_coefficients_for_metrics_parallel, BruteForceComparisonMetrics, BruteForceConfig,
     OptimizationResult,
 };
 use crate::results::{
@@ -54,11 +54,11 @@ fn find_optimal_split_result_coefficients_for_comparison(
 ) -> SplitComparisonOptimizationResult {
     // Find optimal coefficients for group 1
     let group1_metrics = extract_group1_metrics(comparison_idx, original_results);
-    let group1_best = find_optimal_coefficients_for_metrics(&group1_metrics, config);
+    let group1_best = find_optimal_coefficients_for_metrics_parallel(&group1_metrics, config);
 
     // Find optimal coefficients for group 2
     let group2_metrics = extract_group2_metrics(comparison_idx, original_results);
-    let group2_best = find_optimal_coefficients_for_metrics(&group2_metrics, config);
+    let group2_best = find_optimal_coefficients_for_metrics_parallel(&group2_metrics, config);
 
     SplitComparisonOptimizationResult {
         group_1: group1_best,
