@@ -1,4 +1,4 @@
-use super::{calculate_error, BruteForceConfig, OptimizationResult};
+use super::{calculate_error, BruteForceComparisonMetrics, BruteForceConfig, OptimizationResult};
 use crate::results::{
     analysis_results::AnalysisResults, merged_analysis_results::MergedAnalysisResults,
 };
@@ -53,14 +53,14 @@ fn find_optimal_split_result_coefficients_for_comparison(
     let mut min_error_group1 = f64::MAX;
 
     // Find optimal coefficients for group 1
+    let group1_metrics = extract_group1_metrics(comparison_idx, original_results);
     let mut lz_multiplier = config.min_lz_multiplier;
     while lz_multiplier <= config.max_lz_multiplier {
         let mut entropy_multiplier = config.min_entropy_multiplier;
         while entropy_multiplier <= config.max_entropy_multiplier {
             // Calculate the error for group 1 with the given coefficients
-            let g1_err = calculate_error_for_group1_results(
-                original_results,
-                comparison_idx,
+            let g1_err = calculate_error_for_bruteforce_metrics(
+                &group1_metrics,
                 lz_multiplier,
                 entropy_multiplier,
             );
@@ -81,6 +81,7 @@ fn find_optimal_split_result_coefficients_for_comparison(
         lz_multiplier += config.lz_step_size;
     }
 
+    let group2_metrics = extract_group2_metrics(comparison_idx, original_results);
     let mut group2_best = OptimizationResult::default();
     let mut min_error_group2 = f64::MAX;
 
@@ -90,9 +91,8 @@ fn find_optimal_split_result_coefficients_for_comparison(
         let mut entropy_multiplier = config.min_entropy_multiplier;
         while entropy_multiplier <= config.max_entropy_multiplier {
             // Calculate the error for group 2 with the given coefficients
-            let g2_err = calculate_error_for_group2_results(
-                original_results,
-                comparison_idx,
+            let g2_err = calculate_error_for_bruteforce_metrics(
+                &group2_metrics,
                 lz_multiplier,
                 entropy_multiplier,
             );
@@ -119,13 +119,44 @@ fn find_optimal_split_result_coefficients_for_comparison(
     }
 }
 
+/// Extracts all the group 1 metrics from each [`AnalysisResults`], at a given comparison index.
+/// Returns a boxed slice of all metrics.
+fn extract_group1_metrics(
+    comparison_idx: usize,
+    original_results: &[AnalysisResults], // guaranteed non-empty
+) -> Box<[BruteForceComparisonMetrics]> {
+    original_results
+        .iter()
+        .map(|result| {
+            result.split_comparisons[comparison_idx]
+                .group1_metrics
+                .into()
+        })
+        .collect()
+}
+
+/// Extracts all the group 2 metrics from each [`AnalysisResults`], at a given comparison index.
+/// Returns a boxed slice of all metrics.
+fn extract_group2_metrics(
+    comparison_idx: usize,
+    original_results: &[AnalysisResults], // guaranteed non-empty
+) -> Box<[BruteForceComparisonMetrics]> {
+    original_results
+        .iter()
+        .map(|result| {
+            result.split_comparisons[comparison_idx]
+                .group2_metrics
+                .into()
+        })
+        .collect()
+}
+
 /// Calculates the error for a given set of LZ match and entropy multipliers for group 1.
-/// This returns the sum of all of the errors for all results in &[AnalysisResults].
+/// This returns the sum of all of the errors for all results in &[BruteForceComparisonMetrics].
 ///
 /// # Arguments
 ///
-/// * `analysis_results` - The [`AnalysisResults`] to calculate the error total for
-/// * `comparison_idx` - The index of the split comparison to calculate the error for
+/// * `group1_metrics` - The [`BruteForceComparisonMetrics`] to calculate the error total for
 /// * `lz_match_multiplier` - The current LZ match multiplier
 /// * `entropy_multiplier` - The current entropy multiplier
 ///
@@ -133,66 +164,25 @@ fn find_optimal_split_result_coefficients_for_comparison(
 ///
 /// The sum of all of the errors for `group1`.
 #[inline(always)]
-fn calculate_error_for_group1_results(
-    analysis_results: &[AnalysisResults],
-    comparison_idx: usize,
+fn calculate_error_for_bruteforce_metrics(
+    group1_metrics: &[BruteForceComparisonMetrics],
     lz_match_multiplier: f64,
     entropy_multiplier: f64,
 ) -> f64 {
     let mut group1_total_error = 0.0f64;
 
-    for result in analysis_results {
-        let comparison = &result.split_comparisons[comparison_idx];
-
+    for result in group1_metrics {
         group1_total_error += calculate_error(
-            comparison.group1_metrics.lz_matches,
-            comparison.group1_metrics.entropy,
-            comparison.group1_metrics.zstd_size,
-            comparison.group1_metrics.original_size,
+            result.lz_matches,
+            result.entropy,
+            result.zstd_size,
+            result.original_size,
             lz_match_multiplier,
             entropy_multiplier,
         );
     }
 
     group1_total_error
-}
-
-/// Calculates the error for a given set of LZ match and entropy multipliers for group 2.
-/// This returns the sum of all of the errors for all results in &[AnalysisResults].
-///
-/// # Arguments
-///
-/// * `analysis_results` - The [`AnalysisResults`] to calculate the error total for
-/// * `comparison_idx` - The index of the split comparison to calculate the error for
-/// * `lz_match_multiplier` - The current LZ match multiplier
-/// * `entropy_multiplier` - The current entropy multiplier
-///
-/// # Returns
-///
-/// The sum of all of the errors for `group2`.
-#[inline(always)]
-fn calculate_error_for_group2_results(
-    analysis_results: &[AnalysisResults],
-    comparison_idx: usize,
-    lz_match_multiplier: f64,
-    entropy_multiplier: f64,
-) -> f64 {
-    let mut group2_total_error = 0.0f64;
-
-    for result in analysis_results {
-        let comparison = &result.split_comparisons[comparison_idx];
-
-        group2_total_error += calculate_error(
-            comparison.group2_metrics.lz_matches,
-            comparison.group2_metrics.entropy,
-            comparison.group2_metrics.zstd_size,
-            comparison.group2_metrics.original_size,
-            lz_match_multiplier,
-            entropy_multiplier,
-        );
-    }
-
-    group2_total_error
 }
 
 /// Print optimization results in a user-friendly format.
@@ -309,17 +299,17 @@ mod tests {
         assert!(result.group_2.entropy_multiplier <= config.max_entropy_multiplier);
 
         // Assert the error is below 5 (known correct assumption)
-        let group1_error = calculate_error_for_group1_results(
-            &original_results,
-            0,
+        let group1_metrics = extract_group1_metrics(0, &original_results);
+        let group1_error = calculate_error_for_bruteforce_metrics(
+            &group1_metrics,
             result.group_1.lz_match_multiplier,
             result.group_1.entropy_multiplier,
         );
         assert!(group1_error < 5.0);
 
-        let group2_error = calculate_error_for_group2_results(
-            &original_results,
-            0,
+        let group2_metrics = extract_group2_metrics(0, &original_results);
+        let group2_error = calculate_error_for_bruteforce_metrics(
+            &group2_metrics,
             result.group_2.lz_match_multiplier,
             result.group_2.entropy_multiplier,
         );

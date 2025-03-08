@@ -352,6 +352,31 @@ pub fn print_all_optimization_results(
     brute_force_custom::print_optimization_results(custom_results);
 }
 
+/// Optimized, reduced form of [`GroupComparisonMetrics`],
+/// meant for storing only the fields used during brute forcing.
+#[derive(Clone, Default, Debug, PartialEq, Copy)]
+pub(crate) struct BruteForceComparisonMetrics {
+    /// Number of total LZ matches
+    pub lz_matches: u64,
+    /// Amount of entropy in the input data set
+    pub entropy: f64,
+    /// Size compressed by zstd.
+    pub zstd_size: u64,
+    /// Size of the original data.
+    pub original_size: u64,
+}
+
+impl From<GroupComparisonMetrics> for BruteForceComparisonMetrics {
+    fn from(value: GroupComparisonMetrics) -> Self {
+        BruteForceComparisonMetrics {
+            lz_matches: value.lz_matches,
+            entropy: value.entropy,
+            zstd_size: value.zstd_size,
+            original_size: value.original_size,
+        }
+    }
+}
+
 /// These tests are crap, they weren't written by a human, after all.
 #[cfg(test)]
 mod tests {
