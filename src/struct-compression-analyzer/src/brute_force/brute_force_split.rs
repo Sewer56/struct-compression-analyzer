@@ -50,23 +50,22 @@ fn find_optimal_split_result_coefficients_for_comparison(
     original_results: &[AnalysisResults], // guaranteed non-empty
 ) -> SplitComparisonOptimizationResult {
     let mut group1_best = OptimizationResult::default();
-    let mut group2_best = OptimizationResult::default();
     let mut min_error_group1 = f64::MAX;
-    let mut min_error_group2 = f64::MAX;
 
+    // Find optimal coefficients for group 1
     let mut lz_multiplier = config.min_lz_multiplier;
     while lz_multiplier <= config.max_lz_multiplier {
         let mut entropy_multiplier = config.min_entropy_multiplier;
         while entropy_multiplier <= config.max_entropy_multiplier {
-            // With the given coefficients, calculate the error for both groups
-            let (g1_err, g2_err) = calculate_error_for_all_results(
+            // Calculate the error for group 1 with the given coefficients
+            let g1_err = calculate_error_for_group1_results(
                 original_results,
                 comparison_idx,
                 lz_multiplier,
                 entropy_multiplier,
             );
 
-            // If they are equal to current best,
+            // Update if better than current best
             if g1_err < min_error_group1 {
                 group1_best = OptimizationResult {
                     lz_match_multiplier: lz_multiplier,
@@ -76,6 +75,29 @@ fn find_optimal_split_result_coefficients_for_comparison(
                 min_error_group1 = g1_err;
             }
 
+            entropy_multiplier += config.entropy_step_size;
+        }
+
+        lz_multiplier += config.lz_step_size;
+    }
+
+    let mut group2_best = OptimizationResult::default();
+    let mut min_error_group2 = f64::MAX;
+
+    // Find optimal coefficients for group 2
+    let mut lz_multiplier = config.min_lz_multiplier;
+    while lz_multiplier <= config.max_lz_multiplier {
+        let mut entropy_multiplier = config.min_entropy_multiplier;
+        while entropy_multiplier <= config.max_entropy_multiplier {
+            // Calculate the error for group 2 with the given coefficients
+            let g2_err = calculate_error_for_group2_results(
+                original_results,
+                comparison_idx,
+                lz_multiplier,
+                entropy_multiplier,
+            );
+
+            // Update if better than current best
             if g2_err < min_error_group2 {
                 group2_best = OptimizationResult {
                     lz_match_multiplier: lz_multiplier,
@@ -97,7 +119,7 @@ fn find_optimal_split_result_coefficients_for_comparison(
     }
 }
 
-/// Calculates the error for a given set of LZ match and entropy multipliers.
+/// Calculates the error for a given set of LZ match and entropy multipliers for group 1.
 /// This returns the sum of all of the errors for all results in &[AnalysisResults].
 ///
 /// # Arguments
@@ -109,16 +131,15 @@ fn find_optimal_split_result_coefficients_for_comparison(
 ///
 /// # Returns
 ///
-/// A tuple, with each value containing the sum of all of the errors for `group1` and `group2`.
+/// The sum of all of the errors for `group1`.
 #[inline(always)]
-fn calculate_error_for_all_results(
+fn calculate_error_for_group1_results(
     analysis_results: &[AnalysisResults],
     comparison_idx: usize,
     lz_match_multiplier: f64,
     entropy_multiplier: f64,
-) -> (f64, f64) {
+) -> f64 {
     let mut group1_total_error = 0.0f64;
-    let mut group2_total_error = 0.0f64;
 
     for result in analysis_results {
         let comparison = &result.split_comparisons[comparison_idx];
@@ -131,6 +152,35 @@ fn calculate_error_for_all_results(
             lz_match_multiplier,
             entropy_multiplier,
         );
+    }
+
+    group1_total_error
+}
+
+/// Calculates the error for a given set of LZ match and entropy multipliers for group 2.
+/// This returns the sum of all of the errors for all results in &[AnalysisResults].
+///
+/// # Arguments
+///
+/// * `analysis_results` - The [`AnalysisResults`] to calculate the error total for
+/// * `comparison_idx` - The index of the split comparison to calculate the error for
+/// * `lz_match_multiplier` - The current LZ match multiplier
+/// * `entropy_multiplier` - The current entropy multiplier
+///
+/// # Returns
+///
+/// The sum of all of the errors for `group2`.
+#[inline(always)]
+fn calculate_error_for_group2_results(
+    analysis_results: &[AnalysisResults],
+    comparison_idx: usize,
+    lz_match_multiplier: f64,
+    entropy_multiplier: f64,
+) -> f64 {
+    let mut group2_total_error = 0.0f64;
+
+    for result in analysis_results {
+        let comparison = &result.split_comparisons[comparison_idx];
 
         group2_total_error += calculate_error(
             comparison.group2_metrics.lz_matches,
@@ -142,7 +192,7 @@ fn calculate_error_for_all_results(
         );
     }
 
-    (group1_total_error, group2_total_error)
+    group2_total_error
 }
 
 /// Print optimization results in a user-friendly format.
@@ -259,7 +309,7 @@ mod tests {
         assert!(result.group_2.entropy_multiplier <= config.max_entropy_multiplier);
 
         // Assert the error is below 5 (known correct assumption)
-        let (group1_error, _) = calculate_error_for_all_results(
+        let group1_error = calculate_error_for_group1_results(
             &original_results,
             0,
             result.group_1.lz_match_multiplier,
@@ -267,7 +317,7 @@ mod tests {
         );
         assert!(group1_error < 5.0);
 
-        let (_, group2_error) = calculate_error_for_all_results(
+        let group2_error = calculate_error_for_group2_results(
             &original_results,
             0,
             result.group_2.lz_match_multiplier,
