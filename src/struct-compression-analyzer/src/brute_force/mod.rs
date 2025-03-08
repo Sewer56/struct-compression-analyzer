@@ -377,6 +377,85 @@ impl From<GroupComparisonMetrics> for BruteForceComparisonMetrics {
     }
 }
 
+/// Finds the optimal coefficients (lz_match_multiplier and entropy_multiplier) for a given
+/// set of metrics by running a brute force optimization.
+///
+/// # Arguments
+///
+/// * `metrics` - The metrics to find optimal coefficients for
+/// * `config` - Configuration for the optimization process
+///
+/// # Returns
+///
+/// The optimal [`OptimizationResult`] containing the best coefficients
+pub(crate) fn find_optimal_coefficients_for_metrics(
+    metrics: &[BruteForceComparisonMetrics],
+    config: &BruteForceConfig,
+) -> OptimizationResult {
+    let mut best_result = OptimizationResult::default();
+    let mut min_error = f64::MAX;
+
+    let mut lz_multiplier = config.min_lz_multiplier;
+    while lz_multiplier <= config.max_lz_multiplier {
+        let mut entropy_multiplier = config.min_entropy_multiplier;
+        while entropy_multiplier <= config.max_entropy_multiplier {
+            // Calculate the error with the given coefficients
+            let error =
+                calculate_error_for_bruteforce_metrics(metrics, lz_multiplier, entropy_multiplier);
+
+            // Update if better than current best
+            if error < min_error {
+                best_result = OptimizationResult {
+                    lz_match_multiplier: lz_multiplier,
+                    entropy_multiplier,
+                };
+
+                min_error = error;
+            }
+
+            entropy_multiplier += config.entropy_step_size;
+        }
+
+        lz_multiplier += config.lz_step_size;
+    }
+
+    best_result
+}
+
+/// Calculates the error for a given set of metrics with specified coefficients.
+/// This returns the sum of all errors for all results in the metrics slice.
+///
+/// # Arguments
+///
+/// * `metrics` - The metrics to calculate the error for
+/// * `lz_match_multiplier` - The LZ match multiplier to test
+/// * `entropy_multiplier` - The entropy multiplier to test
+///
+/// # Returns
+///
+/// The sum of all errors for the given metrics with the specified coefficients
+#[inline(always)]
+pub(crate) fn calculate_error_for_bruteforce_metrics(
+    metrics: &[BruteForceComparisonMetrics],
+    lz_match_multiplier: f64,
+    entropy_multiplier: f64,
+) -> f64 {
+    let mut total_error = 0.0f64;
+
+    for result in metrics {
+        total_error += calculate_error(
+            result.lz_matches,
+            result.entropy,
+            result.zstd_size,
+            result.original_size,
+            lz_match_multiplier,
+            entropy_multiplier,
+        );
+    }
+
+    total_error
+}
+
 /// These tests are crap, they weren't written by a human, after all.
 #[cfg(test)]
 mod tests {
