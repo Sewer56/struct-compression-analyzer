@@ -475,7 +475,7 @@ impl MergedAnalysisResults {
         writeln!(
             writer,
             "    Est/Zstd Agreement on Better Group: {:.1}%",
-            comparison.group_estimate_zstd_agreement_percentage * 100.0
+            comparison.group_estimate_zstd_agreement_percentage
         )?;
 
         // If we have enough files for statistics, show the detailed stats

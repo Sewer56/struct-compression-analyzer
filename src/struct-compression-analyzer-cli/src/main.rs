@@ -9,7 +9,11 @@ use std::{
 };
 use struct_compression_analyzer::{
     analyzer::{CompressionOptions, SchemaAnalyzer},
-    brute_force::{optimize_and_apply_coefficients, print_all_optimization_results},
+    brute_force::{
+        brute_force_custom::CustomComparisonOptimizationResult,
+        brute_force_split::SplitComparisonOptimizationResult, optimize_and_apply_coefficients,
+        print_all_optimization_results,
+    },
     csv,
     offset_evaluator::try_evaluate_file_offset,
     plot::generate_plots,
@@ -201,6 +205,15 @@ fn main() -> anyhow::Result<()> {
                 );
 
                 print_all_optimization_results(&mut stdout(), &split_results, &custom_results)?;
+
+                // Save optimization results to file if output directory is specified
+                if let Some(output_dir) = &dir_cmd.output {
+                    write_optimization_results_to_file(
+                        &split_results,
+                        &custom_results,
+                        output_dir,
+                    )?;
+                }
             }
 
             // Merge all results
@@ -241,6 +254,25 @@ fn main() -> anyhow::Result<()> {
             // Write reports, output, etc.
             if let Some(output_dir) = &dir_cmd.output {
                 std::fs::create_dir_all(output_dir)?;
+
+                // Write analysis results to files
+                write_merged_results_to_file(
+                    &merged_results,
+                    output_dir,
+                    &schema,
+                    dir_cmd.format.unwrap_or(PrintFormat::default()),
+                    false,
+                )?;
+                write_individual_results_to_files(
+                    &individual_results,
+                    output_dir,
+                    &schema,
+                    dir_cmd.format.unwrap_or(PrintFormat::default()),
+                    false,
+                    &files,
+                )?;
+
+                // Write CSV reports
                 csv::write_all_csvs(
                     &merged_results.original_results,
                     &merged_results,
@@ -248,7 +280,7 @@ fn main() -> anyhow::Result<()> {
                     &files,
                 )?;
                 generate_plots(&merged_results.original_results, output_dir).unwrap();
-                println!("Generated field CSV reports in: {}", output_dir.display());
+                println!("Generated reports in: {}", output_dir.display());
             }
         }
     }
@@ -320,4 +352,59 @@ fn find_directory_files_recursive(path: &Path) -> anyhow::Result<Vec<PathBuf>> {
     // this improves performance when processing files in parallel.
     files.sort_by(|a, b| b.1.cmp(&a.1));
     Ok(files.into_iter().map(|(path, _)| path).collect())
+}
+
+/// Write merged analysis results to a file
+fn write_merged_results_to_file(
+    merged_results: &MergedAnalysisResults,
+    output_dir: &Path,
+    schema: &Schema,
+    format: PrintFormat,
+    skip_misc_stats: bool,
+) -> std::io::Result<()> {
+    let output_path = output_dir.join("overall-result.txt");
+    let mut file = File::create(output_path)?;
+    merged_results.print(&mut file, schema, format, skip_misc_stats)?;
+    Ok(())
+}
+
+/// Write individual analysis results to files in a subdirectory
+fn write_individual_results_to_files(
+    individual_results: &[AnalysisResults],
+    output_dir: &Path,
+    schema: &Schema,
+    format: PrintFormat,
+    skip_misc_stats: bool,
+    files: &[PathBuf],
+) -> std::io::Result<()> {
+    // Create analysis_results directory
+    let results_dir = output_dir.join("analysis_results");
+    std::fs::create_dir_all(&results_dir)?;
+
+    // Write each file's results
+    for (x, result) in individual_results.iter().enumerate() {
+        let file_name = files[x]
+            .file_name()
+            .and_then(|os_str| os_str.to_str())
+            .map(|s| format!("{}.txt", s))
+            .unwrap_or_else(|| format!("result_{}.txt", x));
+
+        let output_path = results_dir.join(file_name);
+        let mut file = File::create(output_path)?;
+        result.print(&mut file, schema, format, skip_misc_stats)?;
+    }
+
+    Ok(())
+}
+
+/// Write optimization results to a file
+fn write_optimization_results_to_file(
+    split_results: &[(String, SplitComparisonOptimizationResult)],
+    custom_results: &[(String, CustomComparisonOptimizationResult)],
+    output_dir: &Path,
+) -> std::io::Result<()> {
+    let output_path = output_dir.join("brute-force-results.txt");
+    let mut file = File::create(output_path)?;
+    print_all_optimization_results(&mut file, split_results, custom_results)?;
+    Ok(())
 }
