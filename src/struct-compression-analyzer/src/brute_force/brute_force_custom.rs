@@ -2,9 +2,7 @@ use super::{
     find_optimal_coefficients_for_metrics_parallel, BruteForceComparisonMetrics, BruteForceConfig,
     OptimizationResult,
 };
-use crate::results::{
-    analysis_results::AnalysisResults, merged_analysis_results::MergedAnalysisResults,
-};
+use crate::results::analysis_results::AnalysisResults;
 
 /// Result of a brute force optimization on a custom comparison.
 #[derive(Debug, Clone)]
@@ -24,7 +22,7 @@ pub struct CustomComparisonOptimizationResult {
 ///   This is where we pull the data from, and where we will update the results.
 /// * `config` - Configuration for the optimization process (optional, uses default if [`None`])
 pub fn find_optimal_custom_result_coefficients(
-    merged_results: &mut MergedAnalysisResults,
+    individual_results: &mut [AnalysisResults],
     config: Option<&BruteForceConfig>,
 ) -> Vec<(String, CustomComparisonOptimizationResult)> {
     // Use a reference to the default config if None is provided
@@ -33,13 +31,14 @@ pub fn find_optimal_custom_result_coefficients(
 
     let mut results: Vec<(String, CustomComparisonOptimizationResult)> = Vec::new();
 
-    for (comparison_idx, comparison) in merged_results.custom_comparisons.iter().enumerate() {
+    for (comparison_idx, comparison) in individual_results[0].custom_comparisons.iter().enumerate()
+    {
         results.push((
             comparison.name.clone(),
             find_optimal_custom_result_coefficients_for_comparison(
                 comparison_idx,
                 config,
-                &merged_results.original_results,
+                individual_results,
             ),
         ));
     }
@@ -263,13 +262,12 @@ mod tests {
             1000,
         );
 
-        // Create a merged analysis results from the mock analysis results
-        let mut merged_results = MergedAnalysisResults::new(&analysis_results1);
         let config = BruteForceConfig::default();
 
         // Find optimal coefficients
+        let mut original_results = vec![analysis_results1];
         let optimal_results =
-            find_optimal_custom_result_coefficients(&mut merged_results, Some(&config));
+            find_optimal_custom_result_coefficients(&mut original_results, Some(&config));
 
         // Verify results
         assert_eq!(optimal_results.len(), 1);
@@ -299,7 +297,6 @@ mod tests {
         assert!(comparisons[1].entropy_multiplier <= config.max_entropy_multiplier);
 
         // Calculate baseline error using the optimal parameters
-        let original_results = vec![analysis_results1];
         let baseline_metrics = extract_baseline_metrics(0, &original_results);
         let baseline_error = calculate_error_for_bruteforce_metrics(
             &baseline_metrics,
@@ -316,8 +313,7 @@ mod tests {
 
         // Check errors for each comparison group
         for i in 0..2 {
-            let group_metrics =
-                extract_comparison_group_metrics(0, i, &merged_results.original_results);
+            let group_metrics = extract_comparison_group_metrics(0, i, &original_results);
             let group_error = calculate_error_for_bruteforce_metrics(
                 &group_metrics,
                 optimal_results[0].1.comparisons[i].lz_match_multiplier,
@@ -337,11 +333,9 @@ mod tests {
     fn handles_empty_custom_results() {
         let analysis_results = AnalysisResults::default();
 
-        // Create a merged analysis results with no custom comparisons
-        let mut merged_results = MergedAnalysisResults::new(&analysis_results);
-
         // Find optimal coefficients
-        let optimal_results = find_optimal_custom_result_coefficients(&mut merged_results, None);
+        let optimal_results =
+            find_optimal_custom_result_coefficients(&mut [analysis_results], None);
 
         // Verify results are empty
         assert!(optimal_results.is_empty());

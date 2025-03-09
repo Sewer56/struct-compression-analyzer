@@ -167,7 +167,7 @@ fn main() -> anyhow::Result<()> {
 
             // Process every file with rayon, collecting individual results
             let analyze_start_time = Instant::now();
-            let individual_results: Vec<AnalysisResults> = files
+            let mut individual_results: Vec<AnalysisResults> = files
                 .par_iter()
                 .map(|path| {
                     analyze_file(&AnalyzeFileParams {
@@ -188,25 +188,12 @@ fn main() -> anyhow::Result<()> {
                 })
                 .collect();
 
-            // Merge all results
-            println!(
-                "{}ms... Merging {} files.",
-                analyze_start_time.elapsed().as_millis(),
-                individual_results.len()
-            );
-            let merge_start_time = Instant::now();
-            let mut merged_results = MergedAnalysisResults::from_results(&individual_results)?;
-            println!(
-                "{}ms... Aggregated (Merged) Analysis Results:",
-                merge_start_time.elapsed().as_millis()
-            );
-
             // Run brute force optimization on merged results if enabled
             if dir_cmd.brute_force {
                 println!("\nRunning LZ parameter optimization on merged results...");
                 let brute_force_start_time = Instant::now();
                 let (split_results, custom_results) =
-                    optimize_and_apply_coefficients(&mut merged_results, None);
+                    optimize_and_apply_coefficients(&mut individual_results, None);
                 println!(
                     "{}ms... Brute force optimization complete.",
                     brute_force_start_time.elapsed().as_millis()
@@ -214,6 +201,19 @@ fn main() -> anyhow::Result<()> {
 
                 print_all_optimization_results(&split_results, &custom_results);
             }
+
+            // Merge all results
+            println!(
+                "{}ms... Merging {} files.",
+                analyze_start_time.elapsed().as_millis(),
+                individual_results.len()
+            );
+            let merge_start_time = Instant::now();
+            let merged_results = MergedAnalysisResults::from_results(&individual_results)?;
+            println!(
+                "{}ms... Aggregated (Merged) Analysis Results:",
+                merge_start_time.elapsed().as_millis()
+            );
 
             merged_results.print(
                 &schema,

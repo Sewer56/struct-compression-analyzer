@@ -30,6 +30,10 @@
 
 pub mod brute_force_custom;
 pub mod brute_force_split;
+use crate::analyzer::SizeEstimationParameters;
+use crate::comparison::{GroupComparisonMetrics, GroupDifference};
+use crate::results::analysis_results::AnalysisResults;
+use crate::utils::analyze_utils::size_estimate;
 use brute_force_custom::{
     find_optimal_custom_result_coefficients, CustomComparisonOptimizationResult,
 };
@@ -37,11 +41,6 @@ use brute_force_split::{
     find_optimal_split_result_coefficients, SplitComparisonOptimizationResult,
 };
 use rayon::prelude::*;
-
-use crate::analyzer::SizeEstimationParameters;
-use crate::comparison::{GroupComparisonMetrics, GroupDifference};
-use crate::results::merged_analysis_results::MergedAnalysisResults;
-use crate::utils::analyze_utils::size_estimate;
 
 /// Configuration for the brute force optimization process.
 #[derive(Debug, Clone)]
@@ -151,7 +150,7 @@ pub(crate) fn calculate_error(
 /// A tuple of optimization result vectors for split and custom comparisons
 #[allow(clippy::type_complexity)]
 pub fn optimize_and_apply_coefficients(
-    merged_results: &mut MergedAnalysisResults,
+    merged_results: &mut [AnalysisResults],
     config: Option<&BruteForceConfig>,
 ) -> (
     Vec<(String, SplitComparisonOptimizationResult)>,
@@ -178,16 +177,20 @@ pub fn optimize_and_apply_coefficients(
 ///
 /// # Arguments
 ///
-/// * `merged_results` - The merged analysis results to update
+/// * `individual_results` - The analysis results to update
 /// * `split_optimization_results` - The optimization results for split comparisons
 /// * `custom_optimization_results` - The optimization results for custom comparisons
 pub fn apply_optimized_coefficients(
-    merged_results: &mut MergedAnalysisResults,
+    individual_results: &mut [AnalysisResults],
     split_optimization_results: &[(String, SplitComparisonOptimizationResult)],
     custom_optimization_results: &[(String, CustomComparisonOptimizationResult)],
 ) {
     // Update split comparisons in merged results
-    for (split_idx, comparison) in merged_results.split_comparisons.iter_mut().enumerate() {
+    for (split_idx, comparison) in individual_results[0]
+        .split_comparisons
+        .iter_mut()
+        .enumerate()
+    {
         let optimization_result = &split_optimization_results[split_idx].1;
 
         // Update group 1 metrics
@@ -213,7 +216,11 @@ pub fn apply_optimized_coefficients(
     }
 
     // Update custom comparisons in merged results
-    for (custom_idx, comparison) in merged_results.custom_comparisons.iter_mut().enumerate() {
+    for (custom_idx, comparison) in individual_results[0]
+        .custom_comparisons
+        .iter_mut()
+        .enumerate()
+    {
         let optimization_result = &custom_optimization_results[custom_idx].1;
 
         // Update baseline metrics
@@ -243,7 +250,7 @@ pub fn apply_optimized_coefficients(
     }
 
     // Update each original analysis result
-    for result in &mut merged_results.original_results {
+    for result in individual_results {
         // Update split comparisons in original results
         for (split_idx, comparison) in result.split_comparisons.iter_mut().enumerate() {
             let optimization_result = &split_optimization_results[split_idx].1;
@@ -530,9 +537,7 @@ mod tests {
         comparison::{
             compare_groups::GroupComparisonResult, split_comparison::SplitComparisonResult,
         },
-        results::{
-            analysis_results::AnalysisResults, merged_analysis_results::MergedSplitComparisonResult,
-        },
+        results::analysis_results::AnalysisResults,
         schema::Metadata,
     };
     use ahash::AHashMap;
@@ -573,8 +578,8 @@ mod tests {
     const TEST_MAX_ENTROPY: f64 = 1.1;
     const TEST_ENTROPY_STEP: f64 = 0.05;
 
-    /// Creates a simple mock MergedAnalysisResults for testing
-    fn create_mock_merged_results() -> MergedAnalysisResults {
+    /// Creates a simple mock AnalysisResults for testing
+    fn create_mock_results() -> AnalysisResults {
         // Create a simple split comparison result
         let group1_metrics = GroupComparisonMetrics {
             lz_matches: GROUP1_LZ_MATCHES,
@@ -598,16 +603,6 @@ mod tests {
             estimated_size: DIFF_ESTIMATED_SIZE,
             zstd_size: DIFF_ZSTD_SIZE,
             original_size: DIFF_ORIGINAL_SIZE,
-        };
-
-        let split_comparison = MergedSplitComparisonResult {
-            name: TEST_NAME_SPLIT.to_string(),
-            description: TEST_DESC_SPLIT.to_string(),
-            group1_metrics,
-            group2_metrics,
-            difference,
-            baseline_comparison_metrics: Vec::new(),
-            split_comparison_metrics: Vec::new(),
         };
 
         // Create a simple custom comparison result
@@ -635,21 +630,12 @@ mod tests {
             original_size: DIFF_ORIGINAL_SIZE,
         };
 
-        let custom_comparison = GroupComparisonResult {
-            name: TEST_NAME_CUSTOM.to_string(),
-            description: TEST_DESC_CUSTOM.to_string(),
-            baseline_metrics,
-            group_metrics: group_metrics.clone(),
-            group_names: vec![TEST_GROUP_NAME.to_string()],
-            differences: vec![group_difference],
-        };
-
         // Create mock original analysis results
         let schema_metadata = Metadata {
             name: TEST_SCHEMA_NAME.to_string(),
             description: TEST_SCHEMA_DESC.to_string(),
         };
-        let original_result = AnalysisResults {
+        AnalysisResults {
             schema_metadata: schema_metadata.clone(),
             file_entropy: GROUP1_ENTROPY,
             file_lz_matches: GROUP1_LZ_MATCHES,
@@ -673,20 +659,6 @@ mod tests {
                 group_names: vec![TEST_GROUP_NAME.to_string()],
                 differences: vec![group_difference],
             }],
-        };
-
-        // Create the merged results
-        MergedAnalysisResults {
-            schema_metadata,
-            file_entropy: GROUP1_ENTROPY,
-            file_lz_matches: GROUP1_LZ_MATCHES,
-            zstd_file_size: GROUP1_ZSTD_SIZE,
-            original_size: GROUP1_ORIGINAL_SIZE,
-            merged_file_count: 1,
-            per_field: AHashMap::new(),
-            split_comparisons: vec![split_comparison],
-            custom_comparisons: vec![custom_comparison],
-            original_results: vec![original_result],
         }
     }
 
@@ -702,12 +674,12 @@ mod tests {
             entropy_step_size: TEST_ENTROPY_STEP,
         };
 
-        // Create mock merged results
-        let mut merged_results = create_mock_merged_results();
+        // Create mock result
+        let mut results = vec![create_mock_results()];
 
         // Get references to the split and custom comparisons for cleaner code
-        let split_comparison = &merged_results.split_comparisons[0];
-        let custom_comparison = &merged_results.custom_comparisons[0];
+        let split_comparison = &results[0].split_comparisons[0];
+        let custom_comparison = &results[0].custom_comparisons[0];
 
         // Save the original estimated sizes for comparison
         let original_split_estimated_size_g1 = split_comparison.group1_metrics.estimated_size;
@@ -719,12 +691,11 @@ mod tests {
 
         // Run the optimization
         let (split_results, custom_results) =
-            optimize_and_apply_coefficients(&mut merged_results, Some(&config));
+            optimize_and_apply_coefficients(&mut results, Some(&config));
 
         // After optimization, get references again as the merged_results was mutated
-        let split_comparison = &merged_results.split_comparisons[0];
-        let custom_comparison = &merged_results.custom_comparisons[0];
-        let original_result = &merged_results.original_results[0];
+        let split_comparison = &results[0].split_comparisons[0];
+        let custom_comparison = &results[0].custom_comparisons[0];
 
         // Verify split optimization results
         assert!(!split_results.is_empty());
@@ -756,13 +727,13 @@ mod tests {
 
         // Verify that original results were also updated
         assert_ne!(
-            original_result.split_comparisons[0]
+            results[0].split_comparisons[0]
                 .group1_metrics
                 .estimated_size,
             original_split_estimated_size_g1
         );
         assert_ne!(
-            original_result.custom_comparisons[0]
+            results[0].custom_comparisons[0]
                 .baseline_metrics
                 .estimated_size,
             original_custom_estimated_size_baseline

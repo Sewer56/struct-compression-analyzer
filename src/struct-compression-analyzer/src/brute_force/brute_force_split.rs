@@ -2,9 +2,7 @@ use super::{
     find_optimal_coefficients_for_metrics_parallel, BruteForceComparisonMetrics, BruteForceConfig,
     OptimizationResult,
 };
-use crate::results::{
-    analysis_results::AnalysisResults, merged_analysis_results::MergedAnalysisResults,
-};
+use crate::results::analysis_results::AnalysisResults;
 
 /// Result of a brute force optimization on a split comparison.
 #[derive(Debug, Clone, Copy)]
@@ -24,7 +22,7 @@ pub struct SplitComparisonOptimizationResult {
 ///   This is where we pull the data from, and where we will update the results.
 /// * `config` - Configuration for the optimization process (optional, uses default if [`None`])
 pub fn find_optimal_split_result_coefficients(
-    merged_results: &mut MergedAnalysisResults,
+    individual_results: &mut [AnalysisResults],
     config: Option<&BruteForceConfig>,
 ) -> Vec<(String, SplitComparisonOptimizationResult)> {
     let default_config = BruteForceConfig::default();
@@ -32,13 +30,13 @@ pub fn find_optimal_split_result_coefficients(
 
     let mut results: Vec<(String, SplitComparisonOptimizationResult)> = Vec::new();
 
-    for (comparison_idx, comparison) in merged_results.split_comparisons.iter().enumerate() {
+    for (comparison_idx, comparison) in individual_results[0].split_comparisons.iter().enumerate() {
         results.push((
             comparison.name.clone(),
             find_optimal_split_result_coefficients_for_comparison(
                 comparison_idx,
                 config,
-                &merged_results.original_results,
+                individual_results,
             ),
         ));
     }
