@@ -1,10 +1,12 @@
 use argh::FromArgs;
+use indicatif::{ProgressBar, ProgressStyle};
 use mimalloc::MiMalloc;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use std::{
     fs::File,
     io::{stdout, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
+    sync::atomic::{AtomicUsize, Ordering},
     time::Instant,
 };
 use struct_compression_analyzer::{
@@ -170,6 +172,18 @@ fn main() -> anyhow::Result<()> {
                 files.len()
             );
 
+            // Setup progress bar
+            let pb = ProgressBar::new(files.len() as u64);
+            pb.set_style(
+                ProgressStyle::default_bar()
+                    .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} files")
+                    .unwrap()
+                    .progress_chars("#>-"),
+            );
+
+            // Counter for completed files
+            let completed_files = AtomicUsize::new(0);
+
             // Process every file with rayon, collecting individual results
             let analyze_start_time = Instant::now();
             let mut individual_results: Vec<AnalysisResults> = files
@@ -178,14 +192,20 @@ fn main() -> anyhow::Result<()> {
                 // so 'max work stealing' is preferred.
                 .with_max_len(1)
                 .map(|path| {
-                    analyze_file(&AnalyzeFileParams {
+                    let result = analyze_file(&AnalyzeFileParams {
                         schema: &schema,
                         path,
                         bytes_per_element: (schema.root.bits / 8) as u64,
                         offset: dir_cmd.offset,
                         length: dir_cmd.length,
                         zstd_compression_level: dir_cmd.zstd_compression_level,
-                    })
+                    });
+
+                    // Update progress bar
+                    let completed = completed_files.fetch_add(1, Ordering::SeqCst) + 1;
+                    pb.set_position(completed as u64);
+
+                    result
                 })
                 .filter_map(|result| match result {
                     Ok(results) => Some(results),
@@ -195,6 +215,12 @@ fn main() -> anyhow::Result<()> {
                     }
                 })
                 .collect();
+
+            // Finish progress bar
+            pb.finish_with_message(format!(
+                "Analysis completed in {:.2}s",
+                analyze_start_time.elapsed().as_secs_f64()
+            ));
 
             // Run brute force optimization on merged results if enabled
             if dir_cmd.brute_force {
