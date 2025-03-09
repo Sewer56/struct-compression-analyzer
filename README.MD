@@ -186,8 +186,8 @@ Split Group Comparisons:
     Comp LZ, Entropy: (9560716, 5.50)
     Base Group LZ, Entropy: ([9340190], ["5.50"])
     Comp Group LZ, Entropy: ([4689715, 4864159], ["5.42", "4.96"])
-    Base (est/zstd): 3985184/3567275
-    Comp (est/zstd): 3891164/3498364
+    Base (est/zstd): 3634154/3567275
+    Comp (est/zstd): 3503905/3498364
     Ratio (zstd): 98.06824536936458
     Diff (zstd): -68911
     Est/Zstd Agreement on Better Group: 72.8%
@@ -200,12 +200,12 @@ Custom Group Comparisons:
     Base Group:
       Size: 20015319
       LZ, Entropy: (9429814, 6.78)
-      Base (est/zstd): 14121604/13420865
+      Base (est/zstd): 13505214/13420865
 
     colors_then_indices Group:
       Size: 20015319
       LZ, Entropy: (11350940, 6.78)
-      Comp (est/zstd): 12242759/11767256
+      Comp (est/zstd): 11840362/11767256
       Ratio (zstd): 87.7%
       Diff (zstd): -1653608
       Zstd Ratio Statistics: 
@@ -214,7 +214,7 @@ Custom Group Comparisons:
     color0_color1_indices Group:
       Size: 20015319
       LZ, Entropy: (11571464, 6.78)
-      Comp (est/zstd): 12148508/11698334
+      Comp (est/zstd): 11743347/11698334
       Ratio (zstd): 87.2%
       Diff (zstd): -1722530
       Zstd Ratio Statistics: 
