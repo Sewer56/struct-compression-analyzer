@@ -1,6 +1,6 @@
 use argh::FromArgs;
 use mimalloc::MiMalloc;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use std::{
     fs::File,
     io::{stdout, Read, Seek, SeekFrom},
@@ -174,6 +174,9 @@ fn main() -> anyhow::Result<()> {
             let analyze_start_time = Instant::now();
             let mut individual_results: Vec<AnalysisResults> = files
                 .par_iter()
+                // 1 item at once per thread. Our items are big generally, and take time to process
+                // so 'max work stealing' is preferred.
+                .with_max_len(1)
                 .map(|path| {
                     analyze_file(&AnalyzeFileParams {
                         schema: &schema,
@@ -310,8 +313,8 @@ fn analyze_file(params: &AnalyzeFileParams) -> anyhow::Result<AnalysisResults> {
         Some(l) => l,
         None => file.metadata()?.len() - offset,
     };
-
     file.seek(SeekFrom::Start(offset))?;
+
     let mut data = unsafe { Box::new_uninit_slice(length as usize).assume_init() };
     file.read_exact(&mut data)?;
 
@@ -349,9 +352,6 @@ fn find_directory_files_recursive(path: &Path) -> anyhow::Result<Vec<PathBuf>> {
         files.push((entry.path().to_path_buf(), metadata.len()));
     }
 
-    // Sort by file size (descending),
-    // this improves performance when processing files in parallel.
-    files.sort_by(|a, b| b.1.cmp(&a.1));
     Ok(files.into_iter().map(|(path, _)| path).collect())
 }
 
