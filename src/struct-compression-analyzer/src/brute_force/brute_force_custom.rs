@@ -18,7 +18,7 @@ pub struct CustomComparisonOptimizationResult {
 ///
 /// # Arguments
 ///
-/// * `merged_results` - Mutable reference to the [`MergedAnalysisResults`] containing the data.
+/// * `individual_results` - Mutable reference to the [`MergedAnalysisResults`] containing the data.
 ///   This is where we pull the data from, and where we will update the results.
 /// * `config` - Configuration for the optimization process (optional, uses default if [`None`])
 pub fn find_optimal_custom_result_coefficients(
@@ -119,25 +119,42 @@ fn extract_comparison_group_metrics(
 ///
 /// # Arguments
 ///
+/// * `writer` - The writer to print results to
 /// * `results` - Vector of (comparison name, CustomComparisonOptimizationResult) tuples
-pub fn print_optimization_results(results: &[(String, CustomComparisonOptimizationResult)]) {
-    println!("\n=== Custom Comparison Parameter Optimization Results ===");
-    println!("Comparison Name | Group | LZ Multiplier | Entropy Multiplier |");
-    println!("----------------|-------|---------------|--------------------|");
+pub fn print_optimization_results<W: std::io::Write>(
+    writer: &mut W,
+    results: &[(String, CustomComparisonOptimizationResult)],
+) -> std::io::Result<()> {
+    writeln!(
+        writer,
+        "\n=== Custom Comparison Parameter Optimization Results ==="
+    )?;
+    writeln!(
+        writer,
+        "Comparison Name | Group | LZ Multiplier | Entropy Multiplier |"
+    )?;
+    writeln!(
+        writer,
+        "----------------|-------|---------------|--------------------|"
+    )?;
 
     for (name, result) in results {
-        println!(
+        writeln!(
+            writer,
             "{:<16}|{:<7}|{:<15.3}|{:<20.3}|",
             name, "BASE", result.baseline.lz_match_multiplier, result.baseline.entropy_multiplier
-        );
+        )?;
 
         for (i, comparison) in result.comparisons.iter().enumerate() {
-            println!(
+            writeln!(
+                writer,
                 "{:<16}|{:<7}|{:<15.3}|{:<20.3}|",
                 "", i, comparison.lz_match_multiplier, comparison.entropy_multiplier
-            );
+            )?;
         }
     }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -334,8 +351,8 @@ mod tests {
         let analysis_results = AnalysisResults::default();
 
         // Find optimal coefficients
-        let optimal_results =
-            find_optimal_custom_result_coefficients(&mut [analysis_results], None);
+        let mut original_results = vec![analysis_results];
+        let optimal_results = find_optimal_custom_result_coefficients(&mut original_results, None);
 
         // Verify results are empty
         assert!(optimal_results.is_empty());

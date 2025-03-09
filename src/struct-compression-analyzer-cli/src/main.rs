@@ -3,7 +3,7 @@ use mimalloc::MiMalloc;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::{
     fs::File,
-    io::{Read, Seek, SeekFrom},
+    io::{stdout, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
     time::Instant,
 };
@@ -151,10 +151,11 @@ fn main() -> anyhow::Result<()> {
             })?;
             println!("Analysis Results:");
             analysis_result.print(
+                &mut stdout(),
                 &schema,
                 file_cmd.format.unwrap_or(PrintFormat::default()),
                 !file_cmd.show_extra_stats,
-            );
+            )?;
         }
         Command::Directory(dir_cmd) => {
             let schema = load_schema(&dir_cmd.schema)?;
@@ -199,7 +200,7 @@ fn main() -> anyhow::Result<()> {
                     brute_force_start_time.elapsed().as_millis()
                 );
 
-                print_all_optimization_results(&split_results, &custom_results);
+                print_all_optimization_results(&mut stdout(), &split_results, &custom_results)?;
             }
 
             // Merge all results
@@ -216,10 +217,11 @@ fn main() -> anyhow::Result<()> {
             );
 
             merged_results.print(
+                &mut stdout(),
                 &schema,
                 dir_cmd.format.unwrap_or(PrintFormat::default()),
                 !dir_cmd.show_extra_stats,
-            );
+            )?;
 
             // Print individual files
             if dir_cmd.all_files {
@@ -227,15 +229,16 @@ fn main() -> anyhow::Result<()> {
                 for x in 0..individual_results.len() {
                     println!("- {}", files[x].display());
                     individual_results[x].print(
+                        &mut stdout(),
                         &schema,
                         dir_cmd.format.unwrap_or(PrintFormat::default()),
                         !dir_cmd.show_extra_stats,
-                    );
+                    )?;
                     println!();
                 }
             }
 
-            // Write CSV reports
+            // Write reports, output, etc.
             if let Some(output_dir) = &dir_cmd.output {
                 std::fs::create_dir_all(output_dir)?;
                 csv::write_all_csvs(

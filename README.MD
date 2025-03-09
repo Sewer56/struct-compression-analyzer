@@ -250,6 +250,7 @@ use struct_compression_analyzer::schema::Schema;
 use struct_compression_analyzer::analyzer::SchemaAnalyzer;
 use struct_compression_analyzer::analyzer::CompressionOptions;
 use std::path::Path;
+use std::io::stdout;
 
 fn main() -> anyhow::Result<()> {
     // Load the schema
@@ -268,7 +269,7 @@ fn main() -> anyhow::Result<()> {
     let results = analyzer.generate_results()?;
     
     // Print the results
-    results.print(&schema, PrintFormat::Concise, false);
+    results.print(&mut stdout(), &schema, PrintFormat::Concise, false);
     
     Ok(())
 }

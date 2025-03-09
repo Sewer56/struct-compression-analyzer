@@ -350,14 +350,17 @@ fn update_group_difference(
 ///
 /// # Arguments
 ///
+/// * `writer` - The writer to print results to
 /// * `split_results` - Optimization results for split comparisons
 /// * `custom_results` - Optimization results for custom comparisons
-pub fn print_all_optimization_results(
+pub fn print_all_optimization_results<W: std::io::Write>(
+    writer: &mut W,
     split_results: &[(String, SplitComparisonOptimizationResult)],
     custom_results: &[(String, CustomComparisonOptimizationResult)],
-) {
-    brute_force_split::print_optimization_results(split_results);
-    brute_force_custom::print_optimization_results(custom_results);
+) -> std::io::Result<()> {
+    brute_force_split::print_optimization_results(writer, split_results)?;
+    brute_force_custom::print_optimization_results(writer, custom_results)?;
+    Ok(())
 }
 
 /// Optimized, reduced form of [`GroupComparisonMetrics`],

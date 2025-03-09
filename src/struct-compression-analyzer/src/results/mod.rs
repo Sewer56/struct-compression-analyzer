@@ -115,6 +115,7 @@ use derive_more::FromStr;
 use merged_analysis_results::MergedAnalysisResults;
 use rustc_hash::FxHashMap;
 use thiserror::Error;
+use std::io::{self, Write};
 
 /// Error type for when merging analysis results fails.
 #[derive(Debug, Error)]
@@ -312,10 +313,10 @@ pub(crate) fn calculate_percentage(child: f64, parent: f64) -> f64 {
     }
 }
 
-pub(crate) fn print_field_metrics_value_stats(field: &FieldMetrics) {
+pub(crate) fn print_field_metrics_value_stats<W: Write>(writer: &mut W, field: &FieldMetrics) -> io::Result<()> {
     // Print field name with indent
     let indent = "  ".repeat(field.depth);
-    println!("{}{} ({} bits)", indent, field.name, field.lenbits);
+    writeln!(writer, "{}{} ({} bits)", indent, field.name, field.lenbits)?;
 
     // Print value statistics
     let counts = field.sorted_value_counts();
@@ -323,18 +324,20 @@ pub(crate) fn print_field_metrics_value_stats(field: &FieldMetrics) {
         let total_values: u64 = counts.iter().map(|(_, &c)| c).sum();
         for (val, &count) in counts.iter().take(5) {
             let pct = (count as f32 / total_values as f32) * 100.0;
-            println!("{}    {}: {:.1}%", indent, val, pct);
+            writeln!(writer, "{}    {}: {:.1}%", indent, val, pct)?;
         }
     }
+    
+    Ok(())
 }
 
-pub(crate) fn print_field_metrics_bit_stats(field: &FieldMetrics) {
+pub(crate) fn print_field_metrics_bit_stats<W: Write>(writer: &mut W, field: &FieldMetrics) -> io::Result<()> {
     let indent = "  ".repeat(field.depth);
-    println!("{}{} ({} bits)", indent, field.name, field.lenbits);
+    writeln!(writer, "{}{} ({} bits)", indent, field.name, field.lenbits)?;
 
     // If we didn't collect the bits, skip printing.
     if field.bit_counts.len() != field.lenbits as usize {
-        return;
+        return Ok(());
     }
 
     for i in 0..field.lenbits {
@@ -345,9 +348,12 @@ pub(crate) fn print_field_metrics_bit_stats(field: &FieldMetrics) {
         } else {
             0.0
         };
-        println!(
+        writeln!(
+            writer,
             "{}  Bit {}: ({}/{}) ({:.1}%)",
             indent, i, bit_stats.zeros, bit_stats.ones, percentage
-        );
+        )?;
     }
+    
+    Ok(())
 }

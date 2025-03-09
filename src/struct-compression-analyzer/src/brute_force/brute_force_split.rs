@@ -100,22 +100,30 @@ fn extract_group2_metrics(
 ///
 /// # Arguments
 ///
+/// * `writer` - The writer to print results to
 /// * `results` - Vector of (comparison name, OptimizationResult) tuples
-pub fn print_optimization_results(results: &[(String, SplitComparisonOptimizationResult)]) {
-    println!("=== Split Comparison Parameter Optimization Results ===");
-    println!("Comparison Name               | Group | LZ Multiplier | Entropy Multiplier |");
-    println!("------------------------------|-------|---------------|--------------------|");
+pub fn print_optimization_results<W: std::io::Write>(
+    writer: &mut W,
+    results: &[(String, SplitComparisonOptimizationResult)],
+) -> std::io::Result<()> {
+    writeln!(writer, "=== Split Comparison Parameter Optimization Results ===")?;
+    writeln!(writer, "Comparison Name               | Group | LZ Multiplier | Entropy Multiplier |")?;
+    writeln!(writer, "------------------------------|-------|---------------|--------------------|")?;
 
     for (name, result) in results {
-        println!(
+        writeln!(
+            writer,
             "{:<30}|{:<7}|{:<15.4}|{:<20.4}|",
             name, "G1", result.group_1.lz_match_multiplier, result.group_1.entropy_multiplier
-        );
-        println!(
+        )?;
+        writeln!(
+            writer,
             "{:<30}|{:<7}|{:<15.4}|{:<20.4}|",
             "", "G2", result.group_2.lz_match_multiplier, result.group_2.entropy_multiplier
-        );
+        )?;
     }
+    
+    Ok(())
 }
 
 #[cfg(test)]

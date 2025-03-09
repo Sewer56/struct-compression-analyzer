@@ -17,6 +17,7 @@ use crate::{
 use ahash::{AHashMap, HashMapExt};
 use lossless_transform_utils::match_estimator::estimate_num_lz_matches_fast;
 use rustc_hash::FxHashMap;
+use std::io::{self, Write};
 
 /// Final computed metrics for output
 #[derive(Clone, Default)]
@@ -226,71 +227,92 @@ impl AnalysisResults {
         }
     }
 
-    pub fn print(&self, schema: &Schema, format: PrintFormat, skip_misc_stats: bool) {
+    pub fn print<W: Write>(
+        &self,
+        writer: &mut W,
+        schema: &Schema,
+        format: PrintFormat,
+        skip_misc_stats: bool,
+    ) -> io::Result<()> {
         match format {
             PrintFormat::Detailed => {
-                self.print_detailed(schema, &self.as_field_metrics(), skip_misc_stats)
+                self.print_detailed(writer, schema, &self.as_field_metrics(), skip_misc_stats)
             }
             PrintFormat::Concise => {
-                self.print_concise(schema, &self.as_field_metrics(), skip_misc_stats)
+                self.print_concise(writer, schema, &self.as_field_metrics(), skip_misc_stats)
             }
         }
     }
 
-    fn print_detailed(&self, schema: &Schema, file_metrics: &FieldMetrics, skip_misc_stats: bool) {
-        println!("Schema: {}", self.schema_metadata.name);
-        println!("Description: {}", self.schema_metadata.description);
-        println!("File Entropy: {:.2} bits", self.file_entropy);
-        println!("File LZ Matches: {}", self.file_lz_matches);
-        println!("File Original Size: {}", self.original_size);
-        println!("File Compressed Size: {}", self.zstd_file_size);
-        println!("\nPer-field Metrics (in schema order):");
+    fn print_detailed<W: Write>(
+        &self,
+        writer: &mut W,
+        schema: &Schema,
+        file_metrics: &FieldMetrics,
+        skip_misc_stats: bool,
+    ) -> io::Result<()> {
+        writeln!(writer, "Schema: {}", self.schema_metadata.name)?;
+        writeln!(writer, "Description: {}", self.schema_metadata.description)?;
+        writeln!(writer, "File Entropy: {:.2} bits", self.file_entropy)?;
+        writeln!(writer, "File LZ Matches: {}", self.file_lz_matches)?;
+        writeln!(writer, "File Original Size: {}", self.original_size)?;
+        writeln!(writer, "File Compressed Size: {}", self.zstd_file_size)?;
+        writeln!(writer, "\nPer-field Metrics (in schema order):")?;
 
         // Iterate through schema-defined fields in order
         for field_path in schema.ordered_field_and_group_paths() {
-            self.detailed_print_field(file_metrics, &field_path);
+            self.detailed_print_field(writer, file_metrics, &field_path)?;
         }
 
-        println!("\nSplit Group Comparisons:");
+        writeln!(writer, "\nSplit Group Comparisons:")?;
         for comparison in &self.split_comparisons {
-            detailed_print_comparison(comparison);
+            detailed_print_comparison(writer, comparison)?;
         }
 
-        println!("\nCustom Group Comparisons:");
+        writeln!(writer, "\nCustom Group Comparisons:")?;
         for comparison in &self.custom_comparisons {
-            concise_print_custom_comparison(comparison);
+            concise_print_custom_comparison(writer, comparison)?;
         }
 
         if !skip_misc_stats {
-            println!("\nField Value Stats: [as `value: probability %`]");
+            writeln!(writer, "\nField Value Stats: [as `value: probability %`]")?;
             for field_path in schema.ordered_field_and_group_paths() {
-                self.concise_print_field_value_stats(&field_path);
+                self.concise_print_field_value_stats(writer, &field_path)?;
             }
 
-            println!("\nField Bit Stats: [as `(zeros/ones) (percentage %)`]");
+            writeln!(writer, "\nField Bit Stats: [as `(zeros/ones) (percentage %)`]")?;
             for field_path in schema.ordered_field_and_group_paths() {
-                self.concise_print_field_bit_stats(&field_path);
+                self.concise_print_field_bit_stats(writer, &field_path)?;
             }
         }
+        
+        Ok(())
     }
 
-    fn detailed_print_field(&self, file_metrics: &FieldMetrics, field_path: &str) {
+    fn detailed_print_field<W: Write>(
+        &self,
+        writer: &mut W,
+        file_metrics: &FieldMetrics,
+        field_path: &str,
+    ) -> io::Result<()> {
         if let Some(field) = self.per_field.get(field_path) {
             // Indent based on field depth to show hierarchy
             let indent = "  ".repeat(field.depth);
             let parent_stats = field.parent_metrics_or(self, file_metrics);
 
             // Calculate percentages
-            println!(
+            writeln!(
+                writer,
                 "{}{}: {:.2} bit entropy, {} LZ 3 Byte matches ({:.2}%)",
                 indent,
                 field.name,
                 field.entropy,
                 field.lz_matches,
                 calculate_percentage(field.lz_matches as f64, parent_stats.lz_matches as f64)
-            );
+            )?;
             let padding = format!("{}{}", indent, field.name).len() + 2; // +2 for ": "
-            println!(
+            writeln!(
+                writer,
                 "{:padding$}Sizes: ZStandard/Original: {}/{} ({:.2}%/{:.2}%)",
                 "",
                 field.zstd_size,
@@ -300,20 +322,30 @@ impl AnalysisResults {
                     field.original_size as f64,
                     parent_stats.original_size as f64
                 )
-            );
-            println!(
+            )?;
+            writeln!(
+                writer,
                 "{:padding$}{} bit, {} unique values, {:?}",
                 "",
                 field.lenbits,
                 field.value_counts.len(),
                 field.bit_order
-            );
+            )?;
         }
+        
+        Ok(())
     }
 
-    fn print_concise(&self, schema: &Schema, file_metrics: &FieldMetrics, skip_misc_stats: bool) {
-        println!("Schema: {}", self.schema_metadata.name);
-        println!(
+    fn print_concise<W: Write>(
+        &self,
+        writer: &mut W,
+        schema: &Schema,
+        file_metrics: &FieldMetrics,
+        skip_misc_stats: bool,
+    ) -> io::Result<()> {
+        writeln!(writer, "Schema: {}", self.schema_metadata.name)?;
+        writeln!(
+            writer,
             "File: {:.2}bpb, {} LZ, {}/{} ({:.2}%/{:.2}%) (zstd/orig)",
             self.file_entropy,
             self.file_lz_matches,
@@ -321,42 +353,50 @@ impl AnalysisResults {
             self.original_size,
             calculate_percentage(self.zstd_file_size as f64, self.original_size as f64),
             100.0
-        );
+        )?;
 
-        println!("\nField Metrics:");
+        writeln!(writer, "\nField Metrics:")?;
         for field_path in schema.ordered_field_and_group_paths() {
-            self.concise_print_field(file_metrics, &field_path);
+            self.concise_print_field(writer, file_metrics, &field_path)?;
         }
 
-        println!("\nSplit Group Comparisons:");
+        writeln!(writer, "\nSplit Group Comparisons:")?;
         for comparison in &self.split_comparisons {
-            concise_print_split_comparison(comparison);
+            concise_print_split_comparison(writer, comparison)?;
         }
 
-        println!("\nCustom Group Comparisons:");
+        writeln!(writer, "\nCustom Group Comparisons:")?;
         for comparison in &self.custom_comparisons {
-            concise_print_custom_comparison(comparison);
+            concise_print_custom_comparison(writer, comparison)?;
         }
 
         if !skip_misc_stats {
-            println!("\nField Value Stats: [as `value: probability %`]");
+            writeln!(writer, "\nField Value Stats: [as `value: probability %`]")?;
             for field_path in schema.ordered_field_and_group_paths() {
-                self.concise_print_field_value_stats(&field_path);
+                self.concise_print_field_value_stats(writer, &field_path)?;
             }
 
-            println!("\nField Bit Stats: [as `(zeros/ones) (percentage %)`]");
+            writeln!(writer, "\nField Bit Stats: [as `(zeros/ones) (percentage %)`]")?;
             for field_path in schema.ordered_field_and_group_paths() {
-                self.concise_print_field_bit_stats(&field_path);
+                self.concise_print_field_bit_stats(writer, &field_path)?;
             }
         }
+        
+        Ok(())
     }
 
-    fn concise_print_field(&self, file_metrics: &FieldMetrics, field_path: &str) {
+    fn concise_print_field<W: Write>(
+        &self,
+        writer: &mut W,
+        file_metrics: &FieldMetrics,
+        field_path: &str,
+    ) -> io::Result<()> {
         if let Some(field) = self.per_field.get(field_path) {
             let indent = "  ".repeat(field.depth);
             let parent_stats = field.parent_metrics_or(self, file_metrics);
 
-            println!(
+            writeln!(
+                writer,
                 "{}{}: {:.2}bpb, {} LZ ({:.2}%), {}/{} ({:.2}%/{:.2}%) (zstd/orig), {}bit",
                 indent,
                 field.name,
@@ -371,42 +411,62 @@ impl AnalysisResults {
                     parent_stats.original_size as f64
                 ),
                 field.lenbits
-            );
+            )?;
         }
+        
+        Ok(())
     }
 
-    fn concise_print_field_value_stats(&self, field_path: &str) {
+    fn concise_print_field_value_stats<W: Write>(
+        &self,
+        writer: &mut W,
+        field_path: &str,
+    ) -> io::Result<()> {
         if let Some(field) = self.per_field.get(field_path) {
-            print_field_metrics_value_stats(field);
+            print_field_metrics_value_stats(writer, field)?;
         }
+        
+        Ok(())
     }
 
-    fn concise_print_field_bit_stats(&self, field_path: &str) {
+    fn concise_print_field_bit_stats<W: Write>(
+        &self,
+        writer: &mut W,
+        field_path: &str,
+    ) -> io::Result<()> {
         if let Some(field) = self.per_field.get(field_path) {
-            print_field_metrics_bit_stats(field);
+            print_field_metrics_bit_stats(writer, field)?;
         }
+        
+        Ok(())
     }
 }
 
-fn detailed_print_comparison(comparison: &SplitComparisonResult) {
-    concise_print_split_comparison(comparison);
+fn detailed_print_comparison<W: Write>(
+    writer: &mut W,
+    comparison: &SplitComparisonResult,
+) -> io::Result<()> {
+    concise_print_split_comparison(writer, comparison)
 }
 
-fn concise_print_custom_comparison(comparison: &GroupComparisonResult) {
+fn concise_print_custom_comparison<W: Write>(
+    writer: &mut W,
+    comparison: &GroupComparisonResult,
+) -> io::Result<()> {
     let base_lz = comparison.baseline_metrics.lz_matches;
     let base_entropy = comparison.baseline_metrics.entropy;
     let base_zstd = comparison.baseline_metrics.zstd_size;
     let base_estimated = comparison.baseline_metrics.estimated_size;
     let base_size = comparison.baseline_metrics.original_size;
 
-    println!("  {}: {}", comparison.name, comparison.description);
-    println!("    Base Group:");
-    println!("      Size: {}", base_size);
-    println!("      LZ, Entropy: ({}, {:.2})", base_lz, base_entropy);
+    writeln!(writer, "  {}: {}", comparison.name, comparison.description)?;
+    writeln!(writer, "    Base Group:")?;
+    writeln!(writer, "      Size: {}", base_size)?;
+    writeln!(writer, "      LZ, Entropy: ({}, {:.2})", base_lz, base_entropy)?;
     if base_estimated != 0 {
-        println!("      Estimate/Zstd: {}/{}", base_estimated, base_zstd);
+        writeln!(writer, "      Estimate/Zstd: {}/{}", base_estimated, base_zstd)?;
     } else {
-        println!("      Zstd: {}", base_zstd);
+        writeln!(writer, "      Zstd: {}", base_zstd)?;
     }
 
     for (i, (group_name, metrics)) in comparison
@@ -424,25 +484,30 @@ fn concise_print_custom_comparison(comparison: &GroupComparisonResult) {
         let ratio_zstd = calculate_percentage(comp_zstd as f64, base_zstd as f64);
         let diff_zstd = comparison.differences[i].zstd_size;
 
-        println!("\n    {} Group:", group_name);
-        println!("      Size: {}", comp_size);
-        println!("      LZ, Entropy: ({}, {:.2})", comp_lz, comp_entropy);
+        writeln!(writer, "\n    {} Group:", group_name)?;
+        writeln!(writer, "      Size: {}", comp_size)?;
+        writeln!(writer, "      LZ, Entropy: ({}, {:.2})", comp_lz, comp_entropy)?;
         if comp_estimated != 0 {
-            println!("      Estimate/Zstd: {}/{}", comp_zstd, comp_estimated);
+            writeln!(writer, "      Estimate/Zstd: {}/{}", comp_zstd, comp_estimated)?;
         } else {
-            println!("      Zstd: {}", comp_zstd);
+            writeln!(writer, "      Zstd: {}", comp_zstd)?;
         }
-        println!("      Ratio zstd: {:.1}%", ratio_zstd);
-        println!("      Diff zstd: {}", diff_zstd);
+        writeln!(writer, "      Ratio zstd: {:.1}%", ratio_zstd)?;
+        writeln!(writer, "      Diff zstd: {}", diff_zstd)?;
 
         if base_size != comp_size {
-            println!("      [WARNING!!] Sizes of base and comparison groups don't match!! They may vary by a few bytes due to padding.");
-            println!("      [WARNING!!] However if they vary extremely, your groups may be incorrect. base: {}, {}: {}", base_size, group_name, comp_size);
+            writeln!(writer, "      [WARNING!!] Sizes of base and comparison groups don't match!! They may vary by a few bytes due to padding.")?;
+            writeln!(writer, "      [WARNING!!] However if they vary extremely, your groups may be incorrect. base: {}, {}: {}", base_size, group_name, comp_size)?;
         }
     }
+    
+    Ok(())
 }
 
-fn concise_print_split_comparison(comparison: &SplitComparisonResult) {
+fn concise_print_split_comparison<W: Write>(
+    writer: &mut W,
+    comparison: &SplitComparisonResult,
+) -> io::Result<()> {
     let base_lz = comparison.group1_metrics.lz_matches;
     let size_orig = comparison.group1_metrics.original_size;
     let size_comp = comparison.group2_metrics.original_size;
@@ -459,11 +524,12 @@ fn concise_print_split_comparison(comparison: &SplitComparisonResult) {
     let ratio_zstd = calculate_percentage(comp_zstd as f64, base_zstd as f64);
     let diff_zstd = comparison.difference.zstd_size;
 
-    println!("  {}: {}", comparison.name, comparison.description);
-    println!("    Original Size: {}", size_orig);
-    println!("    Base LZ, Entropy: ({}, {:.2}):", base_lz, base_entropy);
-    println!("    Comp LZ, Entropy: ({}, {:.2}):", comp_lz, comp_entropy);
-    println!(
+    writeln!(writer, "  {}: {}", comparison.name, comparison.description)?;
+    writeln!(writer, "    Original Size: {}", size_orig)?;
+    writeln!(writer, "    Base LZ, Entropy: ({}, {:.2}):", base_lz, base_entropy)?;
+    writeln!(writer, "    Comp LZ, Entropy: ({}, {:.2}):", comp_lz, comp_entropy)?;
+    writeln!(
+        writer,
         "    Base Group LZ, Entropy: ({:?}, {:?})",
         comparison
             .baseline_comparison_metrics
@@ -475,8 +541,9 @@ fn concise_print_split_comparison(comparison: &SplitComparisonResult) {
             .iter()
             .map(|m| format!("{:.2}", m.entropy))
             .collect::<Vec<_>>()
-    );
-    println!(
+    )?;
+    writeln!(
+        writer,
         "    Comp Group LZ, Entropy: ({:?}, {:?})",
         comparison
             .split_comparison_metrics
@@ -488,25 +555,27 @@ fn concise_print_split_comparison(comparison: &SplitComparisonResult) {
             .iter()
             .map(|m| format!("{:.2}", m.entropy))
             .collect::<Vec<_>>()
-    );
+    )?;
 
     if base_estimated != 0 {
-        println!("    Base (est/zstd): {}/{}", base_estimated, base_zstd);
+        writeln!(writer, "    Base (est/zstd): {}/{}", base_estimated, base_zstd)?;
     } else {
-        println!("    Base (zstd): {}", base_zstd);
+        writeln!(writer, "    Base (zstd): {}", base_zstd)?;
     }
 
     if comp_estimated != 0 {
-        println!("    Comp (est/zstd): {}/{}", comp_estimated, comp_zstd);
+        writeln!(writer, "    Comp (est/zstd): {}/{}", comp_estimated, comp_zstd)?;
     } else {
-        println!("    Comp (zstd): {}", comp_zstd);
+        writeln!(writer, "    Comp (zstd): {}", comp_zstd)?;
     }
 
-    println!("    Ratio (zstd): {}", ratio_zstd);
-    println!("    Diff (zstd): {}", diff_zstd);
+    writeln!(writer, "    Ratio (zstd): {}", ratio_zstd)?;
+    writeln!(writer, "    Diff (zstd): {}", diff_zstd)?;
 
     if size_orig != size_comp {
-        println!("    [WARNING!!] Sizes of both groups in bytes don't match!! They may vary by a few bytes due to padding.");
-        println!("    [WARNING!!] However if they vary extremely, your groups may be incorrect. group1: {}, group2: {}", size_orig, size_comp);
+        writeln!(writer, "    [WARNING!!] Sizes of both groups in bytes don't match!! They may vary by a few bytes due to padding.")?;
+        writeln!(writer, "    [WARNING!!] However if they vary extremely, your groups may be incorrect. group1: {}, group2: {}", size_orig, size_comp)?;
     }
+    
+    Ok(())
 }

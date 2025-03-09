@@ -18,6 +18,7 @@ use crate::{
 use ahash::{AHashMap, RandomState};
 use rayon::prelude::*;
 use std::collections::HashMap;
+use std::io::{self, Write};
 
 /// A struct that holds the aggregated results of multiple `AnalysisResults` instances.
 /// It contains the same fields as `AnalysisResults` but represents the merged data
@@ -152,62 +153,86 @@ impl MergedAnalysisResults {
     }
 
     /// Print the merged analysis results
-    pub fn print(&self, schema: &Schema, format: PrintFormat, skip_misc_stats: bool) {
-        println!("Aggregated (Merged) Analysis Results:");
-        println!("Total files merged: {}", self.merged_file_count);
+    pub fn print<W: Write>(
+        &self,
+        writer: &mut W,
+        schema: &Schema,
+        format: PrintFormat,
+        skip_misc_stats: bool,
+    ) -> io::Result<()> {
+        writeln!(writer, "Aggregated (Merged) Analysis Results:")?;
+        writeln!(writer, "Total files merged: {}", self.merged_file_count)?;
 
         match format {
             PrintFormat::Detailed => {
-                self.print_detailed(schema, &self.as_field_metrics(), skip_misc_stats)
+                self.print_detailed(writer, schema, &self.as_field_metrics(), skip_misc_stats)
             }
             PrintFormat::Concise => {
-                self.print_concise(schema, &self.as_field_metrics(), skip_misc_stats)
+                self.print_concise(writer, schema, &self.as_field_metrics(), skip_misc_stats)
             }
         }
     }
 
     /// Print detailed format of the merged results
-    fn print_detailed(&self, schema: &Schema, file_metrics: &FieldMetrics, skip_misc_stats: bool) {
-        println!("Schema: {}", self.schema_metadata.name);
-        println!("Description: {}", self.schema_metadata.description);
-        println!("File Entropy: {:.2} bits", self.file_entropy);
-        println!("File LZ Matches: {}", self.file_lz_matches);
-        println!("File Original Size: {}", self.original_size);
-        println!("File Compressed Size: {}", self.zstd_file_size);
-        println!("\nPer-field Metrics (in schema order):");
+    fn print_detailed<W: Write>(
+        &self,
+        writer: &mut W,
+        schema: &Schema,
+        file_metrics: &FieldMetrics,
+        skip_misc_stats: bool,
+    ) -> io::Result<()> {
+        writeln!(writer, "Schema: {}", self.schema_metadata.name)?;
+        writeln!(writer, "Description: {}", self.schema_metadata.description)?;
+        writeln!(writer, "File Entropy: {:.2} bits", self.file_entropy)?;
+        writeln!(writer, "File LZ Matches: {}", self.file_lz_matches)?;
+        writeln!(writer, "File Original Size: {}", self.original_size)?;
+        writeln!(writer, "File Compressed Size: {}", self.zstd_file_size)?;
+        writeln!(writer, "\nPer-field Metrics (in schema order):")?;
 
         // Iterate through schema-defined fields in order
         for field_path in schema.ordered_field_and_group_paths() {
-            self.detailed_print_field(file_metrics, &field_path);
+            self.detailed_print_field(writer, file_metrics, &field_path)?;
         }
 
-        println!("\nSplit Group Comparisons:");
+        writeln!(writer, "\nSplit Group Comparisons:")?;
         for comparison in &self.split_comparisons {
-            self.detailed_print_comparison(comparison);
+            self.detailed_print_comparison(writer, comparison)?;
         }
 
-        println!("\nCustom Group Comparisons:");
+        writeln!(writer, "\nCustom Group Comparisons:")?;
         for comparison in &self.custom_comparisons {
-            self.concise_print_custom_comparison(comparison);
+            self.concise_print_custom_comparison(writer, comparison)?;
         }
 
         if !skip_misc_stats {
-            println!("\nField Value Stats: [as `value: probability %`]");
+            writeln!(writer, "\nField Value Stats: [as `value: probability %`]")?;
             for field_path in schema.ordered_field_and_group_paths() {
-                self.concise_print_field_value_stats(&field_path);
+                self.concise_print_field_value_stats(writer, &field_path)?;
             }
 
-            println!("\nField Bit Stats: [as `(zeros/ones) (percentage %)`]");
+            writeln!(
+                writer,
+                "\nField Bit Stats: [as `(zeros/ones) (percentage %)`]"
+            )?;
             for field_path in schema.ordered_field_and_group_paths() {
-                self.concise_print_field_bit_stats(&field_path);
+                self.concise_print_field_bit_stats(writer, &field_path)?;
             }
         }
+
+        Ok(())
     }
 
     /// Print concise format of the merged results
-    fn print_concise(&self, schema: &Schema, file_metrics: &FieldMetrics, skip_misc_stats: bool) {
-        println!("Schema: {}", self.schema_metadata.name);
-        println!(
+    fn print_concise<W: Write>(
+        &self,
+        writer: &mut W,
+        schema: &Schema,
+        file_metrics: &FieldMetrics,
+        skip_misc_stats: bool,
+    ) -> io::Result<()> {
+        writeln!(writer, "Schema: {}", self.schema_metadata.name)?;
+        writeln!(
+            writer,
             "File: {:.2}bpb, {} LZ, {}/{} ({:.2}%/{:.2}%) (zstd/orig)",
             self.file_entropy,
             self.file_lz_matches,
@@ -215,54 +240,66 @@ impl MergedAnalysisResults {
             self.original_size,
             calculate_percentage(self.zstd_file_size as f64, self.original_size as f64),
             100.0
-        );
+        )?;
 
-        println!("\nField Metrics:");
+        writeln!(writer, "\nField Metrics:")?;
         for field_path in schema.ordered_field_and_group_paths() {
-            self.concise_print_field(file_metrics, &field_path);
+            self.concise_print_field(writer, file_metrics, &field_path)?;
         }
 
-        println!("\nSplit Group Comparisons:");
+        writeln!(writer, "\nSplit Group Comparisons:")?;
         for comparison in &self.split_comparisons {
-            self.concise_print_split_comparison(comparison);
+            self.concise_print_split_comparison(writer, comparison)?;
         }
 
-        println!("\nCustom Group Comparisons:");
+        writeln!(writer, "\nCustom Group Comparisons:")?;
         for comparison in &self.custom_comparisons {
-            self.concise_print_custom_comparison(comparison);
+            self.concise_print_custom_comparison(writer, comparison)?;
         }
 
         if !skip_misc_stats {
-            println!("\nField Value Stats: [as `value: probability %`]");
+            writeln!(writer, "\nField Value Stats: [as `value: probability %`]")?;
             for field_path in schema.ordered_field_and_group_paths() {
-                self.concise_print_field_value_stats(&field_path);
+                self.concise_print_field_value_stats(writer, &field_path)?;
             }
 
-            println!("\nField Bit Stats: [as `(zeros/ones) (percentage %)`]");
+            writeln!(
+                writer,
+                "\nField Bit Stats: [as `(zeros/ones) (percentage %)`]"
+            )?;
             for field_path in schema.ordered_field_and_group_paths() {
-                self.concise_print_field_bit_stats(&field_path);
+                self.concise_print_field_bit_stats(writer, &field_path)?;
             }
         }
+
+        Ok(())
     }
 
     // Helper methods for printing fields
-    fn detailed_print_field(&self, file_metrics: &FieldMetrics, field_path: &str) {
+    fn detailed_print_field<W: Write>(
+        &self,
+        writer: &mut W,
+        file_metrics: &FieldMetrics,
+        field_path: &str,
+    ) -> io::Result<()> {
         if let Some(field) = self.per_field.get(field_path) {
             // Indent based on field depth to show hierarchy
             let indent = "  ".repeat(field.depth);
             let parent_stats = field.parent_metrics_in_merged_or(self, file_metrics);
 
             // Calculate percentages
-            println!(
+            writeln!(
+                writer,
                 "{}{}: {:.2} bit entropy, {} LZ 3 Byte matches ({:.2}%)",
                 indent,
                 field.name,
                 field.entropy,
                 field.lz_matches,
                 calculate_percentage(field.lz_matches as f64, parent_stats.lz_matches as f64)
-            );
+            )?;
             let padding = format!("{}{}", indent, field.name).len() + 2; // +2 for ": "
-            println!(
+            writeln!(
+                writer,
                 "{:padding$}Sizes: ZStandard -16/Original: {}/{} ({:.2}%/{:.2}%)",
                 "",
                 field.zstd_size,
@@ -272,23 +309,32 @@ impl MergedAnalysisResults {
                     field.original_size as f64,
                     parent_stats.original_size as f64
                 )
-            );
-            println!(
+            )?;
+            writeln!(
+                writer,
                 "{:padding$}{} bit, {} unique values, {:?}",
                 "",
                 field.lenbits,
                 field.value_counts.len(),
                 field.bit_order
-            );
+            )?;
         }
+
+        Ok(())
     }
 
-    fn concise_print_field(&self, file_metrics: &FieldMetrics, field_path: &str) {
+    fn concise_print_field<W: Write>(
+        &self,
+        writer: &mut W,
+        file_metrics: &FieldMetrics,
+        field_path: &str,
+    ) -> io::Result<()> {
         if let Some(field) = self.per_field.get(field_path) {
             let indent = "  ".repeat(field.depth);
             let parent_stats = field.parent_metrics_in_merged_or(self, file_metrics);
 
-            println!(
+            writeln!(
+                writer,
                 "{}{}: {:.2}bpb, {} LZ ({:.2}%), {}/{} ({:.2}%/{:.2}%) (zstd/orig), {}bit",
                 indent,
                 field.name,
@@ -303,27 +349,49 @@ impl MergedAnalysisResults {
                     parent_stats.original_size as f64
                 ),
                 field.lenbits
-            );
+            )?;
         }
+
+        Ok(())
     }
 
-    fn concise_print_field_value_stats(&self, field_path: &str) {
+    fn concise_print_field_value_stats<W: Write>(
+        &self,
+        writer: &mut W,
+        field_path: &str,
+    ) -> io::Result<()> {
         if let Some(field) = self.per_field.get(field_path) {
-            print_field_metrics_value_stats(field);
+            print_field_metrics_value_stats(writer, field)?;
         }
+
+        Ok(())
     }
 
-    fn concise_print_field_bit_stats(&self, field_path: &str) {
+    fn concise_print_field_bit_stats<W: Write>(
+        &self,
+        writer: &mut W,
+        field_path: &str,
+    ) -> io::Result<()> {
         if let Some(field) = self.per_field.get(field_path) {
-            print_field_metrics_bit_stats(field);
+            print_field_metrics_bit_stats(writer, field)?;
         }
+
+        Ok(())
     }
 
-    fn detailed_print_comparison(&self, comparison: &MergedSplitComparisonResult) {
-        self.concise_print_split_comparison(comparison);
+    fn detailed_print_comparison<W: Write>(
+        &self,
+        writer: &mut W,
+        comparison: &MergedSplitComparisonResult,
+    ) -> io::Result<()> {
+        self.concise_print_split_comparison(writer, comparison)
     }
 
-    fn concise_print_split_comparison(&self, comparison: &MergedSplitComparisonResult) {
+    fn concise_print_split_comparison<W: Write>(
+        &self,
+        writer: &mut W,
+        comparison: &MergedSplitComparisonResult,
+    ) -> io::Result<()> {
         let base_lz = comparison.group1_metrics.lz_matches;
         let size_orig = comparison.group1_metrics.original_size;
         let size_comp = comparison.group2_metrics.original_size;
@@ -341,11 +409,20 @@ impl MergedAnalysisResults {
         let ratio_zstd = calculate_percentage(comp_zstd as f64, base_zstd as f64);
         let diff_zstd = comparison.difference.zstd_size;
 
-        println!("  {}: {}", comparison.name, comparison.description);
-        println!("    Original Size: {}", size_orig);
-        println!("    Base LZ, Entropy: ({}, {:.2})", base_lz, base_entropy);
-        println!("    Comp LZ, Entropy: ({}, {:.2})", comp_lz, comp_entropy);
-        println!(
+        writeln!(writer, "  {}: {}", comparison.name, comparison.description)?;
+        writeln!(writer, "    Original Size: {}", size_orig)?;
+        writeln!(
+            writer,
+            "    Base LZ, Entropy: ({}, {:.2})",
+            base_lz, base_entropy
+        )?;
+        writeln!(
+            writer,
+            "    Comp LZ, Entropy: ({}, {:.2})",
+            comp_lz, comp_entropy
+        )?;
+        writeln!(
+            writer,
             "    Base Group LZ, Entropy: ({:?}, {:?})",
             comparison
                 .baseline_comparison_metrics
@@ -357,8 +434,9 @@ impl MergedAnalysisResults {
                 .iter()
                 .map(|m| format!("{:.2}", m.entropy))
                 .collect::<Vec<_>>()
-        );
-        println!(
+        )?;
+        writeln!(
+            writer,
             "    Comp Group LZ, Entropy: ({:?}, {:?})",
             comparison
                 .split_comparison_metrics
@@ -370,29 +448,38 @@ impl MergedAnalysisResults {
                 .iter()
                 .map(|m| format!("{:.2}", m.entropy))
                 .collect::<Vec<_>>()
-        );
+        )?;
 
         if base_estimated != 0 {
-            println!("    Base (est/zstd): {}/{}", base_estimated, base_zstd);
+            writeln!(
+                writer,
+                "    Base (est/zstd): {}/{}",
+                base_estimated, base_zstd
+            )?;
         } else {
-            println!("    Base (zstd): {}", base_zstd);
+            writeln!(writer, "    Base (zstd): {}", base_zstd)?;
         }
 
         if comp_estimated != 0 {
-            println!("    Comp (est/zstd): {}/{}", comp_estimated, comp_zstd);
+            writeln!(
+                writer,
+                "    Comp (est/zstd): {}/{}",
+                comp_estimated, comp_zstd
+            )?;
         } else {
-            println!("    Comp (zstd): {}", comp_zstd);
+            writeln!(writer, "    Comp (zstd): {}", comp_zstd)?;
         }
 
-        println!("    Ratio (zstd): {}", ratio_zstd);
-        println!("    Diff (zstd): {}", diff_zstd);
-        println!(
+        writeln!(writer, "    Ratio (zstd): {}", ratio_zstd)?;
+        writeln!(writer, "    Diff (zstd): {}", diff_zstd)?;
+        writeln!(
+            writer,
             "    Est/Zstd Agreement on Better Group: {:.1}%",
-            comparison.group_estimate_zstd_agreement_percentage
-        );
+            comparison.group_estimate_zstd_agreement_percentage * 100.0
+        )?;
 
         // If we have enough files for statistics, show the detailed stats
-        println!("    Zstd Ratio Statistics:");
+        writeln!(writer, "    Zstd Ratio Statistics:")?;
 
         // Find the index of this comparison in the split_comparisons array
         let comp_index = self
@@ -403,36 +490,51 @@ impl MergedAnalysisResults {
 
         // Calculate and print the zstd ratio statistics
         if let Some(stats) = calculate_zstd_ratio_stats(&self.original_results, comp_index) {
-            println!("    * {}", format_stats(&stats));
+            writeln!(writer, "    * {}", format_stats(&stats))?;
         } else {
-            println!("    * No statistics available (insufficient data)");
+            writeln!(writer, "    * No statistics available (insufficient data)")?;
         }
 
         if size_orig != size_comp {
-            println!("    [WARNING!!] Sizes of both groups in bytes don't match!! They may vary by a few bytes due to padding.");
-            println!("    [WARNING!!] However if they vary extremely, your groups may be incorrect. group1: {}, group2: {}", size_orig, size_comp);
+            writeln!(writer, "    [WARNING!!] Sizes of both groups in bytes don't match!! They may vary by a few bytes due to padding.")?;
+            writeln!(writer, "    [WARNING!!] However if they vary extremely, your groups may be incorrect. group1: {}, group2: {}", size_orig, size_comp)?;
         }
+
+        Ok(())
     }
 
-    fn concise_print_custom_comparison(&self, comparison: &MergedGroupComparisonResult) {
+    fn concise_print_custom_comparison<W: Write>(
+        &self,
+        writer: &mut W,
+        comparison: &MergedGroupComparisonResult,
+    ) -> io::Result<()> {
         let base_lz = comparison.baseline_metrics.lz_matches;
         let base_entropy = comparison.baseline_metrics.entropy;
         let base_zstd = comparison.baseline_metrics.zstd_size;
         let base_estimated = comparison.baseline_metrics.estimated_size;
         let base_size = comparison.baseline_metrics.original_size;
 
-        println!("  {}: {}", comparison.name, comparison.description);
-        println!(
+        writeln!(writer, "  {}: {}", comparison.name, comparison.description)?;
+        writeln!(
+            writer,
             "    Overall Est/Zstd Agreement on Best Group: {:.1}%",
             comparison.estimate_zstd_agreement_percentage * 100.0
-        );
-        println!("    Base Group:");
-        println!("      Size: {}", base_size);
-        println!("      LZ, Entropy: ({}, {:.2})", base_lz, base_entropy);
+        )?;
+        writeln!(writer, "    Base Group:")?;
+        writeln!(writer, "      Size: {}", base_size)?;
+        writeln!(
+            writer,
+            "      LZ, Entropy: ({}, {:.2})",
+            base_lz, base_entropy
+        )?;
         if base_estimated != 0 {
-            println!("      Base (est/zstd): {}/{}", base_estimated, base_zstd);
+            writeln!(
+                writer,
+                "      Base (est/zstd): {}/{}",
+                base_estimated, base_zstd
+            )?;
         } else {
-            println!("      Base (zstd): {}", base_zstd);
+            writeln!(writer, "      Base (zstd): {}", base_zstd)?;
         }
 
         for (x, (group_name, metrics)) in comparison
@@ -450,16 +552,24 @@ impl MergedAnalysisResults {
             let ratio_zstd = calculate_percentage(comp_zstd as f64, base_zstd as f64);
             let diff_zstd = comparison.differences[x].zstd_size;
 
-            println!("\n    {} Group:", group_name);
-            println!("      Size: {}", comp_size);
-            println!("      LZ, Entropy: ({}, {:.2})", comp_lz, comp_entropy);
+            writeln!(writer, "\n    {} Group:", group_name)?;
+            writeln!(writer, "      Size: {}", comp_size)?;
+            writeln!(
+                writer,
+                "      LZ, Entropy: ({}, {:.2})",
+                comp_lz, comp_entropy
+            )?;
             if comp_estimated != 0 {
-                println!("      Comp (est/zstd): {}/{}", comp_estimated, comp_zstd);
+                writeln!(
+                    writer,
+                    "      Comp (est/zstd): {}/{}",
+                    comp_estimated, comp_zstd
+                )?;
             } else {
-                println!("      Comp (zstd): {}", comp_zstd);
+                writeln!(writer, "      Comp (zstd): {}", comp_zstd)?;
             }
-            println!("      Ratio (zstd): {:.1}%", ratio_zstd);
-            println!("      Diff (zstd): {}", diff_zstd);
+            writeln!(writer, "      Ratio (zstd): {:.1}%", ratio_zstd)?;
+            writeln!(writer, "      Diff (zstd): {}", diff_zstd)?;
 
             // Find the index of this comparison in the custom_comparisons array
             if let Some(comp_index) = self
@@ -471,16 +581,18 @@ impl MergedAnalysisResults {
                 if let Some(stats) =
                     calculate_custom_zstd_ratio_stats(&self.original_results, comp_index, x)
                 {
-                    println!("      Zstd Ratio Statistics: ");
-                    println!("      * {}", format_stats(&stats));
+                    writeln!(writer, "      Zstd Ratio Statistics:")?;
+                    writeln!(writer, "      * {}", format_stats(&stats))?;
                 }
             }
 
             if base_size != comp_size {
-                println!("      [WARNING!!] Sizes of base and comparison groups don't match!! They may vary by a few bytes due to padding.");
-                println!("      [WARNING!!] However if they vary extremely, your groups may be incorrect. base: {}, {}: {}", base_size, group_name, comp_size);
+                writeln!(writer, "      [WARNING!!] Sizes of base and comparison groups don't match!! They may vary by a few bytes due to padding.")?;
+                writeln!(writer, "      [WARNING!!] However if they vary extremely, your groups may be incorrect. base: {}, {}: {}", base_size, group_name, comp_size)?;
             }
         }
+
+        Ok(())
     }
 }
 
