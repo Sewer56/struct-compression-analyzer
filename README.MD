@@ -190,11 +190,13 @@ Split Group Comparisons:
     Comp (zstd): 3498364
     Ratio (zstd): 98.06824536936458
     Diff (zstd): -68911
+    Est/Zstd Agreement on Better Group: 72.8%
     Zstd Ratio Statistics:
     * min: 0.937, Q1: 0.963, median: 0.979, Q3: 1.002, max: 1.161, IQR: 0.038, mean: 0.985 (n=125)
 
 Custom Group Comparisons:
   dxt1_transforms: Compare different arrangements of DXT1 block data
+  Overall Est/Zstd Agreement on Best Group: 79.2%
     Base Group:
       Size: 20015319
       LZ, Entropy: (9429814, 6.78)
