@@ -208,6 +208,7 @@ fn main() -> anyhow::Result<()> {
 
                 // Save optimization results to file if output directory is specified
                 if let Some(output_dir) = &dir_cmd.output {
+                    std::fs::create_dir_all(output_dir)?;
                     write_optimization_results_to_file(
                         &split_results,
                         &custom_results,
