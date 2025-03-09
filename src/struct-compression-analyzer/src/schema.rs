@@ -85,7 +85,7 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use std::path::Path;
 
-use crate::analyzer::AnalyzerFieldState;
+use crate::analyzer::{AnalyzerFieldState, CompressionOptions};
 
 /// Represents the complete schema configuration for a bit-packed structure to analyze.
 ///
@@ -180,6 +180,26 @@ pub struct AnalysisConfig {
     pub compare_groups: Vec<CustomComparison>,
 }
 
+/// Parameters for estimating compression size
+#[derive(Debug, Deserialize, Clone)]
+pub struct CompressionEstimationParams {
+    /// Multiplier for LZ matches in size estimation (default: 0.375)
+    #[serde(default = "default_lz_match_multiplier")]
+    pub lz_match_multiplier: f64,
+    /// Multiplier for entropy in size estimation (default: 1.0)
+    #[serde(default = "default_entropy_multiplier")]
+    pub entropy_multiplier: f64,
+}
+
+impl CompressionEstimationParams {
+    pub fn new(options: &CompressionOptions) -> Self {
+        Self {
+            lz_match_multiplier: options.lz_match_multiplier,
+            entropy_multiplier: options.entropy_multiplier,
+        }
+    }
+}
+
 /// Configuration for comparing field groups
 #[derive(Debug, Deserialize)]
 pub struct SplitComparison {
@@ -192,6 +212,12 @@ pub struct SplitComparison {
     /// Optional description of the comparison
     #[serde(default)]
     pub description: String,
+    /// Compression estimation parameters for group 1
+    #[serde(default)]
+    pub compression_estimation_group_1: Option<CompressionEstimationParams>,
+    /// Compression estimation parameters for group 2
+    #[serde(default)]
+    pub compression_estimation_group_2: Option<CompressionEstimationParams>,
 }
 
 /// Configuration for custom field group comparisons
@@ -209,6 +235,14 @@ pub struct CustomComparison {
     /// Human-readable description
     #[serde(default)]
     pub description: String,
+}
+
+pub(crate) fn default_lz_match_multiplier() -> f64 {
+    0.375
+}
+
+pub(crate) fn default_entropy_multiplier() -> f64 {
+    1.0
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -274,6 +308,24 @@ pub struct GroupComponentArray {
     /// The number of bits to read from the field.
     #[serde(default)]
     pub bits: u32,
+    /// Multiplier for LZ matches in size estimation
+    #[serde(default = "default_lz_match_multiplier")]
+    pub lz_match_multiplier: f64,
+    /// Multiplier for entropy in size estimation
+    #[serde(default = "default_entropy_multiplier")]
+    pub entropy_multiplier: f64,
+}
+
+impl Default for GroupComponentArray {
+    fn default() -> Self {
+        Self {
+            field: String::new(),
+            offset: 0,
+            bits: 0,
+            lz_match_multiplier: default_lz_match_multiplier(),
+            entropy_multiplier: default_entropy_multiplier(),
+        }
+    }
 }
 
 impl GroupComponentArray {
@@ -305,6 +357,12 @@ impl GroupComponentArray {
 pub struct GroupComponentStruct {
     /// Array of field names
     pub fields: Vec<GroupComponent>,
+    /// Multiplier for LZ matches in size estimation
+    #[serde(default = "default_lz_match_multiplier")]
+    pub lz_match_multiplier: f64,
+    /// Multiplier for entropy in size estimation
+    #[serde(default = "default_entropy_multiplier")]
+    pub entropy_multiplier: f64,
 }
 
 /// Padding bits  
@@ -1232,7 +1290,7 @@ bit_order: msb
     }
 
     mod split_compare_tests {
-        use crate::schema::Schema;
+        use super::*;
 
         #[test]
         fn parses_basic_comparison() {
@@ -1244,6 +1302,12 @@ analysis:
       group_1: [colors]
       group_2: [color_r, color_g, color_b]
       description: Compare interleaved vs planar layouts
+      compression_estimation_group_1:
+        lz_match_multiplier: 0.5
+        entropy_multiplier: 1.2
+      compression_estimation_group_2:
+        lz_match_multiplier: 0.7
+        entropy_multiplier: 1.5
 root:
   type: group
   fields: {}
@@ -1263,6 +1327,25 @@ root:
                 comparisons[0].description,
                 "Compare interleaved vs planar layouts"
             );
+
+            // Check that compression estimation groups have values
+            assert!(comparisons[0].compression_estimation_group_1.is_some());
+            assert!(comparisons[0].compression_estimation_group_2.is_some());
+
+            // Check the values
+            let params1 = comparisons[0]
+                .compression_estimation_group_1
+                .as_ref()
+                .unwrap();
+            assert_eq!(params1.lz_match_multiplier, 0.5);
+            assert_eq!(params1.entropy_multiplier, 1.2);
+
+            let params2 = comparisons[0]
+                .compression_estimation_group_2
+                .as_ref()
+                .unwrap();
+            assert_eq!(params2.lz_match_multiplier, 0.7);
+            assert_eq!(params2.entropy_multiplier, 1.5);
         }
 
         #[test]
@@ -1285,6 +1368,9 @@ root:
             assert_eq!(comparisons.len(), 1);
             assert_eq!(comparisons[0].name, "basic");
             assert!(comparisons[0].description.is_empty());
+            // Check that compression estimation groups are None when not specified
+            assert!(comparisons[0].compression_estimation_group_1.is_none());
+            assert!(comparisons[0].compression_estimation_group_2.is_none());
         }
     }
 
@@ -1299,11 +1385,19 @@ analysis:
   compare_groups:
     - name: convert_7_to_8_bit
       description: "Adjust 7-bit color channel to 8-bit by appending a padding bit."
+      lz_match_multiplier: 0.45
+      entropy_multiplier: 1.1
       baseline: # R, R, R
-        - { type: array, field: color7, bits: 7 } 
+        - type: array
+          field: color7
+          bits: 7
+          lz_match_multiplier: 0.5
+          entropy_multiplier: 1.2
       comparisons:
         padded_8bit:
           - type: struct # R+0, R+0, R+0
+            lz_match_multiplier: 0.6
+            entropy_multiplier: 1.3
             fields:
               - { type: field, field: color7, bits: 7 } 
               - { type: padding, bits: 1, value: 0 } 
@@ -1326,6 +1420,9 @@ root:
                 GroupComponent::Array(array) => {
                     assert_eq!(array.field, "color7");
                     assert_eq!(array.bits, 7);
+                    // Verify the array component's multipliers
+                    assert_eq!(array.lz_match_multiplier, 0.5);
+                    assert_eq!(array.entropy_multiplier, 1.2);
                 }
                 _ => unreachable!("Expected an array type"),
             }
@@ -1339,6 +1436,9 @@ root:
             assert_eq!(padded.len(), 1);
             match padded.first().unwrap() {
                 GroupComponent::Struct(group) => {
+                    // Verify the struct component's multipliers
+                    assert_eq!(group.lz_match_multiplier, 0.6);
+                    assert_eq!(group.entropy_multiplier, 1.3);
                     assert_eq!(group.fields.len(), 3);
 
                     // Assert fields
@@ -1421,6 +1521,31 @@ root:
                 "Test multiple comparison order preservation"
             );
             assert_eq!(comparison.comparisons.len(), 3);
+        }
+
+        #[test]
+        fn handles_minimal_custom_comparison() {
+            let yaml = r#"
+version: '1.0'
+analysis:
+  compare_groups:
+    - name: minimal_test
+      baseline: 
+        - { type: array, field: test_field, bits: 8 } 
+      comparisons:
+        simple:
+          - { type: array, field: test_field, bits: 8 } 
+root:
+  type: group
+  fields: {}
+"#;
+
+            let schema = Schema::from_yaml(yaml).unwrap();
+            let comparisons = &schema.analysis.compare_groups;
+
+            assert_eq!(comparisons.len(), 1);
+            assert_eq!(comparisons[0].name, "minimal_test");
+            assert!(comparisons[0].description.is_empty());
         }
     }
 }

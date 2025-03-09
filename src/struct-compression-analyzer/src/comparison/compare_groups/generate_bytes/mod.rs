@@ -144,6 +144,8 @@ mod generate_output_tests {
     use super::*;
     use crate::comparison::compare_groups::test_helpers::create_mock_field_states;
     use crate::comparison::compare_groups::test_helpers::TEST_FIELD_NAME;
+    use crate::schema::default_entropy_multiplier;
+    use crate::schema::default_lz_match_multiplier;
     use crate::schema::BitOrder;
     use crate::schema::GroupComponentArray;
     use crate::schema::GroupComponentField;
@@ -169,6 +171,7 @@ mod generate_output_tests {
             field: TEST_FIELD_NAME.to_string(),
             offset: 0,
             bits: 4,
+            ..Default::default()
         })];
 
         generate_output_for_compare_groups_entry(&mut field_stats, &mut writer, &components)
@@ -194,6 +197,8 @@ mod generate_output_tests {
                 field: TEST_FIELD_NAME.to_string(),
                 bits: 4,
             })],
+            lz_match_multiplier: default_lz_match_multiplier(),
+            entropy_multiplier: default_entropy_multiplier(),
         })];
 
         generate_output_for_compare_groups_entry(&mut field_stats, &mut writer, &components)
@@ -219,12 +224,15 @@ mod generate_output_tests {
                 field: TEST_FIELD_NAME.to_string(),
                 offset: 0,
                 bits: 4,
+                ..Default::default()
             }),
             GroupComponent::Struct(GroupComponentStruct {
                 fields: vec![GroupComponent::Field(GroupComponentField {
                     field: TEST_FIELD_NAME.to_string(),
                     bits: 4,
                 })],
+                lz_match_multiplier: default_lz_match_multiplier(),
+                entropy_multiplier: default_entropy_multiplier(),
             }),
         ];
 

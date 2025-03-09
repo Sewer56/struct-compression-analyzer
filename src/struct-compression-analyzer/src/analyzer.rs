@@ -92,9 +92,16 @@ pub struct SchemaAnalyzer<'a> {
 /// Struct to encapsulate parameters for size estimation functions.
 /// Functions accept this struct return an estimated size in bytes.
 #[derive(Debug, Clone, Copy)]
-pub struct SizeEstimationParameters {
-    /// The raw bytes of the data.
+pub struct SizeEstimationParameters<'a> {
+    /// The name of the caller.
+    /// This is the name of a `split_comparison` or a `custom_comparison`.
+    /// This lets you use different functions for different callers, if using the API.
+    pub name: &'a str,
+    /// The length of the raw bytes of the data.
     pub data_len: usize,
+    /// The raw bytes of the data.
+    /// Only available when making the comparison initial time, not post process.
+    pub data: Option<&'a [u8]>,
     /// The number of LZ matches found in the data.
     pub num_lz_matches: usize,
     /// The estimated entropy of the data.
@@ -131,8 +138,8 @@ impl Default for CompressionOptions {
         Self {
             zstd_compression_level: 16,
             size_estimator_fn: size_estimate,
-            lz_match_multiplier: 0.375,
-            entropy_multiplier: 1.0,
+            lz_match_multiplier: 0.0,
+            entropy_multiplier: 0.0,
         }
     }
 }

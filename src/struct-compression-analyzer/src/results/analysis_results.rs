@@ -19,7 +19,7 @@ use lossless_transform_utils::match_estimator::estimate_num_lz_matches_fast;
 use rustc_hash::FxHashMap;
 
 /// Final computed metrics for output
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct AnalysisResults {
     /// Schema name
     pub schema_metadata: Metadata,
@@ -28,13 +28,13 @@ pub struct AnalysisResults {
     pub file_entropy: f64,
 
     /// LZ compression matches in the file
-    pub file_lz_matches: usize,
+    pub file_lz_matches: u64,
 
     /// Actual size of the compressed data when compressed with zstandard
-    pub zstd_file_size: usize,
+    pub zstd_file_size: u64,
 
     /// Original size of the uncompressed data
-    pub original_size: usize,
+    pub original_size: u64,
 
     /// Field path → computed metrics
     /// This is a map of `full_path` to [`FieldMetrics`], such that we
@@ -80,7 +80,7 @@ pub fn compute_analysis_results(
                 name: stats.name.clone(),
                 full_path: stats.full_path.clone(),
                 entropy,
-                lz_matches,
+                lz_matches: lz_matches as u64,
                 bit_counts: stats.bit_counts.clone(),
                 value_counts: stats.value_counts.clone(),
                 depth: stats.depth,
@@ -88,7 +88,7 @@ pub fn compute_analysis_results(
                 lenbits: stats.lenbits,
                 bit_order: stats.bit_order,
                 zstd_size: actual_size,
-                original_size: writer_buffer.len(),
+                original_size: writer_buffer.len() as u64,
             },
         );
     }
@@ -110,14 +110,14 @@ pub fn compute_analysis_results(
 
     Ok(AnalysisResults {
         file_entropy,
-        file_lz_matches,
+        file_lz_matches: file_lz_matches as u64,
         per_field: field_metrics,
         schema_metadata: analyzer.schema.metadata.clone(),
         zstd_file_size: get_zstd_compressed_size(
             &analyzer.entries,
             analyzer.compression_options.zstd_compression_level,
         ),
-        original_size: analyzer.entries.len(),
+        original_size: analyzer.entries.len() as u64,
         split_comparisons,
         custom_comparisons,
     })
@@ -182,6 +182,14 @@ fn calc_split_comparisons(
             }
         }
 
+        // Create custom compression options for this comparison using its multipliers
+        let custom_compression_options = CompressionOptions {
+            zstd_compression_level: compression_options.zstd_compression_level,
+            size_estimator_fn: compression_options.size_estimator_fn,
+            lz_match_multiplier: compression_options.lz_match_multiplier,
+            entropy_multiplier: compression_options.entropy_multiplier,
+        };
+
         split_comparisons.push(make_split_comparison_result(
             comparison.name.clone(),
             comparison.description.clone(),
@@ -189,7 +197,9 @@ fn calc_split_comparisons(
             &group2_bytes,
             group1_field_metrics,
             group2_field_metrics,
-            compression_options,
+            custom_compression_options,
+            comparison.compression_estimation_group_1.clone(),
+            comparison.compression_estimation_group_2.clone(),
         ));
     }
     split_comparisons
@@ -386,13 +396,18 @@ fn concise_print_custom_comparison(comparison: &GroupComparisonResult) {
     let base_lz = comparison.baseline_metrics.lz_matches;
     let base_entropy = comparison.baseline_metrics.entropy;
     let base_zstd = comparison.baseline_metrics.zstd_size;
+    let base_estimated = comparison.baseline_metrics.estimated_size;
     let base_size = comparison.baseline_metrics.original_size;
 
     println!("  {}: {}", comparison.name, comparison.description);
     println!("    Base Group:");
     println!("      Size: {}", base_size);
     println!("      LZ, Entropy: ({}, {:.2})", base_lz, base_entropy);
-    println!("      Zstd: {}", base_zstd);
+    if base_estimated != 0 {
+        println!("      Estimate/Zstd: {}/{}", base_estimated, base_zstd);
+    } else {
+        println!("      Zstd: {}", base_zstd);
+    }
 
     for (i, (group_name, metrics)) in comparison
         .group_names
@@ -403,6 +418,7 @@ fn concise_print_custom_comparison(comparison: &GroupComparisonResult) {
         let comp_lz = metrics.lz_matches;
         let comp_entropy = metrics.entropy;
         let comp_zstd = metrics.zstd_size;
+        let comp_estimated = metrics.estimated_size;
         let comp_size = metrics.original_size;
 
         let ratio_zstd = calculate_percentage(comp_zstd as f64, base_zstd as f64);
@@ -411,7 +427,11 @@ fn concise_print_custom_comparison(comparison: &GroupComparisonResult) {
         println!("\n    {} Group:", group_name);
         println!("      Size: {}", comp_size);
         println!("      LZ, Entropy: ({}, {:.2})", comp_lz, comp_entropy);
-        println!("      Zstd: {}", comp_zstd);
+        if comp_estimated != 0 {
+            println!("      Estimate/Zstd: {}/{}", comp_zstd, comp_estimated);
+        } else {
+            println!("      Zstd: {}", comp_zstd);
+        }
         println!("      Ratio zstd: {:.1}%", ratio_zstd);
         println!("      Diff zstd: {}", diff_zstd);
 
@@ -429,11 +449,13 @@ fn concise_print_split_comparison(comparison: &SplitComparisonResult) {
     let base_entropy = comparison.group1_metrics.entropy;
 
     let base_zstd = comparison.group1_metrics.zstd_size;
+    let base_estimated = comparison.group1_metrics.estimated_size;
 
     let comp_lz = comparison.group2_metrics.lz_matches;
     let comp_entropy = comparison.group2_metrics.entropy;
 
     let comp_zstd = comparison.group2_metrics.zstd_size;
+    let comp_estimated = comparison.group2_metrics.estimated_size;
     let ratio_zstd = calculate_percentage(comp_zstd as f64, base_zstd as f64);
     let diff_zstd = comparison.difference.zstd_size;
 
@@ -468,8 +490,18 @@ fn concise_print_split_comparison(comparison: &SplitComparisonResult) {
             .collect::<Vec<_>>()
     );
 
-    println!("    Base (zstd): {}", base_zstd);
-    println!("    Comp (zstd): {}", comp_zstd);
+    if base_estimated != 0 {
+        println!("    Base (est/zstd): {}/{}", base_estimated, base_zstd);
+    } else {
+        println!("    Base (zstd): {}", base_zstd);
+    }
+
+    if comp_estimated != 0 {
+        println!("    Comp (est/zstd): {}/{}", comp_estimated, comp_zstd);
+    } else {
+        println!("    Comp (zstd): {}", comp_zstd);
+    }
+
     println!("    Ratio (zstd): {}", ratio_zstd);
     println!("    Diff (zstd): {}", diff_zstd);
 

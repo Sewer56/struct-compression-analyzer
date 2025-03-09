@@ -126,8 +126,9 @@ impl GroupComparisonResult {
         }
 
         // Calculate baseline metrics
+        let baseline_name = format!("{}-baseline", name);
         let baseline_metrics =
-            GroupComparisonMetrics::from_bytes(baseline_bytes, compression_options);
+            GroupComparisonMetrics::from_bytes(baseline_bytes, &baseline_name, compression_options);
 
         // Process comparison groups
         let mut group_metrics = Vec::with_capacity(comparison_byte_slices.len());
@@ -137,9 +138,13 @@ impl GroupComparisonResult {
             names.push(group_name.clone());
         }
 
-        for comparison in comparison_byte_slices {
-            let metrics =
-                GroupComparisonMetrics::from_bytes(comparison.as_ref(), compression_options);
+        for (comparison, group_name) in comparison_byte_slices.iter().zip(group_names.iter()) {
+            let comparison_name = format!("{}-{}", name, group_name);
+            let metrics = GroupComparisonMetrics::from_bytes(
+                comparison.as_ref(),
+                &comparison_name,
+                compression_options,
+            );
             differences.push(GroupDifference::from_metrics(&baseline_metrics, &metrics));
             group_metrics.push(metrics);
         }
@@ -196,13 +201,21 @@ pub(crate) fn process_single_comparison(
         group_names.push(group_name.clone());
     }
 
+    // Create custom compression options for this comparison using its multipliers
+    let custom_compression_options = CompressionOptions {
+        zstd_compression_level: compression_options.zstd_compression_level,
+        size_estimator_fn: compression_options.size_estimator_fn,
+        lz_match_multiplier: compression_options.lz_match_multiplier,
+        entropy_multiplier: compression_options.entropy_multiplier,
+    };
+
     GroupComparisonResult::from_custom_comparison(
         comparison.name.clone(),
         comparison.description.clone(),
         &baseline_bytes,
         &comparison_bytes,
         &group_names,
-        compression_options,
+        custom_compression_options,
     )
 }
 
@@ -227,7 +240,10 @@ pub(crate) fn analyze_custom_comparisons(
         .analysis
         .compare_groups
         .iter()
-        .map(|comparison| process_single_comparison(comparison, field_stats, compression_options))
+        .map(|comparison| {
+            // Use base compression options but pass comparison through for multipliers
+            process_single_comparison(comparison, field_stats, compression_options)
+        })
         .collect()
 }
 
@@ -259,6 +275,7 @@ mod from_custom_comparison_tests {
                 field: TEST_FIELD_NAME.to_string(),
                 offset: 0,
                 bits: 8,
+                ..Default::default()
             })],
             comparisons: {
                 let mut map = IndexMap::new();
@@ -268,6 +285,7 @@ mod from_custom_comparison_tests {
                         field: TEST_FIELD_NAME.to_string(),
                         offset: 0,
                         bits: 4,
+                        ..Default::default()
                     })],
                 );
                 map
@@ -318,6 +336,7 @@ mod from_custom_comparison_tests {
                 field: TEST_FIELD_NAME.to_string(),
                 offset: 0,
                 bits: 8,
+                ..Default::default()
             })],
             comparisons: {
                 let mut map = IndexMap::new();
@@ -327,6 +346,7 @@ mod from_custom_comparison_tests {
                         field: TEST_FIELD_NAME.to_string(),
                         offset: 0,
                         bits: 4,
+                        ..Default::default()
                     })],
                 );
                 map.insert(
@@ -335,6 +355,7 @@ mod from_custom_comparison_tests {
                         field: TEST_FIELD_NAME.to_string(),
                         offset: 0,
                         bits: 8,
+                        ..Default::default()
                     })],
                 );
                 map
@@ -370,6 +391,7 @@ mod from_custom_comparison_tests {
                 field: "nonexistent_field".to_string(), // Field doesn't exist
                 offset: 0,
                 bits: 8,
+                ..Default::default()
             })],
             comparisons: IndexMap::new(),
         };

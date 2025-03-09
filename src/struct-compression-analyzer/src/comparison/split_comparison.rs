@@ -37,6 +37,7 @@ use super::{GroupComparisonMetrics, GroupDifference};
 use crate::{
     analyzer::{CompressionOptions, SizeEstimationParameters},
     results::FieldMetrics,
+    schema::CompressionEstimationParams,
     utils::analyze_utils::{calculate_file_entropy, get_zstd_compressed_size},
 };
 use lossless_transform_utils::match_estimator::estimate_num_lz_matches_fast;
@@ -62,6 +63,7 @@ use lossless_transform_utils::match_estimator::estimate_num_lz_matches_fast;
 ///
 /// A [`SplitComparisonResult`] struct containing the aggregated comparison results
 /// and overall statistics.
+#[allow(clippy::too_many_arguments)]
 pub fn make_split_comparison_result(
     name: String,
     description: String,
@@ -70,25 +72,38 @@ pub fn make_split_comparison_result(
     baseline_comparison_metrics: Vec<FieldComparisonMetrics>,
     split_comparison_metrics: Vec<FieldComparisonMetrics>,
     compression_options: CompressionOptions,
+    compression_estimation_group_1: Option<CompressionEstimationParams>,
+    compression_estimation_group_2: Option<CompressionEstimationParams>,
 ) -> SplitComparisonResult {
+    let comp_est_1 = compression_estimation_group_1
+        .unwrap_or(CompressionEstimationParams::new(&compression_options));
+    let comp_est_2 = compression_estimation_group_2
+        .unwrap_or(CompressionEstimationParams::new(&compression_options));
+
     // Calculate entropy and LZ matches for both group sets.
     let entropy1 = calculate_file_entropy(baseline_bytes);
     let entropy2 = calculate_file_entropy(split_bytes);
     let lz_matches1 = estimate_num_lz_matches_fast(baseline_bytes);
     let lz_matches2 = estimate_num_lz_matches_fast(split_bytes);
+    let name_1 = format!("{}-1", name);
+    let name_2 = format!("{}-2", name);
     let estimated_size_1 = (compression_options.size_estimator_fn)(SizeEstimationParameters {
+        name: &name_1,
         data_len: baseline_bytes.len(),
+        data: Some(baseline_bytes),
         num_lz_matches: lz_matches1,
         entropy: entropy1,
-        lz_match_multiplier: compression_options.lz_match_multiplier,
-        entropy_multiplier: compression_options.entropy_multiplier,
+        lz_match_multiplier: comp_est_1.lz_match_multiplier,
+        entropy_multiplier: comp_est_1.entropy_multiplier,
     });
     let estimated_size_2 = (compression_options.size_estimator_fn)(SizeEstimationParameters {
+        name: &name_2,
         data_len: split_bytes.len(),
+        data: Some(split_bytes),
         num_lz_matches: lz_matches2,
         entropy: entropy2,
-        lz_match_multiplier: compression_options.lz_match_multiplier,
-        entropy_multiplier: compression_options.entropy_multiplier,
+        lz_match_multiplier: comp_est_2.lz_match_multiplier,
+        entropy_multiplier: comp_est_2.entropy_multiplier,
     });
     let actual_size_1 =
         get_zstd_compressed_size(baseline_bytes, compression_options.zstd_compression_level);
@@ -99,7 +114,7 @@ pub fn make_split_comparison_result(
         lz_matches: lz_matches1 as u64,
         entropy: entropy1,
         estimated_size: estimated_size_1 as u64,
-        zstd_size: actual_size_1 as u64,
+        zstd_size: actual_size_1,
         original_size: baseline_bytes.len() as u64,
     };
 
@@ -107,7 +122,7 @@ pub fn make_split_comparison_result(
         lz_matches: lz_matches2 as u64,
         entropy: entropy2,
         estimated_size: estimated_size_2 as u64,
-        zstd_size: actual_size_2 as u64,
+        zstd_size: actual_size_2,
         original_size: split_bytes.len() as u64,
     };
 
@@ -175,7 +190,7 @@ impl SplitComparisonResult {
 #[derive(PartialEq, Debug, Clone, Copy, Default)]
 pub struct FieldComparisonMetrics {
     /// LZ compression matches in the field
-    pub lz_matches: usize,
+    pub lz_matches: u64,
     /// Shannon entropy in bits
     pub entropy: f64,
 }

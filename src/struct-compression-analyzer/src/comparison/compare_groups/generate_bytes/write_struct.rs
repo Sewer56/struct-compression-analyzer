@@ -145,6 +145,8 @@ mod tests {
     use super::*;
     use crate::comparison::compare_groups::test_helpers::create_mock_field_states;
     use crate::comparison::compare_groups::test_helpers::TEST_FIELD_NAME;
+    use crate::schema::default_entropy_multiplier;
+    use crate::schema::default_lz_match_multiplier;
     use crate::schema::BitOrder;
     use crate::schema::GroupComponentField;
     use crate::schema::GroupComponentPadding;
@@ -158,6 +160,8 @@ mod tests {
                 field: TEST_FIELD_NAME.to_string(),
                 bits,
             })],
+            lz_match_multiplier: default_lz_match_multiplier(),
+            entropy_multiplier: default_entropy_multiplier(),
         }
     }
 
@@ -246,6 +250,8 @@ mod tests {
                         bits: 2, // read 2 bits
                     }),
                 ],
+                lz_match_multiplier: default_lz_match_multiplier(),
+                entropy_multiplier: default_entropy_multiplier(),
             },
         )
         .unwrap();
@@ -267,6 +273,8 @@ mod tests {
                     bits: 4,
                     value: 0b1010,
                 })],
+                lz_match_multiplier: default_lz_match_multiplier(),
+                entropy_multiplier: default_entropy_multiplier(),
             },
         )
         .unwrap();
@@ -289,6 +297,8 @@ mod tests {
                     bits: 4,
                     value: 0b1010,
                 })],
+                lz_match_multiplier: default_lz_match_multiplier(),
+                entropy_multiplier: default_entropy_multiplier(),
             },
         )
         .unwrap();

@@ -32,13 +32,13 @@ pub struct MergedAnalysisResults {
     pub file_entropy: f64,
 
     /// Average LZ compression matches in the merged files
-    pub file_lz_matches: usize,
+    pub file_lz_matches: u64,
 
     /// Average actual size of the compressed data when compressed with zstandard
-    pub zstd_file_size: usize,
+    pub zstd_file_size: u64,
 
     /// Average original size of the uncompressed data
-    pub original_size: usize,
+    pub original_size: u64,
 
     /// Total number of files that were merged
     pub merged_file_count: usize,
@@ -51,7 +51,7 @@ pub struct MergedAnalysisResults {
     pub split_comparisons: Vec<MergedSplitComparisonResult>,
 
     /// Merged custom group comparison results from schema-defined comparisons
-    pub custom_comparisons: Vec<GroupComparisonResult>,
+    pub custom_comparisons: Vec<MergedGroupComparisonResult>,
 
     /// Original analysis results used to create this merged result.
     /// This is used for calculating statistics across the individual results.
@@ -62,7 +62,7 @@ pub struct MergedAnalysisResults {
 /// specifically for merged analysis results.
 ///
 /// This is similar to [`SplitComparisonResult`] but includes additional information
-/// about the number of files that were merged to create this result.
+/// related to statistics over multiple files.
 #[derive(Clone, Default)]
 pub struct MergedSplitComparisonResult {
     /// The name of the group comparison. (Copied from schema)
@@ -79,6 +79,29 @@ pub struct MergedSplitComparisonResult {
     pub baseline_comparison_metrics: Vec<FieldComparisonMetrics>,
     /// The statistics for the individual fields of the split group.
     pub split_comparison_metrics: Vec<FieldComparisonMetrics>,
+    /// Ratio of how often the estimates and zstd sizes agree on which
+    /// group compresses better.
+    pub group_estimate_zstd_agreement_percentage: f64,
+}
+
+/// Contains the merged results of comparing custom field groupings defined in the schema.
+/// This extends [`GroupComparisonResult`] with additional metrics that are calculated when merging multiple results.
+#[derive(Clone)]
+pub struct MergedGroupComparisonResult {
+    /// The name of the group comparison. (Copied from schema)
+    pub name: String,
+    /// A description of the group comparison. (Copied from schema)
+    pub description: String,
+    /// Metrics for the baseline group.
+    pub baseline_metrics: GroupComparisonMetrics,
+    /// Names of the comparison groups in order they were specified in the schema
+    pub group_names: Vec<String>,
+    /// Metrics for the comparison groups in schema order
+    pub group_metrics: Vec<GroupComparisonMetrics>,
+    /// Comparison between other groups and first (baseline) group.
+    pub differences: Vec<GroupDifference>,
+    /// Percentage of times that the estimate agrees with zstd about which group (including baseline) has the smallest size
+    pub estimate_zstd_agreement_percentage: f64,
 }
 
 impl MergedAnalysisResults {
@@ -96,7 +119,9 @@ impl MergedAnalysisResults {
             split_comparisons: MergedSplitComparisonResult::from_split_comparisons(
                 &results.split_comparisons,
             ),
-            custom_comparisons: results.custom_comparisons.clone(),
+            custom_comparisons: MergedGroupComparisonResult::from_group_comparisons(
+                &results.custom_comparisons,
+            ),
             original_results: vec![results.clone()],
         }
     }
@@ -305,11 +330,13 @@ impl MergedAnalysisResults {
         let base_entropy = comparison.group1_metrics.entropy;
 
         let base_zstd = comparison.group1_metrics.zstd_size;
+        let base_estimated = comparison.group1_metrics.estimated_size;
 
         let comp_lz = comparison.group2_metrics.lz_matches;
         let comp_entropy = comparison.group2_metrics.entropy;
 
         let comp_zstd = comparison.group2_metrics.zstd_size;
+        let comp_estimated = comparison.group2_metrics.estimated_size;
 
         let ratio_zstd = calculate_percentage(comp_zstd as f64, base_zstd as f64);
         let diff_zstd = comparison.difference.zstd_size;
@@ -345,10 +372,24 @@ impl MergedAnalysisResults {
                 .collect::<Vec<_>>()
         );
 
-        println!("    Base (zstd): {}", base_zstd);
-        println!("    Comp (zstd): {}", comp_zstd);
+        if base_estimated != 0 {
+            println!("    Base (est/zstd): {}/{}", base_estimated, base_zstd);
+        } else {
+            println!("    Base (zstd): {}", base_zstd);
+        }
+
+        if comp_estimated != 0 {
+            println!("    Comp (est/zstd): {}/{}", comp_estimated, comp_zstd);
+        } else {
+            println!("    Comp (zstd): {}", comp_zstd);
+        }
+
         println!("    Ratio (zstd): {}", ratio_zstd);
         println!("    Diff (zstd): {}", diff_zstd);
+        println!(
+            "    Est/Zstd Agreement on Better Group: {:.1}%",
+            comparison.group_estimate_zstd_agreement_percentage
+        );
 
         // If we have enough files for statistics, show the detailed stats
         println!("    Zstd Ratio Statistics:");
@@ -373,17 +414,26 @@ impl MergedAnalysisResults {
         }
     }
 
-    fn concise_print_custom_comparison(&self, comparison: &GroupComparisonResult) {
+    fn concise_print_custom_comparison(&self, comparison: &MergedGroupComparisonResult) {
         let base_lz = comparison.baseline_metrics.lz_matches;
         let base_entropy = comparison.baseline_metrics.entropy;
         let base_zstd = comparison.baseline_metrics.zstd_size;
+        let base_estimated = comparison.baseline_metrics.estimated_size;
         let base_size = comparison.baseline_metrics.original_size;
 
         println!("  {}: {}", comparison.name, comparison.description);
+        println!(
+            "    Overall Est/Zstd Agreement on Best Group: {:.1}%",
+            comparison.estimate_zstd_agreement_percentage * 100.0
+        );
         println!("    Base Group:");
         println!("      Size: {}", base_size);
         println!("      LZ, Entropy: ({}, {:.2})", base_lz, base_entropy);
-        println!("      Zstd: {}", base_zstd);
+        if base_estimated != 0 {
+            println!("      Base (est/zstd): {}/{}", base_estimated, base_zstd);
+        } else {
+            println!("      Base (zstd): {}", base_zstd);
+        }
 
         for (x, (group_name, metrics)) in comparison
             .group_names
@@ -394,6 +444,7 @@ impl MergedAnalysisResults {
             let comp_lz = metrics.lz_matches;
             let comp_entropy = metrics.entropy;
             let comp_zstd = metrics.zstd_size;
+            let comp_estimated = metrics.estimated_size;
             let comp_size = metrics.original_size;
 
             let ratio_zstd = calculate_percentage(comp_zstd as f64, base_zstd as f64);
@@ -402,7 +453,11 @@ impl MergedAnalysisResults {
             println!("\n    {} Group:", group_name);
             println!("      Size: {}", comp_size);
             println!("      LZ, Entropy: ({}, {:.2})", comp_lz, comp_entropy);
-            println!("      Zstd: {}", comp_zstd);
+            if comp_estimated != 0 {
+                println!("      Comp (est/zstd): {}/{}", comp_estimated, comp_zstd);
+            } else {
+                println!("      Comp (zstd): {}", comp_zstd);
+            }
             println!("      Ratio (zstd): {:.1}%", ratio_zstd);
             println!("      Diff (zstd): {}", diff_zstd);
 
@@ -425,6 +480,84 @@ impl MergedAnalysisResults {
                 println!("      [WARNING!!] Sizes of base and comparison groups don't match!! They may vary by a few bytes due to padding.");
                 println!("      [WARNING!!] However if they vary extremely, your groups may be incorrect. base: {}, {}: {}", base_size, group_name, comp_size);
             }
+        }
+    }
+}
+
+/// Helper functions around [`MergedSplitComparisonResult`]
+impl MergedSplitComparisonResult {
+    /// Create a new [`MergedSplitComparisonResult`] from a [`SplitComparisonResult`]
+    pub fn from_split_comparison(result: &SplitComparisonResult) -> Self {
+        Self {
+            name: result.name.clone(),
+            description: result.description.clone(),
+            group1_metrics: result.group1_metrics,
+            group2_metrics: result.group2_metrics,
+            difference: result.difference,
+            baseline_comparison_metrics: result.baseline_comparison_metrics.clone(),
+            split_comparison_metrics: result.split_comparison_metrics.clone(),
+            group_estimate_zstd_agreement_percentage: 0.0,
+        }
+    }
+
+    /// Convert a Vec of SplitComparisonResult to a Vec of MergedSplitComparisonResult
+    pub fn from_split_comparisons(results: &[SplitComparisonResult]) -> Vec<Self> {
+        results.iter().map(Self::from_split_comparison).collect()
+    }
+
+    /// Ratio between the max and min entropy of the baseline fields.
+    pub fn baseline_max_entropy_diff_ratio(&self) -> f64 {
+        calculate_max_entropy_diff_ratio(&self.baseline_comparison_metrics)
+    }
+
+    /// Maximum difference between the entropy of the baseline fields.
+    pub fn baseline_max_entropy_diff(&self) -> f64 {
+        calculate_max_entropy_diff(&self.baseline_comparison_metrics)
+    }
+
+    /// Maximum difference between the entropy of the split fields.
+    pub fn split_max_entropy_diff(&self) -> f64 {
+        calculate_max_entropy_diff(&self.split_comparison_metrics)
+    }
+
+    /// Ratio between the max and min entropy of the split fields.
+    pub fn split_max_entropy_diff_ratio(&self) -> f64 {
+        calculate_max_entropy_diff_ratio(&self.split_comparison_metrics)
+    }
+
+    /// Convert to a [`SplitComparisonResult`] (primarily for backward compatibility)
+    pub fn to_split_comparison(&self) -> SplitComparisonResult {
+        SplitComparisonResult {
+            name: self.name.clone(),
+            description: self.description.clone(),
+            group1_metrics: self.group1_metrics,
+            group2_metrics: self.group2_metrics,
+            difference: self.difference,
+            baseline_comparison_metrics: self.baseline_comparison_metrics.clone(),
+            split_comparison_metrics: self.split_comparison_metrics.clone(),
+        }
+    }
+}
+
+impl MergedGroupComparisonResult {
+    fn from_group_comparisons(
+        custom_comparisons: &[GroupComparisonResult],
+    ) -> Vec<MergedGroupComparisonResult> {
+        custom_comparisons
+            .iter()
+            .map(Self::from_group_comparison)
+            .collect()
+    }
+
+    fn from_group_comparison(comparison: &GroupComparisonResult) -> Self {
+        MergedGroupComparisonResult {
+            name: comparison.name.clone(),
+            description: comparison.description.clone(),
+            baseline_metrics: comparison.baseline_metrics,
+            group_names: comparison.group_names.clone(),
+            group_metrics: comparison.group_metrics.clone(),
+            differences: comparison.differences.clone(),
+            estimate_zstd_agreement_percentage: 0.0,
         }
     }
 }
@@ -455,9 +588,9 @@ pub fn merge_analysis_results(
     }
 
     merged.file_entropy = total_entropy / total_count as f64;
-    merged.file_lz_matches = total_lz_matches / total_count;
-    merged.zstd_file_size = total_zstd_size / total_count;
-    merged.original_size = total_original_size / total_count;
+    merged.file_lz_matches = total_lz_matches / total_count as u64;
+    merged.zstd_file_size = total_zstd_size / total_count as u64;
+    merged.original_size = total_original_size / total_count as u64;
     merged.merged_file_count = total_count;
 
     // Merge field-level metrics in parallel
@@ -518,6 +651,7 @@ fn merge_split_comparison(
         difference: GroupDifference::default(),
         baseline_comparison_metrics: Vec::new(),
         split_comparison_metrics: Vec::new(),
+        group_estimate_zstd_agreement_percentage: 0.0,
     };
 
     // First calculate G1 metrics
@@ -557,6 +691,29 @@ fn merge_split_comparison(
     g2_metrics.estimated_size /= items.len() as u64;
     g2_metrics.zstd_size /= items.len() as u64;
     g2_metrics.original_size /= items.len() as u64;
+
+    // Calculate agreement percentage between zstd and estimate
+    // on which group compresses better.
+    let mut agreement_count = 0;
+    let mut total_count = 0;
+    for item in items {
+        let g1 = &item.split_comparisons[split_idx].group1_metrics;
+        let g2 = &item.split_comparisons[split_idx].group2_metrics;
+        if g1.estimated_size != 0 && g2.estimated_size != 0 {
+            total_count += 1;
+            let est_g2_better = g2.estimated_size < g1.estimated_size;
+            let zstd_g2_better = g2.zstd_size < g1.zstd_size;
+            if est_g2_better == zstd_g2_better {
+                agreement_count += 1;
+            }
+        }
+    }
+
+    merged.group_estimate_zstd_agreement_percentage = if total_count > 0 {
+        (agreement_count as f64 / total_count as f64) * 100.0
+    } else {
+        0.0
+    };
 
     // Now calculate difference
     let difference = &mut merged.difference;
@@ -632,7 +789,7 @@ fn merge_split_comparison(
 
         // Calculate averages
         for field_metrics in &mut merged.baseline_comparison_metrics {
-            field_metrics.lz_matches /= items.len();
+            field_metrics.lz_matches /= items.len() as u64;
             field_metrics.entropy /= items.len() as f64;
         }
     }
@@ -658,7 +815,7 @@ fn merge_split_comparison(
 
         // Calculate averages
         for field_metrics in &mut merged.split_comparison_metrics {
-            field_metrics.lz_matches /= items.len();
+            field_metrics.lz_matches /= items.len() as u64;
             field_metrics.entropy /= items.len() as f64;
         }
     }
@@ -666,7 +823,7 @@ fn merge_split_comparison(
     merged
 }
 
-fn merge_custom_comparisons(items: &[AnalysisResults]) -> Vec<GroupComparisonResult> {
+fn merge_custom_comparisons(items: &[AnalysisResults]) -> Vec<MergedGroupComparisonResult> {
     if items.is_empty() {
         return Vec::new();
     }
@@ -681,14 +838,15 @@ fn merge_custom_comparisons(items: &[AnalysisResults]) -> Vec<GroupComparisonRes
     merged_comparisons
 }
 
-fn merge_custom_comparison(index: usize, items: &[AnalysisResults]) -> GroupComparisonResult {
-    let mut merged = GroupComparisonResult {
+fn merge_custom_comparison(index: usize, items: &[AnalysisResults]) -> MergedGroupComparisonResult {
+    let mut merged = MergedGroupComparisonResult {
         name: items[0].custom_comparisons[index].name.clone(),
         description: items[0].custom_comparisons[index].description.clone(),
         baseline_metrics: GroupComparisonMetrics::default(),
         group_names: items[0].custom_comparisons[index].group_names.clone(),
         group_metrics: Vec::with_capacity(items[0].custom_comparisons[index].group_metrics.len()),
         differences: Vec::with_capacity(items[0].custom_comparisons[index].differences.len()),
+        estimate_zstd_agreement_percentage: 0.0,
     };
 
     // Calculate merged baseline metrics
@@ -704,6 +862,7 @@ fn merge_custom_comparison(index: usize, items: &[AnalysisResults]) -> GroupComp
             .baseline_metrics
             .original_size;
     }
+
     baseline_metrics.lz_matches /= items.len() as u64;
     baseline_metrics.entropy /= items.len() as f64;
     baseline_metrics.estimated_size /= items.len() as u64;
@@ -727,6 +886,7 @@ fn merge_custom_comparison(index: usize, items: &[AnalysisResults]) -> GroupComp
             merged_group_metrics.original_size +=
                 item.custom_comparisons[index].group_metrics[group_idx].original_size;
         }
+
         merged_group_metrics.lz_matches /= items.len() as u64;
         merged_group_metrics.entropy /= items.len() as f64;
         merged_group_metrics.estimated_size /= items.len() as u64;
@@ -756,59 +916,93 @@ fn merge_custom_comparison(index: usize, items: &[AnalysisResults]) -> GroupComp
         merged_diff.original_size /= items.len() as i64;
     }
 
-    merged
-}
+    // Calculate estimate/zstd agreement percentage
+    // This measures how often our estimate correctly identifies the group with the smallest zstd size
+    let mut agreement_count = 0;
+    let mut total_count = 0;
 
-/// Helper functions around [`MergedSplitComparisonResult`]
-impl MergedSplitComparisonResult {
-    /// Create a new [`MergedSplitComparisonResult`] from a [`SplitComparisonResult`]
-    pub fn from_split_comparison(result: &SplitComparisonResult) -> Self {
-        Self {
-            name: result.name.clone(),
-            description: result.description.clone(),
-            group1_metrics: result.group1_metrics.clone(),
-            group2_metrics: result.group2_metrics.clone(),
-            difference: result.difference,
-            baseline_comparison_metrics: result.baseline_comparison_metrics.clone(),
-            split_comparison_metrics: result.split_comparison_metrics.clone(),
+    for item in items {
+        // Skip if estimated sizes are not available
+        if item.custom_comparisons[index]
+            .baseline_metrics
+            .estimated_size
+            == 0
+        {
+            continue;
+        }
+
+        // Check if any group metrics are missing estimated sizes
+        let mut missing_estimates = false;
+        for group_metrics in &item.custom_comparisons[index].group_metrics {
+            if group_metrics.estimated_size == 0 {
+                missing_estimates = true;
+                break;
+            }
+        }
+
+        if missing_estimates {
+            continue;
+        }
+
+        total_count += 1;
+
+        // Find the group with the smallest zstd size (including baseline)
+        let mut smallest_zstd_idx = -1; // -1 means baseline
+        let mut smallest_zstd = item.custom_comparisons[index].baseline_metrics.zstd_size;
+
+        for (x, group_metrics) in item.custom_comparisons[index]
+            .group_metrics
+            .iter()
+            .enumerate()
+        {
+            if group_metrics.zstd_size < smallest_zstd {
+                smallest_zstd = group_metrics.zstd_size;
+                smallest_zstd_idx = x as i32;
+            }
+        }
+
+        // Find the group with the smallest estimated size (including baseline)
+        let mut smallest_est_idx = -1; // -1 means baseline
+        let mut smallest_est = item.custom_comparisons[index]
+            .baseline_metrics
+            .estimated_size;
+
+        for (x, group_metrics) in item.custom_comparisons[index]
+            .group_metrics
+            .iter()
+            .enumerate()
+        {
+            if group_metrics.estimated_size < smallest_est {
+                smallest_est = group_metrics.estimated_size;
+                smallest_est_idx = x as i32;
+            }
+        }
+
+        // Check if the estimates agree on which group is smallest
+        if smallest_zstd_idx == smallest_est_idx {
+            agreement_count += 1;
         }
     }
 
-    /// Convert a Vec of SplitComparisonResult to a Vec of MergedSplitComparisonResult
-    pub fn from_split_comparisons(results: &[SplitComparisonResult]) -> Vec<Self> {
-        results.iter().map(Self::from_split_comparison).collect()
-    }
+    merged.estimate_zstd_agreement_percentage = if total_count > 0 {
+        agreement_count as f64 / total_count as f64
+    } else {
+        0.0
+    };
 
-    /// Ratio between the max and min entropy of the baseline fields.
-    pub fn baseline_max_entropy_diff_ratio(&self) -> f64 {
-        calculate_max_entropy_diff_ratio(&self.baseline_comparison_metrics)
-    }
+    merged
+}
 
-    /// Maximum difference between the entropy of the baseline fields.
-    pub fn baseline_max_entropy_diff(&self) -> f64 {
-        calculate_max_entropy_diff(&self.baseline_comparison_metrics)
-    }
-
-    /// Maximum difference between the entropy of the split fields.
-    pub fn split_max_entropy_diff(&self) -> f64 {
-        calculate_max_entropy_diff(&self.split_comparison_metrics)
-    }
-
-    /// Ratio between the max and min entropy of the split fields.
-    pub fn split_max_entropy_diff_ratio(&self) -> f64 {
-        calculate_max_entropy_diff_ratio(&self.split_comparison_metrics)
-    }
-
-    /// Convert to a [`SplitComparisonResult`] (primarily for backward compatibility)
-    pub fn to_split_comparison(&self) -> SplitComparisonResult {
-        SplitComparisonResult {
-            name: self.name.clone(),
-            description: self.description.clone(),
-            group1_metrics: self.group1_metrics.clone(),
-            group2_metrics: self.group2_metrics.clone(),
-            difference: self.difference,
-            baseline_comparison_metrics: self.baseline_comparison_metrics.clone(),
-            split_comparison_metrics: self.split_comparison_metrics.clone(),
+impl From<GroupComparisonResult> for MergedGroupComparisonResult {
+    fn from(result: GroupComparisonResult) -> Self {
+        Self {
+            name: result.name,
+            description: result.description,
+            baseline_metrics: result.baseline_metrics,
+            group_names: result.group_names,
+            group_metrics: result.group_metrics,
+            differences: result.differences,
+            estimate_zstd_agreement_percentage: 0.0,
         }
     }
 }

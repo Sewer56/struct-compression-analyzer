@@ -152,7 +152,7 @@ pub struct FieldMetrics {
     /// Shannon entropy in bits
     pub entropy: f64,
     /// LZ compression matches in the field
-    pub lz_matches: usize,
+    pub lz_matches: u64,
     /// Bit-level statistics. Index of tuple is bit offset.
     pub bit_counts: Vec<BitStats>,
     /// The order of the bits within the field
@@ -161,9 +161,9 @@ pub struct FieldMetrics {
     /// Count of occurrences for each observed value.
     pub value_counts: FxHashMap<u64, u64>,
     /// Actual size of the compressed data when compressed with zstandard
-    pub zstd_size: usize,
+    pub zstd_size: u64,
     /// Original size of the data before compression
-    pub original_size: usize,
+    pub original_size: u64,
 }
 
 impl FieldMetrics {
@@ -216,9 +216,9 @@ impl FieldMetrics {
         };
         this.count = total_count;
         this.entropy = total_entropy / total_items as f64;
-        this.lz_matches = total_lz_matches / total_items;
-        this.zstd_size = total_zstd_size / total_items;
-        this.original_size = total_original_size / total_items;
+        this.lz_matches = total_lz_matches / total_items as u64;
+        this.zstd_size = total_zstd_size / total_items as u64;
+        this.original_size = total_original_size / total_items as u64;
         this.merge_bit_stats_and_value_counts(items)?;
         Ok(this)
     }

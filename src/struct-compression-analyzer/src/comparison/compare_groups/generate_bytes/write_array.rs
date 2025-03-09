@@ -122,6 +122,8 @@ mod tests {
     use super::*;
     use crate::comparison::compare_groups::test_helpers::create_mock_field_states;
     use crate::comparison::compare_groups::test_helpers::TEST_FIELD_NAME;
+    use crate::schema::default_entropy_multiplier;
+    use crate::schema::default_lz_match_multiplier;
     use crate::schema::BitOrder;
     use bitstream_io::BitWriter;
     use std::io::Cursor;
@@ -131,6 +133,8 @@ mod tests {
             field: TEST_FIELD_NAME.to_string(),
             offset,
             bits,
+            lz_match_multiplier: default_lz_match_multiplier(),
+            entropy_multiplier: default_entropy_multiplier(),
         }
     }
 

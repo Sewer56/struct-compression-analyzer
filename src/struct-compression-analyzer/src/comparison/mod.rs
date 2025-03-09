@@ -20,8 +20,8 @@
 //!
 //! fn calculate_example(baseline_data: &[u8], comparison_data: &[u8]) {
 //!     let options = CompressionOptions::default();
-//!     let baseline = GroupComparisonMetrics::from_bytes(&baseline_data, options);
-//!     let comparison = GroupComparisonMetrics::from_bytes(&comparison_data, options);
+//!     let baseline = GroupComparisonMetrics::from_bytes(&baseline_data, "name_a", options);
+//!     let comparison = GroupComparisonMetrics::from_bytes(&comparison_data, "name_b", options);
 //!
 //!     // Compare the difference
 //!     let difference = GroupDifference::from_metrics(&baseline, &comparison);
@@ -47,7 +47,7 @@ pub mod stats;
 /// The statistics for a given group of fields.
 /// This can be a group created by the [`split_comparison`] module, the
 /// [`compare_groups`] module or any other piece of code that compares multiple sets of bytes.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug, PartialEq, Copy)]
 pub struct GroupComparisonMetrics {
     /// Number of total LZ matches
     pub lz_matches: u64,
@@ -89,22 +89,28 @@ impl GroupComparisonMetrics {
     ///
     /// # Arguments
     /// * `bytes` - A slice of bytes representing the data to analyze.
+    /// * `group_name` - The name of the group being analyzed.
     /// * `compression_options` - Compression options, zstd compression level, etc.
     ///
     /// # Returns
     /// A [`GroupComparisonMetrics`] struct containing the computed metrics.
-    pub fn from_bytes(bytes: &[u8], compression_options: CompressionOptions) -> Self {
+    pub fn from_bytes(
+        bytes: &[u8],
+        group_name: &str,
+        compression_options: CompressionOptions,
+    ) -> Self {
         let entropy = calculate_file_entropy(bytes);
         let lz_matches = estimate_num_lz_matches_fast(bytes) as u64;
         let estimated_size = (compression_options.size_estimator_fn)(SizeEstimationParameters {
+            name: group_name,
+            data: Some(bytes),
             data_len: bytes.len(),
             num_lz_matches: lz_matches as usize,
             entropy,
             lz_match_multiplier: compression_options.lz_match_multiplier,
             entropy_multiplier: compression_options.entropy_multiplier,
         }) as u64;
-        let zstd_size =
-            get_zstd_compressed_size(bytes, compression_options.zstd_compression_level) as u64;
+        let zstd_size = get_zstd_compressed_size(bytes, compression_options.zstd_compression_level);
 
         GroupComparisonMetrics {
             lz_matches,

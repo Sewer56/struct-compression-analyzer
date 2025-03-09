@@ -9,6 +9,7 @@ use std::{
 };
 use struct_compression_analyzer::{
     analyzer::{CompressionOptions, SchemaAnalyzer},
+    brute_force::{optimize_and_apply_coefficients, print_all_optimization_results},
     csv,
     offset_evaluator::try_evaluate_file_offset,
     plot::generate_plots,
@@ -110,6 +111,10 @@ struct DirectoryCommand {
     /// zstd compression level (default: 16)
     #[argh(option, short = 'z', default = "16")]
     zstd_compression_level: i32,
+
+    /// enable brute forcing of LZ match and entropy multiplier parameters
+    #[argh(switch, long = "brute-force-lz-params")]
+    brute_force: bool,
 }
 
 /// Parameters to function used to analyze a single file.
@@ -162,7 +167,7 @@ fn main() -> anyhow::Result<()> {
 
             // Process every file with rayon, collecting individual results
             let analyze_start_time = Instant::now();
-            let individual_results: Vec<AnalysisResults> = files
+            let mut individual_results: Vec<AnalysisResults> = files
                 .par_iter()
                 .map(|path| {
                     analyze_file(&AnalyzeFileParams {
@@ -183,6 +188,20 @@ fn main() -> anyhow::Result<()> {
                 })
                 .collect();
 
+            // Run brute force optimization on merged results if enabled
+            if dir_cmd.brute_force {
+                println!("\nRunning LZ parameter optimization on merged results...");
+                let brute_force_start_time = Instant::now();
+                let (split_results, custom_results) =
+                    optimize_and_apply_coefficients(&mut individual_results, None);
+                println!(
+                    "{}ms... Brute force optimization complete.",
+                    brute_force_start_time.elapsed().as_millis()
+                );
+
+                print_all_optimization_results(&split_results, &custom_results);
+            }
+
             // Merge all results
             println!(
                 "{}ms... Merging {} files.",
@@ -191,12 +210,11 @@ fn main() -> anyhow::Result<()> {
             );
             let merge_start_time = Instant::now();
             let merged_results = MergedAnalysisResults::from_results(&individual_results)?;
-
-            // Print final aggregated results
             println!(
                 "{}ms... Aggregated (Merged) Analysis Results:",
                 merge_start_time.elapsed().as_millis()
             );
+
             merged_results.print(
                 &schema,
                 dir_cmd.format.unwrap_or(PrintFormat::default()),
@@ -220,12 +238,18 @@ fn main() -> anyhow::Result<()> {
             // Write CSV reports
             if let Some(output_dir) = &dir_cmd.output {
                 std::fs::create_dir_all(output_dir)?;
-                csv::write_all_csvs(&individual_results, &merged_results, output_dir, &files)?;
-                generate_plots(&individual_results, output_dir).unwrap();
+                csv::write_all_csvs(
+                    &merged_results.original_results,
+                    &merged_results,
+                    output_dir,
+                    &files,
+                )?;
+                generate_plots(&merged_results.original_results, output_dir).unwrap();
                 println!("Generated field CSV reports in: {}", output_dir.display());
             }
         }
     }
+
     // Print time taken for analysis
     println!(
         "Analysis complete in {}ms",
