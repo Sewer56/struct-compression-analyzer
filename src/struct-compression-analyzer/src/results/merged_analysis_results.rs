@@ -86,6 +86,9 @@ pub struct MergedSplitComparisonResult {
     /// Percentage of false positives: cases where the estimator predicted an improvement
     /// (group 2 better than group 1) but the actual zstd compression showed no improvement.
     pub group_estimate_false_positive_percentage: f64,
+    /// Percentage of correct positives: cases where the estimator predicted an improvement
+    /// (group 2 better than group 1) and the actual zstd compression confirmed this improvement.
+    pub group_estimate_correct_positive_percentage: f64,
 }
 
 /// Contains the merged results of comparing custom field groupings defined in the schema.
@@ -485,6 +488,11 @@ impl MergedAnalysisResults {
             "    Est/Zstd False Positives: {:.1}%",
             comparison.group_estimate_false_positive_percentage
         )?;
+        writeln!(
+            writer,
+            "    Est/Zstd Correct Positives: {:.1}%",
+            comparison.group_estimate_correct_positive_percentage
+        )?;
 
         // If we have enough files for statistics, show the detailed stats
         writeln!(writer, "    Zstd Ratio Statistics:")?;
@@ -618,6 +626,7 @@ impl MergedSplitComparisonResult {
             split_comparison_metrics: result.split_comparison_metrics.clone(),
             group_estimate_zstd_agreement_percentage: 0.0,
             group_estimate_false_positive_percentage: 0.0,
+            group_estimate_correct_positive_percentage: 0.0,
         }
     }
 
@@ -774,6 +783,7 @@ fn merge_split_comparison(
         split_comparison_metrics: Vec::new(),
         group_estimate_zstd_agreement_percentage: 0.0,
         group_estimate_false_positive_percentage: 0.0,
+        group_estimate_correct_positive_percentage: 0.0,
     };
 
     // First calculate G1 metrics
@@ -819,6 +829,7 @@ fn merge_split_comparison(
     let mut agreement_count = 0;
     let mut total_count = 0;
     let mut false_positive_count = 0;
+    let mut correct_positive_count = 0;
     for item in items {
         let g1 = &item.split_comparisons[split_idx].group1_metrics;
         let g2 = &item.split_comparisons[split_idx].group2_metrics;
@@ -829,10 +840,15 @@ fn merge_split_comparison(
             if est_g2_better == zstd_g2_better {
                 agreement_count += 1;
             }
-            
+
             // Count false positives: estimator thinks group 2 is better, but it's not
             if est_g2_better && !zstd_g2_better {
                 false_positive_count += 1;
+            }
+
+            // Count correct positives: estimator thinks group 2 is better, and it is
+            if est_g2_better && zstd_g2_better {
+                correct_positive_count += 1;
             }
         }
     }
@@ -842,9 +858,15 @@ fn merge_split_comparison(
     } else {
         0.0
     };
-    
+
     merged.group_estimate_false_positive_percentage = if total_count > 0 {
         (false_positive_count as f64 / total_count as f64) * 100.0
+    } else {
+        0.0
+    };
+
+    merged.group_estimate_correct_positive_percentage = if total_count > 0 {
+        (correct_positive_count as f64 / total_count as f64) * 100.0
     } else {
         0.0
     };
