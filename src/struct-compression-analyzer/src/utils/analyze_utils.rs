@@ -27,6 +27,8 @@
 
 use crate::{analyzer::SizeEstimationParameters, schema::BitOrder};
 use bitstream_io::{BigEndian, BitRead, BitReader, BitWrite, BitWriter, LittleEndian};
+use core::cmp::{max, min};
+use libbzip3_sys::{bz3_bound, bz3_compress, bz3_new};
 use lossless_transform_utils::{
     entropy::code_length_of_histogram32,
     histogram::{histogram32_from_bytes, Histogram32},
@@ -59,6 +61,25 @@ pub fn size_estimate(params: SizeEstimationParameters) -> usize {
 
 /// Determines the actual size of the compressed data by compressing with a realistic compressor.
 pub fn get_zstd_compressed_size(data: &[u8], level: i32) -> u64 {
+    let block_size = unsafe { bz3_bound(data.len()) };
+    let mut out = vec![0u8; block_size as usize];
+    let mut out_size = block_size;
+    let state = unsafe {
+        bz3_compress(
+            block_size as u32,
+            data.as_ptr(),
+            out.as_mut_ptr(),
+            data.len(),
+            &mut out_size,
+        )
+    };
+    if state != 0 {
+        return 0;
+    }
+    out_size as u64
+}
+
+pub fn get_zstd_compressed_size_2(data: &[u8], level: i32) -> u64 {
     zstd::bulk::compress(data, level)
         .ok()
         .map(|compressed| compressed.len())

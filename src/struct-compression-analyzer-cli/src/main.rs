@@ -24,6 +24,7 @@ use struct_compression_analyzer::{
         PrintFormat,
     },
     schema::Schema,
+    utils::analyze_utils,
 };
 use walkdir::WalkDir;
 
@@ -345,10 +346,12 @@ fn analyze_file(params: &AnalyzeFileParams) -> anyhow::Result<AnalysisResults> {
     file.read_exact(&mut data)?;
 
     // Analyze the file with SchemaAnalyzer
-    let mut analyzer = SchemaAnalyzer::new(
-        params.schema,
-        CompressionOptions::default().with_zstd_compression_level(params.zstd_compression_level),
-    );
+    let options = CompressionOptions::default()
+        .with_zstd_compression_level(params.zstd_compression_level)
+        .with_size_estimator_fn(|params| {
+            analyze_utils::get_zstd_compressed_size_2(params.data.unwrap(), 1) as usize
+        });
+    let mut analyzer = SchemaAnalyzer::new(params.schema, options);
     let mut bytes_left = length;
 
     while bytes_left > 0 {
