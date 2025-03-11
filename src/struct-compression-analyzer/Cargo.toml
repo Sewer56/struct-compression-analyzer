@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 description = "Analyzes the bit distribution of packed structures."
 repository = "https://github.com/Sewer56/struct-compression-analyzer"
-license-file = "../LICENSE"
-readme = "../README.MD"
+license-file = "../../LICENSE"
+readme = "../../README.MD"
 
 [features]
 default = []
