@@ -65,6 +65,11 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
+      - name: Install Fontconfig
+        run: |
+          sudo apt-get update
+          sudo apt install -y pkg-config libfreetype6-dev libfontconfig1-dev
+
       - name: Publish Rust Crate and Artifacts  
         uses: Reloaded-Project/devops-publish-action@v1
         with:
