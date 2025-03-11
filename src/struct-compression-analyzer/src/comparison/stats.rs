@@ -110,7 +110,7 @@ pub fn calculate_stats(values: &[f64]) -> Option<Stats> {
 /// # Returns
 ///
 /// The value at the specified percentile
-fn calculate_percentile(sorted_values: &[f64], percentile: f64) -> f64 {
+pub fn calculate_percentile(sorted_values: &[f64], percentile: f64) -> f64 {
     let count = sorted_values.len();
     if count == 0 {
         return 0.0;

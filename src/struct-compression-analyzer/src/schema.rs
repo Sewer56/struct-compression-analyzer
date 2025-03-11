@@ -21,7 +21,6 @@
 //!
 //! - [`Schema::from_yaml()`]: Parse schema from YAML string
 //! - [`Schema::load_from_file()`]: Load and parse schema from file path
-//! - [`Schema::ordered_field_paths()`]: Get ordered list of field paths
 //!
 //! ### Group Component Methods
 //!
@@ -330,7 +329,7 @@ impl Default for GroupComponentArray {
 
 impl GroupComponentArray {
     /// Retrieve the number of bits to read from the field.
-    /// Either directly from the [`GroupComponentArray`] or if not specified, from the [`FieldStats`].
+    /// Either directly from the [`GroupComponentArray`] or if not specified, from the [`AnalyzerFieldState`].
     pub fn get_bits(&self, field: &AnalyzerFieldState) -> u32 {
         if self.bits == 0 {
             field.lenbits

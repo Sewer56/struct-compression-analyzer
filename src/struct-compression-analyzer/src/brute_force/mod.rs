@@ -133,7 +133,7 @@ pub(crate) fn calculate_error(
     error
 }
 
-/// Optimizes and applies coefficients to a [`MergedAnalysisResults`] object.
+/// Optimizes and applies coefficients to a slice of [`AnalysisResults`] objects.
 ///
 /// This function:
 /// 1. Finds optimal coefficients for all split comparisons

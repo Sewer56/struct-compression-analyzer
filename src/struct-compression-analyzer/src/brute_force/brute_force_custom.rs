@@ -14,11 +14,11 @@ pub struct CustomComparisonOptimizationResult {
 }
 
 /// Finds the optimal values for `lz_match_multiplier` and `entropy_multiplier` for all custom
-/// comparison results within a given [`MergedAnalysisResults`] item.
+/// comparison results within a given [`AnalysisResults`] item.
 ///
 /// # Arguments
 ///
-/// * `individual_results` - Mutable reference to the [`MergedAnalysisResults`] containing the data.
+/// * `individual_results` - Mutable reference to the [`AnalysisResults`] containing the data.
 ///   This is where we pull the data from, and where we will update the results.
 /// * `config` - Configuration for the optimization process (optional, uses default if [`None`])
 pub fn find_optimal_custom_result_coefficients(

@@ -14,11 +14,11 @@ pub struct SplitComparisonOptimizationResult {
 }
 
 /// Finds the optimal values for `lz_match_multiplier` and `entropy_multiplier` for all split
-/// results within a given [`MergedAnalysisResults`] item.
+/// results within a given slice of [`AnalysisResults`].
 ///
 /// # Arguments
 ///
-/// * `merged_results` - Mutable reference to the [`MergedAnalysisResults`] containing the data.
+/// * `individual_results` - Mutable reference to the slice of [`AnalysisResults`].
 ///   This is where we pull the data from, and where we will update the results.
 /// * `config` - Configuration for the optimization process (optional, uses default if [`None`])
 pub fn find_optimal_split_result_coefficients(
@@ -106,9 +106,18 @@ pub fn print_optimization_results<W: std::io::Write>(
     writer: &mut W,
     results: &[(String, SplitComparisonOptimizationResult)],
 ) -> std::io::Result<()> {
-    writeln!(writer, "=== Split Comparison Parameter Optimization Results ===")?;
-    writeln!(writer, "Comparison Name               | Group | LZ Multiplier | Entropy Multiplier |")?;
-    writeln!(writer, "------------------------------|-------|---------------|--------------------|")?;
+    writeln!(
+        writer,
+        "=== Split Comparison Parameter Optimization Results ==="
+    )?;
+    writeln!(
+        writer,
+        "Comparison Name               | Group | LZ Multiplier | Entropy Multiplier |"
+    )?;
+    writeln!(
+        writer,
+        "------------------------------|-------|---------------|--------------------|"
+    )?;
 
     for (name, result) in results {
         writeln!(
@@ -122,7 +131,7 @@ pub fn print_optimization_results<W: std::io::Write>(
             "", "G2", result.group_2.lz_match_multiplier, result.group_2.entropy_multiplier
         )?;
     }
-    
+
     Ok(())
 }
 

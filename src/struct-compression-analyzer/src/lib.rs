@@ -1,4 +1,4 @@
-#![doc = include_str!("../../../README.MD")]
+#![doc = include_str!(concat!("../", std::env!("CARGO_PKG_README")))]
 
 pub mod analyzer;
 pub mod brute_force;

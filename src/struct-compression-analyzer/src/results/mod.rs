@@ -97,6 +97,7 @@
 //! [`Concise`]: crate::results::PrintFormat::Concise
 //! [`CSV`]: crate::csv
 //! [`Plot`]: crate::plot
+//! [`SchemaAnalyzer`]: crate::analyzer::SchemaAnalyzer
 //! [`compute_analysis_results()`]: crate::results::analysis_results::compute_analysis_results
 //! [`MergedAnalysisResults`]: crate::results::merged_analysis_results::MergedAnalysisResults
 //! [`MergedAnalysisResults::from_results()`]: crate::results::merged_analysis_results::MergedAnalysisResults::from_results
@@ -114,8 +115,8 @@ use crate::utils::constants::CHILD_MARKER;
 use derive_more::FromStr;
 use merged_analysis_results::MergedAnalysisResults;
 use rustc_hash::FxHashMap;
-use thiserror::Error;
 use std::io::{self, Write};
+use thiserror::Error;
 
 /// Error type for when merging analysis results fails.
 #[derive(Debug, Error)]
@@ -313,7 +314,10 @@ pub(crate) fn calculate_percentage(child: f64, parent: f64) -> f64 {
     }
 }
 
-pub(crate) fn print_field_metrics_value_stats<W: Write>(writer: &mut W, field: &FieldMetrics) -> io::Result<()> {
+pub(crate) fn print_field_metrics_value_stats<W: Write>(
+    writer: &mut W,
+    field: &FieldMetrics,
+) -> io::Result<()> {
     // Print field name with indent
     let indent = "  ".repeat(field.depth);
     writeln!(writer, "{}{} ({} bits)", indent, field.name, field.lenbits)?;
@@ -327,11 +331,14 @@ pub(crate) fn print_field_metrics_value_stats<W: Write>(writer: &mut W, field: &
             writeln!(writer, "{}    {}: {:.1}%", indent, val, pct)?;
         }
     }
-    
+
     Ok(())
 }
 
-pub(crate) fn print_field_metrics_bit_stats<W: Write>(writer: &mut W, field: &FieldMetrics) -> io::Result<()> {
+pub(crate) fn print_field_metrics_bit_stats<W: Write>(
+    writer: &mut W,
+    field: &FieldMetrics,
+) -> io::Result<()> {
     let indent = "  ".repeat(field.depth);
     writeln!(writer, "{}{} ({} bits)", indent, field.name, field.lenbits)?;
 
@@ -354,6 +361,6 @@ pub(crate) fn print_field_metrics_bit_stats<W: Write>(writer: &mut W, field: &Fi
             indent, i, bit_stats.zeros, bit_stats.ones, percentage
         )?;
     }
-    
+
     Ok(())
 }
