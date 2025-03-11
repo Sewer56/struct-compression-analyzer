@@ -14,7 +14,8 @@ binary structures.
 The core idea being, that you can rearrange the order of bytes within a file, or modify the bytes
 in a reversible way that improves compression ratio.
 
-For some more context, see the '[Texture Compression in Nx2.0]' series.
+For some more context, see the '[Texture Compression in Nx2.0]' series.  
+[I wrote an in-depth introduction to this project in my blog][blog-intro].  
 
 ## What this Program Does
 
@@ -352,3 +353,4 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for det
 [dxt1-block.yaml]: https://github.com/Sewer56/struct-compression-analyzer/tree/main/schemas/dxt1-block.yaml
 [Texture Compression in Nx2.0]: https://sewer56.dev/blog/category/texture-compression-in-nx20.html
 [mi-malloc]: https://github.com/microsoft/mimalloc
+[blog-intro]: https://sewer56.dev/blog/2025/03/11/a-program-for-helping-create-lossless-transforms.html
