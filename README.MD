@@ -3,7 +3,7 @@
 A tool for analyzing and comparing lossless transforms of bit-packed binary structures.
 
 [![Documentation](https://docs.rs/struct-compression-analyzer/badge.svg)][docs]
-[![Tests](https://github.com/Sewer56/struct-compression-analyzer/workflows/rust/badge.svg)][actions]
+[![Tests](https://github.com/Sewer56/struct-compression-analyzer/actions/workflows/rust.yml/badge.svg)][actions]
 [![Crates.io](https://img.shields.io/crates/v/struct-compression-analyzer.svg)][crates-badge]
 
 ## About
