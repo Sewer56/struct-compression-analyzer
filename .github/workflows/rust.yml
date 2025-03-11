@@ -70,4 +70,5 @@ jobs:
         with:
           crates-io-token: ${{ secrets.CRATES_IO_TOKEN }}
           rust-project-paths: |
-            .
+            src/struct-compression-analyzer
+            src/struct-compression-analyzer-cli

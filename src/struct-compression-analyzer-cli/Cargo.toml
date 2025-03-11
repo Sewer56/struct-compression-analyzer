@@ -8,7 +8,7 @@ license-file = "../LICENSE"
 readme = "../README.MD"
 
 [dependencies]
-struct-compression-analyzer = { path = "../struct-compression-analyzer" }
+struct-compression-analyzer = { version = "0.1.0", path = "../struct-compression-analyzer" }
 argh = "0.1.13"
 anyhow = "1.0.95"
 rayon = "1.10.0"
