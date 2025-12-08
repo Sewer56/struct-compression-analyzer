@@ -1,3 +1,5 @@
+#![doc = include_str!(concat!("../", env!("CARGO_PKG_README")))]
+
 use argh::FromArgs;
 use indicatif::{ProgressBar, ProgressStyle};
 use mimalloc::MiMalloc;

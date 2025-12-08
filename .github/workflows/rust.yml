@@ -2,11 +2,11 @@ name: Test, Upload Coverage and Release Rust
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
     tags:
-      - '*'
+      - "*"
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -38,6 +38,22 @@ jobs:
           codecov-token: ${{ secrets.CODECOV_TOKEN }}
           target: ${{ matrix.target }}
           use-cross: ${{ matrix.use-cross }}
+          rust-project-path: src
+      - name: Check Documentation
+        shell: bash
+        working-directory: src
+        run: cargo doc --no-deps --all-features
+
+      - name: Run Clippy
+        shell: bash
+        working-directory: src
+        run: cargo clippy --all-features --all-targets -- -D warnings
+
+      - name: Check Formatting
+        shell: bash
+        working-directory: src
+        run: cargo fmt --all -- --check
+
       # Note: The GitHub Runner Images will contain an up to date Rust Stable Toolchain
       #       thus as per recommendation of cargo-semver-checks, we're using stable here.
       #
@@ -45,6 +61,7 @@ jobs:
       - name: Run cargo-semver-checks
         if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/')
         shell: bash
+        working-directory: src
         run: |
           SEARCH_RESULT=$(cargo search "^struct-compression-analyzer$" --limit 1)
 
@@ -72,10 +89,16 @@ jobs:
           sudo apt-get update
           sudo apt install -y pkg-config libfreetype6-dev libfontconfig1-dev
 
-      - name: Publish Rust Crate and Artifacts  
-        uses: Reloaded-Project/devops-publish-action@v2
+      - name: Publish Rust Crate and Artifacts
+        uses: Reloaded-Project/devops-publish-action@v3
         with:
-          crates-io-token: ${{ secrets.CRATES_IO_TOKEN }}
-          cargo-workspace-projects: |
-            struct-compression-analyzer
-            struct-compression-analyzer-cli
+          rust-crates-io-token: ${{ secrets.CRATES_IO_TOKEN }}
+          rust-cargo-project-paths: |
+            src/struct-compression-analyzer
+            src/struct-compression-analyzer-cli
+          changelog-enabled: "true"
+          changelog-template: .github/changelog.hbs
+          changelog-is-release: ${{ startsWith(github.ref, 'refs/tags/') }}
+          changelog-release-tag: ${{ github.ref_name }}
+          changelog-override-starting-version: "true"
+          changelog-hide-credit: "true"
