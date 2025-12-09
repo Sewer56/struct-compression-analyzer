@@ -51,7 +51,7 @@
 //! # Submodules
 //!
 //! - [`generate_bytes`]: Core byte stream generation from schemas
-//! - [`test_helpers`]: Testing utilities (only in test builds)
+//! - `test_helpers`: Testing utilities (only in test builds)
 //!
 //! [`GroupComparisonResult`]: crate::comparison::compare_groups::GroupComparisonResult
 //! [`GroupComparisonError`]: crate::comparison::compare_groups::GroupComparisonError

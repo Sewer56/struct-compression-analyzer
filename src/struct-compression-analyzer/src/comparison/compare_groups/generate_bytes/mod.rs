@@ -7,14 +7,14 @@
 //! # Core Types
 //!
 //! - [`GenerateBytesError`]: Comprehensive error handling for byte generation
-//! - [`GenerateBytesResult`]: Type alias for Result with GenerateBytesError
+//! - `GenerateBytesResult`: Type alias for Result with GenerateBytesError
 //!
 //! # Internal Functions
 //!
 //! Two primary internal functions handle byte generation:
 //!
-//! - [`generate_group_bytes`]: Creates a [`Vec<u8>`] from group components
-//! - [`generate_output_for_compare_groups_entry`]: Writes directly to a provided bitstream
+//! - `generate_group_bytes`: Creates a [`Vec<u8>`] from group components
+//! - `generate_output_for_compare_groups_entry`: Writes directly to a provided bitstream
 //!
 //! # Component Types
 //!
@@ -38,13 +38,10 @@
 //!
 //! # Submodules
 //!
-//! - [`write_array`]: Array component processing
-//! - [`write_struct`]: Struct component processing
+//! - `write_array`: Array component processing
+//! - `write_struct`: Struct component processing
 //!
 //! [`GenerateBytesError`]: crate::comparison::compare_groups::generate_bytes::GenerateBytesError
-//! [`GenerateBytesResult`]: crate::comparison::compare_groups::generate_bytes::GenerateBytesResult
-//! [`write_array`]: crate::comparison::compare_groups::generate_bytes::write_array
-//! [`write_struct`]: crate::comparison::compare_groups::generate_bytes::write_struct
 use thiserror::Error;
 mod write_array;
 mod write_struct;
