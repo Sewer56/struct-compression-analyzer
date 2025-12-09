@@ -1,4 +1,14 @@
 target
 /Cargo.lock
+!/src/Cargo.lock
 /fuzz/hfuzz_target
 .aider*
+
+# LLM Prompts
+PROMPT.md
+PROMPT-*.md
+PROMPT.MD
+PROMPT-*.MD
+
+# Nix
+.direnv/

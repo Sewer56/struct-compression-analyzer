@@ -213,7 +213,7 @@ pub fn get_writer_buffer(writer: &mut BitWriterContainer) -> &[u8] {
 ///
 /// # Returns
 /// A [`BitReaderContainer`] instance containing the same data as the input [`BitWriterContainer`].
-pub fn bit_writer_to_reader(writer: &mut BitWriterContainer) -> BitReaderContainer {
+pub fn bit_writer_to_reader(writer: &mut BitWriterContainer) -> BitReaderContainer<'_> {
     match writer {
         BitWriterContainer::Msb(writer) => {
             writer.byte_align().unwrap();

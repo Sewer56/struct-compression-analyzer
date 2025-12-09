@@ -1,0 +1,8 @@
+{
+  "rust-analyzer.check.command": "clippy",
+  "editor.formatOnSave": true,
+  "coverage-gutters.coverageFileNames": [
+    "cobertura.xml"
+  ],
+  "coverage-gutters.coverageReportFileName": "tarpaulin-report.html"
+}

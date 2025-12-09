@@ -1,0 +1,45 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Auto Test on Save",
+      "type": "shell",
+      "command": "cargo install cargo-watch --quiet && cargo watch -x \"test\" -w struct-compression-analyzer/src -w struct-compression-analyzer-cli/src",
+      "group": "test",
+      "presentation": {
+        "reveal": "always"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Auto Coverage on Save",
+      "type": "shell",
+      "command": "cargo install cargo-watch --quiet && cargo install cargo-tarpaulin --quiet && cargo watch -x \"tarpaulin --skip-clean --out Xml --out Html --engine llvm --target-dir target/coverage-build\" -w struct-compression-analyzer/src -w struct-compression-analyzer-cli/src",
+      "group": "test",
+      "presentation": {
+        "reveal": "always"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Generate Code Coverage",
+      "type": "shell",
+      "command": "cargo install cargo-tarpaulin --quiet && cargo tarpaulin --skip-clean --out Xml --out Html --engine llvm --target-dir target/coverage-build",
+      "group": "test",
+      "presentation": {
+        "reveal": "always"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Fix Clippy Lints",
+      "type": "shell",
+      "command": "cargo clippy --fix --allow-dirty --allow-staged",
+      "group": "build",
+      "presentation": {
+        "reveal": "always"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

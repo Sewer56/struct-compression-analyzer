@@ -280,12 +280,15 @@ impl AnalysisResults {
                 self.concise_print_field_value_stats(writer, &field_path)?;
             }
 
-            writeln!(writer, "\nField Bit Stats: [as `(zeros/ones) (percentage %)`]")?;
+            writeln!(
+                writer,
+                "\nField Bit Stats: [as `(zeros/ones) (percentage %)`]"
+            )?;
             for field_path in schema.ordered_field_and_group_paths() {
                 self.concise_print_field_bit_stats(writer, &field_path)?;
             }
         }
-        
+
         Ok(())
     }
 
@@ -332,7 +335,7 @@ impl AnalysisResults {
                 field.bit_order
             )?;
         }
-        
+
         Ok(())
     }
 
@@ -376,12 +379,15 @@ impl AnalysisResults {
                 self.concise_print_field_value_stats(writer, &field_path)?;
             }
 
-            writeln!(writer, "\nField Bit Stats: [as `(zeros/ones) (percentage %)`]")?;
+            writeln!(
+                writer,
+                "\nField Bit Stats: [as `(zeros/ones) (percentage %)`]"
+            )?;
             for field_path in schema.ordered_field_and_group_paths() {
                 self.concise_print_field_bit_stats(writer, &field_path)?;
             }
         }
-        
+
         Ok(())
     }
 
@@ -413,7 +419,7 @@ impl AnalysisResults {
                 field.lenbits
             )?;
         }
-        
+
         Ok(())
     }
 
@@ -425,7 +431,7 @@ impl AnalysisResults {
         if let Some(field) = self.per_field.get(field_path) {
             print_field_metrics_value_stats(writer, field)?;
         }
-        
+
         Ok(())
     }
 
@@ -437,7 +443,7 @@ impl AnalysisResults {
         if let Some(field) = self.per_field.get(field_path) {
             print_field_metrics_bit_stats(writer, field)?;
         }
-        
+
         Ok(())
     }
 }
@@ -462,9 +468,17 @@ fn concise_print_custom_comparison<W: Write>(
     writeln!(writer, "  {}: {}", comparison.name, comparison.description)?;
     writeln!(writer, "    Base Group:")?;
     writeln!(writer, "      Size: {}", base_size)?;
-    writeln!(writer, "      LZ, Entropy: ({}, {:.2})", base_lz, base_entropy)?;
+    writeln!(
+        writer,
+        "      LZ, Entropy: ({}, {:.2})",
+        base_lz, base_entropy
+    )?;
     if base_estimated != 0 {
-        writeln!(writer, "      Estimate/Zstd: {}/{}", base_estimated, base_zstd)?;
+        writeln!(
+            writer,
+            "      Estimate/Zstd: {}/{}",
+            base_estimated, base_zstd
+        )?;
     } else {
         writeln!(writer, "      Zstd: {}", base_zstd)?;
     }
@@ -486,9 +500,17 @@ fn concise_print_custom_comparison<W: Write>(
 
         writeln!(writer, "\n    {} Group:", group_name)?;
         writeln!(writer, "      Size: {}", comp_size)?;
-        writeln!(writer, "      LZ, Entropy: ({}, {:.2})", comp_lz, comp_entropy)?;
+        writeln!(
+            writer,
+            "      LZ, Entropy: ({}, {:.2})",
+            comp_lz, comp_entropy
+        )?;
         if comp_estimated != 0 {
-            writeln!(writer, "      Estimate/Zstd: {}/{}", comp_zstd, comp_estimated)?;
+            writeln!(
+                writer,
+                "      Estimate/Zstd: {}/{}",
+                comp_zstd, comp_estimated
+            )?;
         } else {
             writeln!(writer, "      Zstd: {}", comp_zstd)?;
         }
@@ -500,7 +522,7 @@ fn concise_print_custom_comparison<W: Write>(
             writeln!(writer, "      [WARNING!!] However if they vary extremely, your groups may be incorrect. base: {}, {}: {}", base_size, group_name, comp_size)?;
         }
     }
-    
+
     Ok(())
 }
 
@@ -526,8 +548,16 @@ fn concise_print_split_comparison<W: Write>(
 
     writeln!(writer, "  {}: {}", comparison.name, comparison.description)?;
     writeln!(writer, "    Original Size: {}", size_orig)?;
-    writeln!(writer, "    Base LZ, Entropy: ({}, {:.2}):", base_lz, base_entropy)?;
-    writeln!(writer, "    Comp LZ, Entropy: ({}, {:.2}):", comp_lz, comp_entropy)?;
+    writeln!(
+        writer,
+        "    Base LZ, Entropy: ({}, {:.2}):",
+        base_lz, base_entropy
+    )?;
+    writeln!(
+        writer,
+        "    Comp LZ, Entropy: ({}, {:.2}):",
+        comp_lz, comp_entropy
+    )?;
     writeln!(
         writer,
         "    Base Group LZ, Entropy: ({:?}, {:?})",
@@ -558,13 +588,21 @@ fn concise_print_split_comparison<W: Write>(
     )?;
 
     if base_estimated != 0 {
-        writeln!(writer, "    Base (est/zstd): {}/{}", base_estimated, base_zstd)?;
+        writeln!(
+            writer,
+            "    Base (est/zstd): {}/{}",
+            base_estimated, base_zstd
+        )?;
     } else {
         writeln!(writer, "    Base (zstd): {}", base_zstd)?;
     }
 
     if comp_estimated != 0 {
-        writeln!(writer, "    Comp (est/zstd): {}/{}", comp_estimated, comp_zstd)?;
+        writeln!(
+            writer,
+            "    Comp (est/zstd): {}/{}",
+            comp_estimated, comp_zstd
+        )?;
     } else {
         writeln!(writer, "    Comp (zstd): {}", comp_zstd)?;
     }
@@ -576,6 +614,6 @@ fn concise_print_split_comparison<W: Write>(
         writeln!(writer, "    [WARNING!!] Sizes of both groups in bytes don't match!! They may vary by a few bytes due to padding.")?;
         writeln!(writer, "    [WARNING!!] However if they vary extremely, your groups may be incorrect. group1: {}, group2: {}", size_orig, size_comp)?;
     }
-    
+
     Ok(())
 }
