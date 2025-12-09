@@ -1,4 +1,4 @@
-# struct-compression-analyzer
+# Lossless Transform Analysis Tool (struct-compression-analyzer)
 
 [![Crates.io](https://img.shields.io/crates/v/struct-compression-analyzer.svg)](https://crates.io/crates/struct-compression-analyzer)
 [![Docs.rs](https://docs.rs/struct-compression-analyzer/badge.svg)](https://docs.rs/struct-compression-analyzer)
