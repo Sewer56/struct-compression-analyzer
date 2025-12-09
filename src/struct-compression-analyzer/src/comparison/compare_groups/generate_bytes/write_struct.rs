@@ -67,7 +67,7 @@ pub(crate) fn write_struct<TWrite: io::Write, TEndian: Endianness>(
                 }
                 GroupComponent::Padding(padding) => {
                     writer
-                        .write(padding.bits as u32, padding.value)
+                        .write_var(padding.bits as u32, padding.value)
                         .map_err(|e| GenerateBytesError::WriteError {
                             source: e,
                             context: "writing padding bits".into(),
@@ -83,7 +83,7 @@ pub(crate) fn write_struct<TWrite: io::Write, TEndian: Endianness>(
                     match read_result {
                         Ok(value) => {
                             // Only write if we successfully read the value
-                            writer.write(field.bits, value).map_err(|e| {
+                            writer.write_var(field.bits, value).map_err(|e| {
                                 GenerateBytesError::WriteError {
                                     source: e,
                                     context: format!(

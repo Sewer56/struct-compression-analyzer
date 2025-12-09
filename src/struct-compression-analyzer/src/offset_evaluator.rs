@@ -122,7 +122,7 @@ fn check_condition(condition: &Condition, data: &[u8]) -> bool {
         BitOrder::Lsb => reverse_bits(condition.bits as u32, condition.value),
     };
 
-    match reader.read::<u64>(condition.bits as u32) {
+    match reader.read_var::<u64>(condition.bits as u32) {
         Ok(extracted) => extracted == comp_value,
         Err(_) => false,
     }

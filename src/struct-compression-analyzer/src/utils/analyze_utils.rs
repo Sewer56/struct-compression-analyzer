@@ -98,8 +98,8 @@ pub enum BitReaderContainer<'a> {
 impl BitReaderContainer<'_> {
     pub fn read(&mut self, bits: u32) -> io::Result<u64> {
         match self {
-            BitReaderContainer::Msb(reader) => reader.read(bits),
-            BitReaderContainer::Lsb(reader) => reader.read(bits),
+            BitReaderContainer::Msb(reader) => reader.read_var::<u64>(bits),
+            BitReaderContainer::Lsb(reader) => reader.read_var::<u64>(bits),
         }
     }
 

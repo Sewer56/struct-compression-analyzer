@@ -93,7 +93,7 @@ fn write_array_inner<
 
         // Read the actual value from the source bitstream
         let value = reader
-            .read::<u64>(bits)
+            .read_var::<u64>(bits)
             .map_err(|e| GenerateBytesError::ReadError {
                 source: e,
                 context: format!("reading {bits}-bit array element"),
@@ -101,7 +101,7 @@ fn write_array_inner<
 
         // Write the value to the output stream
         writer
-            .write::<u64>(bits, value)
+            .write_var::<u64>(bits, value)
             .map_err(|e| GenerateBytesError::WriteError {
                 source: e,
                 context: format!("writing {bits}-bit array element"),

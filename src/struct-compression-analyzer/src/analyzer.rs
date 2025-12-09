@@ -341,7 +341,7 @@ fn process_field_or_group<TEndian: Endianness>(
     while bit_count > 0 {
         // Read max possible number of bits at once.
         let max_bits = bit_count.min(64);
-        let bits = reader.read::<u64>(max_bits)?;
+        let bits = reader.read_var::<u64>(max_bits)?;
 
         // Update the value counts
         if !skip_count_values {
@@ -355,8 +355,8 @@ fn process_field_or_group<TEndian: Endianness>(
 
         // Write the values to the output
         match writer {
-            BitWriterContainer::Msb(w) => w.write(max_bits, bits)?,
-            BitWriterContainer::Lsb(w) => w.write(max_bits, bits)?,
+            BitWriterContainer::Msb(w) => w.write_var(max_bits, bits)?,
+            BitWriterContainer::Lsb(w) => w.write_var(max_bits, bits)?,
         }
 
         // Update stats for individual bits.
@@ -462,7 +462,7 @@ fn should_skip<TEndian: Endianness>(
         let target_pos = original_pos_bits.wrapping_add(offset);
 
         reader.seek_bits(SeekFrom::Start(target_pos))?;
-        let mut value = reader.read::<u64>(condition.bits as u32)?;
+        let mut value = reader.read_var::<u64>(condition.bits as u32)?;
 
         if condition.bit_order == BitOrder::Lsb {
             value = reverse_bits(condition.bits as u32, value);
