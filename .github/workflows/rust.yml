@@ -42,6 +42,8 @@ jobs:
       - name: Check Documentation
         shell: bash
         working-directory: src
+        env:
+          RUSTDOCFLAGS: "-D warnings"
         run: cargo doc --no-deps --all-features
 
       - name: Run Clippy
@@ -66,9 +68,9 @@ jobs:
           SEARCH_RESULT=$(cargo search "^struct-compression-analyzer$" --limit 1)
 
           if echo "$SEARCH_RESULT" | grep -q "^struct-compression-analyzer "; then
-            rustup target add ${{ matrix.target }}
-            cargo install cargo-semver-checks
-            cargo semver-checks --target ${{ matrix.target }} 
+            rustup +stable target add ${{ matrix.target }}
+            cargo +stable binstall --no-confirm cargo-semver-checks --force
+            cargo +stable semver-checks --target ${{ matrix.target }}
           else
               echo "No previous version found on crates.io. Skipping semver checks."
           fi
