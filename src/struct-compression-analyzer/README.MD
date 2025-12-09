@@ -337,7 +337,7 @@ If you want to do a quick 'test run' first, set the `zstd compression level` to 
 
 ## Contributing
 
-Contributions are welcome! Please see [CONTRIBUTING.md](../../CONTRIBUTING.MD) for details on how to contribute to this project.
+We welcome contributions! See the [Contributing Guide](https://reloaded-project.github.io/reloaded-templates-rust/manual/#contributing) for details.
 
 [docs]: https://docs.rs/struct-compression-analyzer
 [actions]: https://github.com/Sewer56/struct-compression-analyzer/actions

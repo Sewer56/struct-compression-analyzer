@@ -86,8 +86,8 @@ And create a large swapfile. See the [main documentation] for more details.
 
 For detailed documentation about the library and analysis concepts, see:
 
-- [Main Documentation](../struct-compression-analyzer/README.MD)
-- [Schema Format Guide](../../format-schema.md)
+- [Main Documentation](https://github.com/Sewer56/struct-compression-analyzer/blob/main/src/struct-compression-analyzer/README.MD)
+- [Schema Format Guide](https://github.com/Sewer56/struct-compression-analyzer/blob/main/format-schema.md)
 - [Repository](https://github.com/Sewer56/struct-compression-analyzer)
 
 [schema documentation]: https://github.com/Sewer56/struct-compression-analyzer/blob/main/format-schema.md
