@@ -10,7 +10,7 @@ readme = "README.MD"
 [dependencies]
 struct-compression-analyzer = { version = "0.1.0", path = "../struct-compression-analyzer" }
 argh = "0.1.14"
-anyhow = "1.0.101"
+anyhow = "1.0.102"
 rayon = "1.10.0"
 walkdir = "2.5.0"
 mimalloc = "0.1.43"
