@@ -111,12 +111,9 @@ dependencies = [
 
 [[package]]
 name = "branches"
-version = "0.4.6"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7436b21fd6195415058eb41c9090e156b556bc7e0377bb57c5c026a421521525"
-dependencies = [
- "rustc_version",
-]
+checksum = "5fff8e8a78270a39fea587b71eb20cdb5d80a16f692ecdec704f789f8904d003"
 
 [[package]]
 name = "bumpalo"
