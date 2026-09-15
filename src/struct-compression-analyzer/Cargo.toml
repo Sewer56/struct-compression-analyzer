@@ -19,7 +19,7 @@ bitstream-io = { version = "4.10.0" }
 lossless-transform-utils = "0.1.0"
 serde-aux = "4.5.0"
 walkdir = "2.5.0"
-zstd = { version = "0.13.3" }
+zstd = { version = "0.14.0" }
 derive_more = { version = "2.1.1", features = ["from_str"] }
 csv = "1.3"
 sanitize-filename = "0.6"
